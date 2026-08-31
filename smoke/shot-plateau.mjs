@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+const b = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
+await p.goto("http://127.0.0.1:8030/?mode=survival&autotest=1", { waitUntil: "load", timeout: 60000 });
+await p.waitForFunction(() => typeof assetsReady === "function" && assetsReady() === true, { timeout: 60000 });
+await p.waitForFunction(() => typeof state !== "undefined" && state === 7, { timeout: 40000 });
+await p.keyboard.press("Escape");
+await p.waitForTimeout(2500);
+await p.evaluate(() => { camFocus.set(cellCenter(10,36).x, 0, cellCenter(10,36).z); camHeight = 42; });
+await p.waitForTimeout(800);
+await p.screenshot({ path: "smoke/out/p5-plateau.png" });
+await b.close();
+process.exit(0);

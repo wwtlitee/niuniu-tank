@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>坦克大战 3D · 三模式合辑</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0a0d12;
+    font-family:"Segoe UI","Microsoft YaHei",sans-serif; user-select:none; }
+  #game { position:absolute; inset:0; }
+  canvas { display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud { position:absolute; inset:0; pointer-events:none; color:#e8eef7; }
+  .panel { background:rgba(10,16,26,.72); border:1px solid rgba(120,180,255,.25);
+    border-radius:10px; backdrop-filter:blur(6px); }
+  #topLeft { position:absolute; top:14px; left:14px; padding:12px 16px; min-width:230px; }
+  #topLeft h1 { font-size:15px; letter-spacing:2px; color:#ffd75e; margin-bottom:8px;
+    text-shadow:0 0 12px rgba(255,200,60,.5); }
+  .row { display:flex; justify-content:space-between; gap:18px; font-size:13px; margin-top:5px; color:#9fb4cc; }
+  .row b { color:#fff; font-size:14px; }
+  #hpBarWrap { width:100%; height:12px; background:#1a2333; border-radius:6px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.15); margin-top:6px; }
+  #hpBar { height:100%; width:100%; background:linear-gradient(90deg,#39d98a,#7cf7c0); transition:width .2s; }
+  #baseBarWrap { width:100%; height:8px; background:#1a2333; border-radius:4px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.12); margin-top:4px; display:none; }
+  #baseBar { height:100%; width:100%; background:linear-gradient(90deg,#4da3ff,#9fdcff); transition:width .2s; }
+  #buffs { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; max-width:260px; }
+  .buff { font-size:11px; padding:2px 8px; border-radius:20px; background:rgba(80,160,255,.2);
+    border:1px solid rgba(120,190,255,.5); color:#bfe0ff; }
+
+  /* ---------- 生存模式 HUD ---------- */
+  #survivalRes { display:none; }
+  #hud.survival #survivalRes { display:flex; }
+  #hud.survival .hero-only { display:none; }
+  #gateUpList { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .gateUpRow { display:flex; justify-content:space-between; align-items:center; gap:14px; width:470px;
+    padding:12px 18px; border-radius:12px; background:rgba(20,30,50,.6); border:1px solid rgba(120,180,255,.25); }
+  .gateUpRow .gname { font-size:15px; color:#dff0ff; width:120px; }
+  .gateUpRow .gdesc { font-size:11px; color:#8fa8c8; flex:1; line-height:1.4; }
+  .gateUpRow .glv { color:#6fd3ff; font-size:13px; white-space:nowrap; }
+  .gateUpRow .gcost { color:#ffd75e; font-size:14px; width:88px; text-align:right; }
+  .gateUpRow button { pointer-events:auto; cursor:pointer; border:1px solid rgba(110,210,255,.5);
+    background:linear-gradient(180deg,#1c3355,#12233d); color:#dff0ff; font-size:14px; padding:7px 18px; border-radius:9px; }
+  .gateUpRow button:hover:not(:disabled) { background:linear-gradient(180deg,#2a4a78,#1a3055); }
+  .gateUpRow button:disabled { opacity:.4; cursor:not-allowed; }
+  #destroyToggle { pointer-events:auto; cursor:pointer; margin-top:16px; font-size:15px; padding:9px 26px;
+    border-radius:10px; border:1px solid rgba(255,120,120,.5); background:linear-gradient(180deg,#3d1c22,#2a1016);
+    color:#ffb2b2; letter-spacing:2px; }
+  #destroyToggle.on { background:linear-gradient(180deg,#7a1a1a,#4a0d0d); border-color:#ff5d5d; color:#fff; }
+
+  #waveInfo { position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    padding:8px 26px; font-size:16px; letter-spacing:3px; color:#ffd75e; text-align:center; }
+  #enemyLeft { font-size:12px; color:#9fb4cc; letter-spacing:1px; margin-top:2px; }
+
+  #minimapWrap { position:absolute; top:14px; right:14px; padding:8px; }
+  #minimap { display:block; image-rendering:pixelated; }
+
+  #announce { position:absolute; top:30%; left:50%; transform:translateX(-50%);
+    font-size:52px; font-weight:900; letter-spacing:8px; color:#ffd75e; white-space:nowrap;
+    text-shadow:0 0 30px rgba(255,180,40,.8), 0 4px 0 #7a5200; opacity:0; transition:opacity .25s; }
+
+  #hint { position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+    font-size:12px; color:#7f92ab; letter-spacing:1px; white-space:nowrap; }
+
+  /* ★ P3-9 WC3 式命令卡（底部中央）→ P4-5 底部常驻 HUD 三栏布局 */
+  #wc3dock { position:absolute; bottom:0; left:0; right:0; height:190px;
+    display:none; align-items:flex-end; justify-content:center; gap:12px;
+    padding:0 14px 12px; pointer-events:none; z-index:6; }
+  #hud.survival #wc3dock { display:flex; }
+  #wc3dock > div { pointer-events:auto; }
+
+  /* 左：小地图（WC3 左下角） */
+  #mmDock { padding:8px; margin-bottom:2px; }
+  #mmDock canvas { display:block; image-rendering:pixelated; width:176px; height:176px; }
+
+  /* 中：状态面板 ↔ 命令卡 双态容器 */
+  #cmdWrap { display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:2px; }
+  #selPanel { width:440px; min-height:96px; padding:10px 16px;
+    display:none; align-items:center; gap:14px; }
+  #selPanel.show { display:flex; }
+  #selPanel .spIcon { width:64px; height:64px; border-radius:10px; flex:none;
+    background:linear-gradient(170deg,#1a2c44,#0d1826); border:1px solid rgba(110,170,255,.4);
+    display:flex; align-items:center; justify-content:center; font-size:30px; }
+  #selPanel .spMain { flex:1; min-width:0; }
+  #selPanel .spName { font-size:15px; color:#ffd75e; font-weight:bold; letter-spacing:1px; }
+  #selPanel .spStat { font-size:12px; color:#9fb4cc; margin-top:4px; line-height:1.55; }
+  #selPanel .spStat b { color:#fff; }
+  #selPanel .spBar { height:9px; background:#1a2333; border-radius:5px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.15); margin-top:6px; }
+  #selPanel .spBarFg { height:100%; background:linear-gradient(90deg,#39d98a,#7cf7c0); transition:width .15s; }
+  #selPanel .spActs { display:flex; flex-direction:column; gap:6px; flex:none; }
+  #selPanel .spBtn { font-size:12px; padding:6px 14px; border-radius:8px; cursor:pointer;
+    border:1px solid rgba(110,210,255,.5); background:linear-gradient(180deg,#1c3355,#12233d); color:#dff0ff; white-space:nowrap; }
+  #selPanel .spBtn:hover { background:linear-gradient(180deg,#2a4a78,#1a3055); }
+  #selPanel .spBtn.warn { border-color:rgba(255,120,120,.5); background:linear-gradient(180deg,#3d1c22,#2a1016); color:#ffb2b2; }
+
+  #cmdcard { display:none; gap:10px; padding:12px 16px; }
+  #hud.survival #cmdcard { display:flex; }
+  #hud.survival #selPanel.show ~ #cmdcard, #hud.survival.hasSel #cmdcard { display:none; }
+  #hud.survival.hasSel #selPanel { display:flex; }
+
+  /* 右：资源速览（WC3 右下角资源条） */
+  #resDock { padding:10px 16px; margin-bottom:2px; min-width:150px; }
+  #resDock .rr { display:flex; justify-content:space-between; gap:16px; font-size:13px; margin-top:4px; color:#9fb4cc; }
+  #resDock .rr b { color:#fff; font-size:14px; }
+  #resDock .rr b.gold { color:#ffd75e; }
+
+  .cmdBtn { width:64px; height:64px; border-radius:10px; cursor:pointer;
+    background:linear-gradient(170deg,#1a2c44,#0d1826); border:1px solid rgba(110,170,255,.4);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position:relative; transition:.12s; }
+  .cmdBtn:hover { border-color:#ffd75e; transform:translateY(-3px);
+    box-shadow:0 6px 18px rgba(255,215,94,.2); }
+  .cmdBtn .ci { font-size:24px; line-height:1; }
+  .cmdBtn .cn { font-size:10px; color:#9fb4cc; margin-top:4px; letter-spacing:1px; }
+  .cmdBtn .ck { position:absolute; top:3px; left:6px; font-size:10px; color:#ffd75e; font-weight:bold; }
+  .cmdBtn .cp { position:absolute; bottom:3px; right:5px; font-size:10px; color:#ffd75e; }
+  .cmdBtn.active { border-color:#ffd75e; background:linear-gradient(170deg,#3a2c14,#241a08); }
+  .cmdBtn.disabled { opacity:.4; cursor:not-allowed; }
+
+  #hintWC3 { position:absolute; bottom:196px; left:50%; transform:translateX(-50%);
+    font-size:12px; color:#8fa8c8; letter-spacing:1px; white-space:nowrap;
+    display:none; }
+  #hud.survival #hintWC3 { display:block; }
+  #hud.survival #hint { display:none; }
+
+  /* WC3 悬浮提示 */
+  #wc3tip { position:absolute; bottom:196px; left:50%; transform:translateX(-50%);
+    padding:10px 16px; max-width:340px; font-size:12px; color:#dff0ff; line-height:1.6;
+    display:none; z-index:10; }
+  #wc3tip .t { color:#ffd75e; font-size:14px; margin-bottom:4px; }
+  #wc3tip .k { color:#7ec8ff; font-size:11px; margin-top:4px; }
+
+  #prepBar { position:absolute; top:60px; left:50%; transform:translateX(-50%);
+    padding:8px 26px; font-size:20px; letter-spacing:2px; color:#7ec8ff; text-align:center;
+    background:rgba(8,16,30,.6); border:1px solid rgba(120,190,255,.4); border-radius:12px; display:none; }
+
+  /* ★ 三步新手引导 */
+  #questPanel { position:absolute; top:160px; left:50%; transform:translateX(-50%);
+    width:680px; padding:16px 24px; border-radius:12px; background:rgba(20,30,50,.88);
+    border:1px solid rgba(120,190,255,.35); color:#e8f0ff; text-align:center;
+    display:none; backdrop-filter:blur(6px); z-index:5; }
+  .qpTitle { font-size:13px; color:#ffd75e; letter-spacing:4px; margin-bottom:6px; }
+  .qpStep { font-size:17px; color:#dff0ff; line-height:1.6; margin-bottom:4px; }
+  .qpHint { font-size:11px; color:#8fa8c8; margin-top:4px; }
+
+  #settle h2 { font-size:32px; color:#ffd75e; letter-spacing:6px; margin-bottom:8px;
+    text-shadow:0 0 24px rgba(255,190,60,.5); }
+  #settle .tip { color:#8fa8c8; font-size:14px; margin-bottom:28px; letter-spacing:2px; text-align:center; line-height:1.9; }
+  #settle .settleBtns { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+
+  #tech h2 { font-size:30px; color:#b98fff; letter-spacing:6px; margin-bottom:8px;
+    text-shadow:0 0 24px rgba(150,110,255,.5); }
+  #tech .tip { color:#8fa8c8; font-size:13px; margin-bottom:22px; letter-spacing:2px; text-align:center; line-height:1.8; }
+  #techBranches { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; padding:0 20px; max-width:1200px; }
+  .techCard { pointer-events:auto; cursor:pointer; width:186px; padding:18px 14px 15px; border-radius:14px;
+    background:linear-gradient(170deg,#25163f,#120a22); border:1px solid rgba(150,120,255,.35);
+    text-align:center; transition:.15s; position:relative; }
+  .techCard:hover:not(.locked):not(.maxed) { transform:translateY(-5px); border-color:#b98fff;
+    box-shadow:0 10px 28px rgba(130,90,255,.3); }
+  .techCard.locked { opacity:.5; cursor:not-allowed; }
+  .techCard.maxed { border-color:#39d98a; }
+  .techCard.sel { border-color:#ffd75e; box-shadow:0 0 24px rgba(255,215,94,.25); }
+  .techCard .ic { font-size:32px; }
+  .techCard .nm { color:#e6dcff; font-size:15px; font-weight:bold; margin-top:6px; letter-spacing:1px; }
+  .techCard .ds { color:#9a8fc0; font-size:11px; margin-top:6px; line-height:1.5; min-height:34px; }
+  .techCard .lv { color:#6fd3ff; font-size:13px; margin-top:8px; }
+  .techCard .cost { color:#ffd75e; font-size:14px; margin-top:4px; }
+  .techCard .pre { color:#ff9a5d; font-size:10px; margin-top:4px; }
+  .techCard .pips { display:flex; justify-content:center; gap:4px; margin-top:9px; }
+  .techCard .pip { width:13px; height:13px; border-radius:50%; background:#2a1b4a; border:1px solid #6fd3ff; transition:.15s; }
+  .techCard .pip.on { background:#6fd3ff; box-shadow:0 0 8px rgba(111,211,255,.65); }
+  .techCard .maxedTag { color:#39d98a; font-size:13px; letter-spacing:1px; margin-top:4px; }
+  .techCard .req { color:#ff9a5d; font-size:10px; margin-top:6px; line-height:1.4; }
+  .techCard.poor .cost { color:#ff5d5d; }
+
+  /* ---------- overlays ---------- */
+  .overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(5,8,14,.82); z-index:20; pointer-events:auto; }
+  .hidden { display:none !important; }
+
+  /* ---------- 主菜单 ---------- */
+  #menu { justify-content:flex-start; padding:7vh 40px 0; overflow-y:auto; background:transparent; }
+  #menu > *:not(.menuBg) { position:relative; z-index:1; }
+  .menuBg { position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
+  #menu h1 { font-size:64px; font-weight:900; letter-spacing:18px; text-align:center;
+    background:linear-gradient(180deg,#fffce8 0%,#ffd75e 40%,#c88a1a 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 0 24px rgba(255,190,60,.55)) drop-shadow(0 4px 0 rgba(90,60,10,.6));
+    animation:titlePulse 3s ease-in-out infinite; }
+  @keyframes titlePulse { 0%,100%{filter:drop-shadow(0 0 24px rgba(255,190,60,.55)) drop-shadow(0 4px 0 rgba(90,60,10,.6));} 50%{filter:drop-shadow(0 0 44px rgba(255,200,80,.85)) drop-shadow(0 4px 0 rgba(90,60,10,.6));} }
+  #menu .sub { color:#9fbfe8; margin:12px 0 30px; font-size:16px; letter-spacing:3px; text-align:center; line-height:1.9; text-shadow:0 0 12px rgba(120,180,255,.35); }
+  #modeCards { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; max-width:1200px; }
+  .modeCard { pointer-events:auto; cursor:pointer; width:320px; padding:28px 26px 24px; border-radius:20px;
+    background:linear-gradient(170deg,rgba(22,42,67,.92),rgba(10,20,34,.92)); border:1px solid rgba(110,170,255,.35);
+    text-align:center; transition:.25s; position:relative; overflow:hidden; opacity:0; transform:translateY(30px);
+    animation:cardIn .65s cubic-bezier(.22,.61,.36,1) forwards; backdrop-filter:blur(4px); }
+  .modeCard:nth-child(1){animation-delay:.1s;}
+  .modeCard:nth-child(2){animation-delay:.25s;}
+  .modeCard:nth-child(3){animation-delay:.4s;}
+  @keyframes cardIn { to { opacity:1; transform:translateY(0);} }
+  .modeCard::before { content:""; position:absolute; top:0; left:0; right:0; height:4px;
+    background:var(--mc,#ffd75e); }
+  .modeCard::after { content:""; position:absolute; inset:-1px; border-radius:20px; padding:1px;
+    background:linear-gradient(120deg,transparent 30%,var(--mc,transparent) 50%,transparent 70%); opacity:0;
+    -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
+    transition:.25s; }
+  .modeCard:hover { transform:translateY(-10px) scale(1.02); border-color:var(--mc,#ffd75e);
+    box-shadow:0 20px 50px rgba(0,0,0,.55),0 0 30px var(--mcGlow,rgba(255,215,94,.15)); }
+  .modeCard:hover::after { opacity:1; animation:borderFlow 2.2s linear infinite; }
+  @keyframes borderFlow { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+  .modeCard.soon { opacity:.55; cursor:not-allowed; animation:none; }
+  .modeCard.soon:hover { transform:none; border-color:rgba(110,170,255,.35); box-shadow:none; }
+  .mcIcon { font-size:54px; filter:drop-shadow(0 0 10px var(--mcGlow,rgba(255,215,94,.35))); }
+  .mcName { font-size:28px; font-weight:800; color:#fff4c2; margin-top:12px; letter-spacing:4px; }
+  .mcTag { font-size:13px; color:#8ec8ff; margin-top:8px; letter-spacing:1px; }
+  .mcFeats { list-style:none; margin:18px 0 20px; text-align:left; padding:0 16px; }
+  .mcFeats li { font-size:13px; color:#a9c3df; line-height:1.95; padding-left:18px; position:relative; }
+  .mcFeats li::before { content:"▸"; position:absolute; left:0; color:var(--mc,#ffd75e); }
+  .mcBtn { display:inline-block; border:1px solid var(--mc,#ffd75e); color:var(--mc,#ffd75e);
+    font-size:15px; letter-spacing:3px; padding:11px 32px; border-radius:14px; transition:.15s; margin-top:4px; }
+  .modeCard:not(.soon):hover .mcBtn { background:var(--mc,#ffd75e); color:#0a0d12; font-weight:700; }
+  .soonBtn { border-color:#5b7291; color:#5b7291; }
+  .shake { animation:shake .4s; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  #menu .foot { margin-top:34px; font-size:12px; color:#5b7291; letter-spacing:2px; text-align:center; line-height:2; }
+  @keyframes twinkle { 0%{opacity:.1;} 100%{opacity:.55;} }
+
+  .btn { pointer-events:auto; cursor:pointer; border:1px solid rgba(140,200,255,.5);
+    background:linear-gradient(180deg,#1c3355,#12233d); color:#dff0ff; font-size:18px;
+    letter-spacing:4px; padding:14px 58px; border-radius:12px; transition:.18s; }
+  .btn:hover { background:linear-gradient(180deg,#2a4a78,#1a3055); transform:translateY(-2px);
+    box-shadow:0 8px 24px rgba(60,140,255,.35); }
+  .btn.ghost { background:transparent; border-color:rgba(120,140,170,.5); color:#8fa8c8;
+    font-size:15px; letter-spacing:3px; padding:10px 34px; margin-top:14px; }
+  .btn.ghost:hover { background:rgba(120,140,170,.12); box-shadow:none; }
+
+  #upgrade h2 { font-size:30px; color:#ffd75e; letter-spacing:6px; margin-bottom:8px;
+    text-shadow:0 0 24px rgba(255,190,60,.5); }
+  #upgrade .tip { color:#8fa8c8; font-size:13px; margin-bottom:26px; letter-spacing:2px; }
+  #build h2 { font-size:30px; color:#7ec8ff; letter-spacing:6px; margin-bottom:8px;
+    text-shadow:0 0 24px rgba(90,180,255,.5); }
+  #build .tip { color:#8fa8c8; font-size:13px; margin-bottom:22px; letter-spacing:2px; text-align:center; line-height:1.8; }
+  #shop { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; padding:0 20px; max-width:1200px; }
+  .shopItem { pointer-events:auto; cursor:pointer; width:172px; padding:16px 12px 13px; border-radius:14px;
+    background:linear-gradient(170deg,#142338,#0c1524); border:1px solid rgba(110,170,255,.3);
+    text-align:center; transition:.15s; position:relative; }
+  .shopItem:hover { transform:translateY(-5px); border-color:#7ec8ff; box-shadow:0 10px 28px rgba(80,160,255,.25); }
+  .shopItem.sel { border-color:#ffd75e; background:linear-gradient(170deg,#2a3a1e,#16240f);
+    box-shadow:0 0 24px rgba(255,215,94,.3); }
+  .shopItem.poor { opacity:.45; }
+  .shopItem .ic { font-size:34px; }
+  .shopItem .nm { color:#dff0ff; font-size:15px; font-weight:bold; margin-top:6px; letter-spacing:1px; }
+  .shopItem .pr { color:#ffd75e; font-size:14px; margin-top:4px; }
+  .shopItem .ds { color:#7f92ab; font-size:11px; margin-top:6px; line-height:1.55; min-height:34px; }
+  .shopItem .hk { position:absolute; top:6px; left:8px; color:#5b7291; font-size:11px; }
+  #cards { display:flex; gap:22px; flex-wrap:wrap; justify-content:center; padding:0 20px; }
+  .card { pointer-events:auto; cursor:pointer; width:220px; padding:26px 20px 22px; border-radius:16px;
+    background:linear-gradient(170deg,#16263f,#0d1728); border:1px solid rgba(110,170,255,.35);
+    text-align:center; transition:.18s; }
+  .card:hover { transform:translateY(-8px); border-color:#ffd75e;
+    box-shadow:0 14px 40px rgba(255,190,60,.25); }
+  .card.base-card { border-color:rgba(80,220,160,.45); }
+  .card.base-card:hover { border-color:#39d98a; box-shadow:0 14px 40px rgba(60,220,140,.25); }
+  .card .rtag { position:absolute; top:10px; right:12px; font-size:11px; letter-spacing:2px;
+    padding:2px 8px; border-radius:8px; }
+  .card { position:relative; }
+  .card.rar1 .rtag { color:#9fb4cc; background:rgba(120,140,170,.18); }
+  .card.rar2 { border-color:rgba(90,160,255,.75); box-shadow:0 0 18px rgba(80,150,255,.22) inset; }
+  .card.rar2 .rtag { color:#7ec4ff; background:rgba(70,130,220,.25); }
+  .card.rar2:hover { border-color:#7ec4ff; }
+  .card.rar3 { border-color:rgba(255,200,70,.85); box-shadow:0 0 22px rgba(255,190,50,.3) inset; }
+  .card.rar3 .rtag { color:#ffd75e; background:rgba(200,150,30,.28); }
+  .card.rar3:hover { border-color:#ffd75e; transform:translateY(-10px); }
+  .card .icon { font-size:44px; margin-bottom:12px; }
+  .card .name { font-size:19px; font-weight:700; color:#ffe89a; margin-bottom:10px; letter-spacing:1px; }
+  .card.base-card .name { color:#8af0bd; }
+  .card .desc { font-size:13px; color:#9db6d4; line-height:1.7; }
+  .card .lv { display:inline-block; margin-top:12px; font-size:11px; color:#6fd3ff;
+    border:1px solid rgba(110,210,255,.4); border-radius:20px; padding:2px 12px; }
+
+  #gameover h1 { font-size:54px; color:#ff5d5d; letter-spacing:10px; text-shadow:0 0 30px rgba(255,60,60,.6); }
+  #gameover .stats { color:#a9bdd6; font-size:16px; margin:22px 0 26px; text-align:center; line-height:2; letter-spacing:1px; }
+  #gameover .stats b { color:#ffd75e; font-size:22px; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" class="hidden">
+  <div id="topLeft" class="panel">
+    <h1>⚔ 坦克大战 3D · <span id="modeName">巷战</span></h1>
+    <div class="row hero-only"><span>生命</span><b id="lives">3</b></div>
+    <div class="row hero-only"><span>装甲</span><b id="hpText">5 / 5</b></div>
+    <div id="hpBarWrap" class="hero-only"><div id="hpBar"></div></div>
+    <div class="row"><span id="baseShieldLabel">基地护盾</span><b id="baseShieldText">—</b></div>
+    <div id="baseBarWrap"><div id="baseBar"></div></div>
+    <div class="row"><span>分数</span><b id="score">0</b></div>
+    <div class="row" id="goldRow"><span>💰 金币</span><b id="gold" style="color:#ffd75e">0</b></div>
+    <div class="row" id="survivalRes"><span>👥 人口</span><b id="popText" style="color:#8af0bd">0/12</b><span style="margin-left:14px">🧪 科技</span><b id="techText" style="color:#8be0ff">0</b></div>
+    <div id="buffs"></div>
+  </div>
+
+  <div id="waveInfo" class="panel">WAVE 1<div id="enemyLeft"></div></div>
+
+  <!-- ★ P4-5 底部常驻 HUD：小地图 | 状态面板/命令卡 | 资源速览 -->
+  <div id="wc3dock">
+    <div id="mmDock" class="panel"><canvas id="minimap" width="176" height="176"></canvas></div>
+    <div id="cmdWrap">
+      <div id="selPanel" class="panel">
+        <div class="spIcon" id="spIcon">🚫</div>
+        <div class="spMain">
+          <div class="spName" id="spName">未选中</div>
+          <div class="spStat" id="spStat">左键点击单位 / 建筑 / 敌人查看状态</div>
+          <div class="spBar" id="spBarWrap" style="display:none"><div class="spBarFg" id="spBarFg" style="width:100%"></div></div>
+        </div>
+        <div class="spActs" id="spActs"></div>
+      </div>
+      <div id="cmdcard" class="panel"></div>
+    </div>
+    <div id="resDock" class="panel">
+      <div class="rr"><span>💰 金币</span><b class="gold" id="dockGold">0</b></div>
+      <div class="rr" id="dockPopRow"><span>👥 人口</span><b id="dockPop">0/12</b></div>
+      <div class="rr" id="dockTechRow"><span>🧪 科技</span><b id="dockTech" style="color:#8be0ff">0</b></div>
+      <div class="rr"><span>💎 大门</span><b id="dockGate" style="color:#7ec8ff">—</b></div>
+    </div>
+  </div>
+  <div id="wc3tip" style="display:none"></div>
+  <div id="announce"></div>
+  <div id="prepBar">⏱ 准备阶段</div>
+  <div id="questPanel"></div>
+  <div id="hintWC3">右键 移动/攻击 · A+左键 攻击移动 · S 停止 · B 商店 · T 科技 · G 大门 · 空格 跳转基地 · 滚轮 缩放</div>
+  <div id="hint">WASD 移动 · 鼠标瞄准 · 左键/空格 开火 · B 商店/构筑 · T 科技树 · P 空袭轰炸 · ESC 暂停 · 高地与坡道可行驶</div>
+</div>
+
+<div id="menu" class="overlay">
+  <svg class="menuBg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="bgGrad" cx="50%" cy="40%" r="85%">
+        <stop offset="0%" stop-color="#152238"/>
+        <stop offset="45%" stop-color="#0a111c"/>
+        <stop offset="100%" stop-color="#05080d"/>
+      </radialGradient>
+      <pattern id="gridPat" width="64" height="64" patternUnits="userSpaceOnUse">
+        <path d="M 64 0 L 0 0 0 64" fill="none" stroke="rgba(80,140,200,.09)" stroke-width="1"/>
+      </pattern>
+      <linearGradient id="beamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="rgba(255,215,94,0)"/>
+        <stop offset="45%" stop-color="rgba(255,215,94,.14)"/>
+        <stop offset="100%" stop-color="rgba(255,215,94,0)"/>
+      </linearGradient>
+      <linearGradient id="horizonGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="rgba(120,180,255,0)"/>
+        <stop offset="100%" stop-color="rgba(120,180,255,.08)"/>
+      </linearGradient>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#bgGrad)"/>
+    <rect width="100%" height="100%" fill="url(#gridPat)"/>
+    <rect x="0" y="760" width="1920" height="1" fill="rgba(120,180,255,.14)"/>
+    <rect x="0" y="760" width="1920" height="120" fill="url(#horizonGrad)" opacity=".35"/>
+    <path d="M140 760 L140 620 L200 620 L200 580 L260 580 L260 620 L320 620 L320 760 Z" fill="#0d1b2a"/>
+    <path d="M1580 760 L1580 640 L1640 600 L1700 640 L1700 760 Z" fill="#0d1b2a"/>
+    <g transform="translate(700,720) scale(1.2)">
+      <path d="M0,45 L220,45 L245,22 L290,22 L290,58 L245,70 L0,70 Z" fill="#1f4520"/>
+      <rect x="80" y="6" width="145" height="28" rx="5" fill="#2a5e26"/>
+      <rect x="205" y="-12" width="105" height="12" fill="#367030"/>
+      <circle cx="45" cy="70" r="22" fill="#142a12"/>
+      <circle cx="175" cy="70" r="22" fill="#142a12"/>
+    </g>
+    <g transform="translate(1050,745) scale(.75)">
+      <path d="M0,45 L220,45 L245,22 L290,22 L290,58 L245,70 L0,70 Z" fill="#1a3a1b"/>
+      <rect x="80" y="6" width="145" height="28" rx="5" fill="#234f22"/>
+      <rect x="205" y="-12" width="105" height="12" fill="#2d632a"/>
+      <circle cx="45" cy="70" r="22" fill="#10220f"/>
+      <circle cx="175" cy="70" r="22" fill="#10220f"/>
+    </g>
+    <polygon points="260,-120 520,760 760,760" fill="url(#beamGrad)" opacity=".55"/>
+    <polygon points="1300,-120 1040,760 1500,760" fill="url(#beamGrad)" opacity=".4"/>
+    <circle cx="1640" cy="240" r="110" fill="rgba(255,120,40,.08)" filter="url(#glow)"/>
+    <circle cx="1640" cy="240" r="52" fill="rgba(255,180,60,.14)" filter="url(#glow)"/>
+  </svg>
+  <h1>坦克大战 3D</h1>
+  <div class="sub">三种玩法 · 一套引擎 —— 选择你的战场</div>
+  <div id="modeCards"></div>
+  <div class="foot">v0.8 三模式合辑 · WASD 移动 · 鼠标瞄准射击 · 坡道可开上高地 · ESC 暂停</div>
+</div>
+
+<div id="upgrade" class="overlay hidden">
+  <h2>⚡ 波次肃清 · 选择强化 ⚡</h2>
+  <div class="tip">🛡 绿色为基地流 · 🔥 黄色为坦克流 —— 三选一</div>
+  <div id="cards"></div>
+</div>
+
+<div id="build" class="overlay hidden">
+  <h2>🔧 构筑阶段 · 布置防线</h2>
+  <div class="tip">选择设施 → 点击地图放置（右键取消）· 金币来自击杀与肃清奖励 · 构筑物跨波次永久存在</div>
+  <div id="shop"></div>
+  <div style="margin-top:20px;font-size:22px;color:#ffd75e;">💰 金币 <span id="goldBig">0</span></div>
+  <div style="margin-top:8px;font-size:19px;">⏱ 下一波来袭 <span id="buildTimer" style="color:#ffd75e;font-weight:bold;">45</span> 秒</div>
+  <button class="btn ghost" id="destroyToggle">🧹 拆除模式（点击已建建筑回收50%金币）</button>
+  <br><button class="btn" id="buildDoneBtn">✅ 完成构筑 · 抽取强化卡</button>
+</div>
+
+<div id="gateUp" class="overlay hidden">
+  <h2>💎 大门成长 · 强化基地</h2>
+  <div class="tip">升级大门获得更强防御 —— 强化永续，跨波次保留 · <b>G</b> 键开/关</div>
+  <div id="gateUpList"></div>
+  <br><button class="btn ghost" id="gateUpDoneBtn">✅ 完 成</button>
+</div>
+
+<div id="settle" class="overlay hidden">
+  <h2>🏆 第 15 波 荣耀肃清！</h2>
+  <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— Boss 将在第 16 波起周期性降临！</div>
+  <div class="settleBtns">
+    <button class="btn" id="settleWinBtn">🏆 胜 利 结 算</button>
+    <button class="btn ghost" id="settleEndlessBtn">♾️ 进 入 无 尽 模 式</button>
+  </div>
+</div>
+
+<div id="tech" class="overlay hidden">
+  <h2>🧬 科技树 · 升级全局科技</h2>
+  <div class="tip">战斗中进行决策：花费金币解锁 / 升级科技（部分科技需要先解锁前置）· <b>T</b> 键关闭</div>
+  <div id="techBranches"></div>
+  <br><button class="btn ghost" id="techDoneBtn">✅ 完 成</button>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <h1 style="font-size:44px;color:#cfe3ff;letter-spacing:12px;">已 暂 停</h1>
+  <br><button class="btn" id="resumeBtn">继 续</button>
+  <button class="btn ghost" id="pauseMenuBtn">返回主菜单</button>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <h1>GAME OVER</h1>
+  <div class="stats" id="finalStats"></div>
+  <button class="btn" id="restartBtn">再 来 一 局</button>
+  <button class="btn ghost" id="menuBtn">返回主菜单</button>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/GLTFLoader.js"></script>
+<script src="js/lib/SkeletonUtils.js"></script>
+<script src="js/config.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>

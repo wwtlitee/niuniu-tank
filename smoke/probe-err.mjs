@@ -1,0 +1,25 @@
+/* 最小错误捕获：加载页面，dump title、脚本响应码、首条错误 */
+import { chromium } from "playwright";
+const URL = process.argv[2] || "http://127.0.0.1:8001/";
+const log = (...a) => console.log("[probe]", ...a);
+const errs = [];
+const resp = [];
+const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
+const page = await (await browser.newContext()).newPage();
+page.on("pageerror", e => errs.push("PAGEERROR: " + String(e?.stack || e)));
+page.on("console", m => { if (m.type() === "error" || m.type() === "warning") errs.push(`[${m.type()}] ${m.text()}`); });
+page.on("response", r => { const u = r.url(); if (/\.(js|html|glb)/.test(u)) resp.push(`${r.status()} ${u.replace(URL, "")}`); });
+await page.goto(URL, { waitUntil: "load", timeout: 60000 });
+await page.waitForTimeout(3000);
+log("URL:", URL);
+log("title:", await page.title());
+log("has THREE:", await page.evaluate(() => typeof THREE !== "undefined"));
+log("has GAME_MODES:", await page.evaluate(() => typeof GAME_MODES !== "undefined"));
+log("has state:", await page.evaluate(() => typeof state !== "undefined"));
+log("has assetsReady:", await page.evaluate(() => typeof assetsReady !== "undefined"));
+log("modeCard:", await page.evaluate(() => document.querySelectorAll(".modeCard").length));
+log("--- 非200响应 ---");
+resp.filter(r => !r.startsWith("200")).slice(0, 40).forEach(r => log("  ", r));
+log("--- 错误/警告 ---");
+errs.slice(0, 40).forEach(e => log("  ", e.split("\n").slice(0, 4).join(" | ")));
+await browser.close();
