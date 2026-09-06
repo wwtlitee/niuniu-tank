@@ -9,22 +9,22 @@ const MODE_CARDS = [
   {
     key: "classic",
     ...GAME_MODES.classic,
-    desc: "经典巷战防守：守护鹰旗，一波波击退敌军，每波肃清后三选一强化。小地图、高密度掩体，回归纯粹的坦克肉鸽。",
-    features: ["31 格经典小地图", "无构筑 · 纯三选一强化", "五型敌军 + 精英词缀", "BOSS 每 5 波来袭"],
+    desc: "经典坦克大战融合肉鸽：你开坦克打坦克，砖墙老鹰还在，清波三选一。镜头锁定看全图。",
+    features: ["13×13 砖钢水林 + 老鹰", "玩家坦克 WASD + 鼠标开火", "敌方坦克波次 · 无丧尸", "清波三选一 + 星铲炸弹命"],
     state: "ready",
   },
   {
     key: "survival",
     ...GAME_MODES.survival,
-    desc: "高台生存：单点咽喉 + 金矿每秒产金 + 科技树投资。30 秒发育期布局，撑过 15 波击杀最终 Boss，可选择【胜利】收官或【无尽】继续滚雪球。",
-    features: ["47 格高台 + 单坡口", "金矿每秒产金 · 6 级升级", "7 分支科技树 · 即时生效", "15 波胜利 · 无尽分支"],
+    desc: "高台生存：单点咽喉 + 金矿每秒产金 + 科技树投资。30 秒发育期布局，撑过 30 波并击杀最终 Boss，可选择【胜利】收官或【无尽】继续滚雪球。",
+    features: ["47 格高台 + 单坡口", "金矿每秒产金 · 6 级升级", "7 分支科技树 · 即时生效", "30 波胜利 · 每 5 波 Boss"],
     state: "ready",
   },
   {
     key: "td",
     ...GAME_MODES.td,
-    desc: "固定路径刷怪，沿途布置塔防炮台与坦克火力位，规划你的死亡走廊。",
-    features: ["固定进攻路线", "多种防御塔", "坦克位升级", "规划式塔防"],
+    desc: "高速赛道上的装甲竞逐：抢道具、打干扰、在弯道和火力中争夺第一。",
+    features: ["非卡通军事赛道", "随机战斗道具", "坦克互相攻击", "竞速与生存并行"],
     state: "soon",
   },
 ];
@@ -45,15 +45,12 @@ function buildHome() {
     card.className = "modeCard" + (m.state === "soon" ? " soon" : "");
     card.style.setProperty("--mc", m.color);
     card.style.setProperty("--mcGlow", hexToRgba(m.color, 0.18));
-    const feats = m.features.map(f => `<li>${f}</li>`).join("");
     card.innerHTML = `
-      <div class="mcIcon">${m.icon}</div>
-      <div class="mcName">${m.name}</div>
-      <div class="mcTag">${m.tagline}</div>
-      <ul class="mcFeats">${feats}</ul>
+      <div class="mcPreview" data-preview="${m.key}"></div>
+      <div class="mcName">${m.key === "classic" ? "经典" : m.key === "survival" ? "生存" : "竞速"}</div>
       ${m.state === "soon"
-        ? `<div class="mcBtn soonBtn">即将上线</div>`
-        : `<div class="mcBtn">进入战场 →</div>`}
+        ? `<div class="mcBtn soonBtn">敬请期待</div>`
+        : `<div class="mcBtn">${m.key === "classic" ? "进入游戏" : "进入战场"} →</div>`}
     `;
     card.addEventListener("click", () => {
       if (m.state === "soon") {
@@ -63,13 +60,20 @@ function buildHome() {
         setTimeout(() => { b.textContent = "即将上线"; b.classList.remove("shake"); }, 1200);
         return;
       }
+      if (m.key === "classic") { location.href = "classic.html"; return; }
       enterMode(m.key);
     });
     wrap.appendChild(card);
   });
 }
 
-function enterMode(key) {
+function refreshSaveButton(){
+  const continueBtn=document.getElementById("continueBtn"),has=!!readSurvivalSnapshot();
+  if(continueBtn)continueBtn.disabled=!has;
+  const hint=document.getElementById("saveHint");if(hint)hint.textContent=has?"已有生存进度":"暂无生存存档";
+}
+
+function enterMode(key, continueGame = false) {
   const m = setActiveMode(key);
   applyModeConfig(m);
   /* 经典/塔防无金币系统：隐藏 HUD 金币行 */
@@ -91,6 +95,10 @@ function enterMode(key) {
         clearInterval(tick);
         el.remove();
         resetGame();
+        if (continueGame && key === "survival") {
+          const snapshot = readSurvivalSnapshot();
+          if (!restoreSurvivalSnapshot(snapshot)) toast("没有可继续的生存存档");
+        }
         return;
       }
       const [d, t] = assetsProgress();
@@ -99,14 +107,18 @@ function enterMode(key) {
     return;
   }
   resetGame();
+  if(continueGame&&key==="survival"){
+    const snapshot=readSurvivalSnapshot();
+    if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
+  }
 }
 
 /* 返回主菜单（游戏结束/暂停时） */
 function backToMenu() {
   /* 清空场上实体，回到菜单背景 */
-  [...enemies].forEach(e => { scene.remove(e.group); if (e.beam) scene.remove(e.beam); });
+  [...enemies].forEach(e => { scene.remove(e.group); if (e.beam) { scene.remove(e.beam); disposeTransientObject3D(e.beam); } });
   enemies.length = 0;
-  [...bullets].forEach(b => scene.remove(b.mesh)); bullets.length = 0;
+  [...bullets].forEach(b => { scene.remove(b.mesh); disposeTransientObject3D(b.mesh); }); bullets.length = 0;
   [...particles].forEach(p => scene.remove(p.mesh)); particles.length = 0;
   [...powerups].forEach(p => scene.remove(p.group)); powerups.length = 0;
   builtTurrets.forEach(t => scene.remove(t.group)); builtTurrets.length = 0;
@@ -117,6 +129,7 @@ function backToMenu() {
   });
   document.getElementById("hud").classList.add("hidden");
   document.getElementById("menu").classList.remove("hidden");
+  refreshSaveButton();
   state = STATE.MENU;
   genMap(1);
   camera.position.set(0, 52, 38);
@@ -129,6 +142,10 @@ function bindHome() {
   if (menuBtn) menuBtn.addEventListener("click", backToMenu);
   const pauseMenuBtn = document.getElementById("pauseMenuBtn");
   if (pauseMenuBtn) pauseMenuBtn.addEventListener("click", backToMenu);
+  const newGameBtn=document.getElementById("newGameBtn");
+  if(newGameBtn)newGameBtn.addEventListener("click",()=>{clearSurvivalSnapshot();enterMode("survival",false);});
+  const continueBtn=document.getElementById("continueBtn");
+  if(continueBtn){continueBtn.addEventListener("click",()=>{if(!continueBtn.disabled)enterMode("survival",true);});refreshSaveButton();}
 }
 
 /* 给菜单 SVG 背景加随机闪烁的战场光点/火花 */
@@ -154,6 +171,7 @@ function buildMenuBackground() {
 
 /* 脚本位于 body 末尾，DOM 已就绪，直接初始化 */
 buildHome();
+if (typeof window.initMenuShowcase === "function") window.initMenuShowcase();
 buildMenuBackground();
 bindHome();
 

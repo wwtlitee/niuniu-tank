@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <link rel="icon" href="data:,">
 <meta charset="UTF-8">
 <title>坦克大战 3D · 三模式合辑</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { width:100%; height:100%; overflow:hidden; background:#0a0d12;
+  html,body { width:100vw; min-width:100%; height:100vh; min-height:100%; overflow:hidden; background:#0a0d12;
     font-family:"Segoe UI","Microsoft YaHei",sans-serif; user-select:none; }
-  #game { position:absolute; inset:0; }
+  #game { position:absolute; inset:0; width:100vw; height:100vh; overflow:hidden; }
   canvas { display:block; }
 
   /* ---------- HUD ---------- */
@@ -73,6 +74,19 @@
   /* 左：小地图（WC3 左下角） */
   #mmDock { padding:8px; margin-bottom:2px; }
   #mmDock canvas { display:block; image-rendering:pixelated; width:176px; height:176px; }
+
+  /* 重工厂生产栏：独立于选中面板，固定在小地图右侧，始终展示进行中的生产。 */
+  #factoryQueueDock { width:190px; min-height:116px; max-height:176px; padding:9px 10px; margin-bottom:2px; overflow:hidden; }
+  #factoryQueueDock[hidden] { display:none; }
+  .globalQueueTitle { color:#ffd75e; font-size:12px; letter-spacing:1px; margin-bottom:7px; }
+  .globalQueueFactory { border-top:1px solid rgba(167,122,53,.35); padding-top:5px; margin-top:5px; }
+  .globalQueueFactory:first-of-type { border-top:0; padding-top:0; margin-top:0; }
+  .globalQueueName { color:#d9e2ec; font-size:11px; margin-bottom:4px; }
+  .globalQueueItems { display:flex; gap:3px; flex-wrap:wrap; min-height:19px; }
+  .globalQueueItems span { padding:2px 4px; color:#c9d6e5; background:rgba(110,130,150,.2); border:1px solid rgba(110,170,255,.22); font-size:10px; }
+  .globalQueueItems span.current { color:#ffd75e; border-color:rgba(224,185,95,.65); }
+  .globalQueueBar { height:5px; margin-top:5px; background:#151b25; border:1px solid rgba(255,255,255,.12); }
+  .globalQueueBar i { display:block; height:100%; background:linear-gradient(90deg,#c69a45,#f5d37d); }
 
   /* 中：状态面板 ↔ 命令卡 双态容器 */
   #cmdWrap { display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:2px; }
@@ -150,27 +164,28 @@
   #settle .tip { color:#8fa8c8; font-size:14px; margin-bottom:28px; letter-spacing:2px; text-align:center; line-height:1.9; }
   #settle .settleBtns { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
 
-  #tech h2 { font-size:30px; color:#b98fff; letter-spacing:6px; margin-bottom:8px;
-    text-shadow:0 0 24px rgba(150,110,255,.5); }
-  #tech .tip { color:#8fa8c8; font-size:13px; margin-bottom:22px; letter-spacing:2px; text-align:center; line-height:1.8; }
+  #tech { background:radial-gradient(circle at 50% 35%,rgba(64,56,42,.96),rgba(13,11,8,.99) 64%); }
+  #tech h2 { font-size:30px; color:#e0b95f; letter-spacing:6px; margin-bottom:8px;
+    text-shadow:0 2px #000,0 0 18px rgba(167,122,53,.36); }
+  #tech .tip { color:#bcb08f; font-size:13px; margin-bottom:22px; letter-spacing:2px; text-align:center; line-height:1.8; }
   #techBranches { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; padding:0 20px; max-width:1200px; }
-  .techCard { pointer-events:auto; cursor:pointer; width:186px; padding:18px 14px 15px; border-radius:14px;
-    background:linear-gradient(170deg,#25163f,#120a22); border:1px solid rgba(150,120,255,.35);
+  .techCard { pointer-events:auto; cursor:pointer; width:186px; padding:18px 14px 15px; border-radius:2px;
+    background:linear-gradient(145deg,#3d3528,#17130e 56%,#0c0a08); border:2px outset #8e6d37;
     text-align:center; transition:.15s; position:relative; }
-  .techCard:hover:not(.locked):not(.maxed) { transform:translateY(-5px); border-color:#b98fff;
-    box-shadow:0 10px 28px rgba(130,90,255,.3); }
+  .techCard:hover:not(.locked):not(.maxed) { transform:translateY(-2px); border-color:#e0b95f;
+    box-shadow:inset 0 0 16px #000,0 6px 18px rgba(167,122,53,.25); }
   .techCard.locked { opacity:.5; cursor:not-allowed; }
   .techCard.maxed { border-color:#39d98a; }
   .techCard.sel { border-color:#ffd75e; box-shadow:0 0 24px rgba(255,215,94,.25); }
   .techCard .ic { font-size:32px; }
-  .techCard .nm { color:#e6dcff; font-size:15px; font-weight:bold; margin-top:6px; letter-spacing:1px; }
-  .techCard .ds { color:#9a8fc0; font-size:11px; margin-top:6px; line-height:1.5; min-height:34px; }
-  .techCard .lv { color:#6fd3ff; font-size:13px; margin-top:8px; }
+  .techCard .nm { color:#e8d8ad; font-size:15px; font-weight:bold; margin-top:6px; letter-spacing:1px; }
+  .techCard .ds { color:#a99d7f; font-size:11px; margin-top:6px; line-height:1.5; min-height:34px; }
+  .techCard .lv { color:#d1b368; font-size:13px; margin-top:8px; }
   .techCard .cost { color:#ffd75e; font-size:14px; margin-top:4px; }
   .techCard .pre { color:#ff9a5d; font-size:10px; margin-top:4px; }
   .techCard .pips { display:flex; justify-content:center; gap:4px; margin-top:9px; }
-  .techCard .pip { width:13px; height:13px; border-radius:50%; background:#2a1b4a; border:1px solid #6fd3ff; transition:.15s; }
-  .techCard .pip.on { background:#6fd3ff; box-shadow:0 0 8px rgba(111,211,255,.65); }
+  .techCard .pip { width:13px; height:13px; border-radius:1px; background:#17130e; border:1px solid #806330; transition:.15s; }
+  .techCard .pip.on { background:#b38a43; box-shadow:inset 0 0 3px #f0cf7b; }
   .techCard .maxedTag { color:#39d98a; font-size:13px; letter-spacing:1px; margin-top:4px; }
   .techCard .req { color:#ff9a5d; font-size:10px; margin-top:6px; line-height:1.4; }
   .techCard.poor .cost { color:#ff5d5d; }
@@ -181,7 +196,7 @@
   .hidden { display:none !important; }
 
   /* ---------- 主菜单 ---------- */
-  #menu { justify-content:flex-start; padding:7vh 40px 0; overflow-y:auto; background:transparent; }
+  #menu { width:100vw; min-width:100%; height:100vh; min-height:100%; justify-content:flex-start; padding:7vh 40px 0; overflow-y:auto; background:transparent; }
   #menu > *:not(.menuBg) { position:relative; z-index:1; }
   .menuBg { position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
   #menu h1 { font-size:64px; font-weight:900; letter-spacing:18px; text-align:center;
@@ -206,11 +221,10 @@
     background:linear-gradient(120deg,transparent 30%,var(--mc,transparent) 50%,transparent 70%); opacity:0;
     -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
     transition:.25s; }
-  .modeCard:hover { transform:translateY(-10px) scale(1.02); border-color:var(--mc,#ffd75e);
-    box-shadow:0 20px 50px rgba(0,0,0,.55),0 0 30px var(--mcGlow,rgba(255,215,94,.15)); }
-  .modeCard:hover::after { opacity:1; animation:borderFlow 2.2s linear infinite; }
+  .modeCard:hover { transform:none; border-color:transparent; box-shadow:none; }
+  .modeCard:hover::after { opacity:0; animation:none; }
   @keyframes borderFlow { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
-  .modeCard.soon { opacity:.55; cursor:not-allowed; animation:none; }
+  .modeCard.soon { opacity:.55; cursor:default; pointer-events:none; animation:none !important; transition:none !important; transform:none !important; translate:none !important; scale:1 !important; rotate:none !important; }
   .modeCard.soon:hover { transform:none; border-color:rgba(110,170,255,.35); box-shadow:none; }
   .mcIcon { font-size:54px; filter:drop-shadow(0 0 10px var(--mcGlow,rgba(255,215,94,.35))); }
   .mcName { font-size:28px; font-weight:800; color:#fff4c2; margin-top:12px; letter-spacing:4px; }
@@ -220,11 +234,14 @@
   .mcFeats li::before { content:"▸"; position:absolute; left:0; color:var(--mc,#ffd75e); }
   .mcBtn { display:inline-block; border:1px solid var(--mc,#ffd75e); color:var(--mc,#ffd75e);
     font-size:15px; letter-spacing:3px; padding:11px 32px; border-radius:14px; transition:.15s; margin-top:4px; }
-  .modeCard:not(.soon):hover .mcBtn { background:var(--mc,#ffd75e); color:#0a0d12; font-weight:700; }
   .soonBtn { border-color:#5b7291; color:#5b7291; }
   .shake { animation:shake .4s; }
   @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #menu .foot { margin-top:34px; font-size:12px; color:#5b7291; letter-spacing:2px; text-align:center; line-height:2; }
+  #saveFlow { display:flex; justify-content:center; gap:14px; margin:0 0 22px; }
+  #saveFlow .btn { min-width:150px; }
+  #continueBtn[disabled] { opacity:.38; cursor:not-allowed; filter:grayscale(1); }
+  #saveHint { align-self:center; color:#8b9bb5; font-size:12px; letter-spacing:1px; }
   @keyframes twinkle { 0%{opacity:.1;} 100%{opacity:.55;} }
 
   .btn { pointer-events:auto; cursor:pointer; border:1px solid rgba(140,200,255,.5);
@@ -283,6 +300,101 @@
   #gameover h1 { font-size:54px; color:#ff5d5d; letter-spacing:10px; text-shadow:0 0 30px rgba(255,60,60,.6); }
   #gameover .stats { color:#a9bdd6; font-size:16px; margin:22px 0 26px; text-align:center; line-height:2; letter-spacing:1px; }
   #gameover .stats b { color:#ffd75e; font-size:22px; }
+
+  /* ---------- v6.10.4 生存模式：医疗灯塔维修强度 ---------- */
+  :root {
+    --wc3-ink:#100d09; --wc3-stone:#25231e; --wc3-stone-hi:#3c382e;
+    --wc3-bronze:#a77a35; --wc3-bronze-hi:#e0b95f; --wc3-parch:#e8d8ad;
+    --wc3-green:#48e06f; --wc3-red:#b84135;
+  }
+  .factoryQueue { min-width:210px; padding:6px 8px; border:1px solid rgba(198,154,69,.45); background:rgba(18,15,11,.72); }
+  .factoryQueueTitle { color:#f1c86a; font-size:11px; margin-bottom:4px; }
+  .factoryQueueItems { display:flex; gap:5px; flex-wrap:wrap; color:#d9e2ec; font-size:11px; max-width:220px; }
+  .factoryQueueItems span { padding:2px 4px; background:rgba(110,130,150,.18); border-radius:3px; }
+  .factoryProgress { height:4px; margin-top:6px; background:#2a2b31; overflow:hidden; }
+  .factoryProgress i { display:block; height:100%; background:linear-gradient(90deg,#c69a45,#f4dc8a); transition:width .12s linear; }
+  #hud.survival { color:var(--wc3-parch); font-family:Georgia,"Microsoft YaHei",serif; }
+  #mineIncomeLayer { position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:8; }
+  .mineIncomePopup {
+    position:absolute;left:0;top:0;transform:translate(-50%,-50%);will-change:transform,opacity;
+    color:#ffd75e;font:700 18px/1 Georgia,"Microsoft YaHei",serif;letter-spacing:.5px;
+    text-shadow:0 2px 2px #000,0 0 7px rgba(255,190,55,.65);white-space:nowrap;
+  }
+  #hud.survival .panel {
+    background:linear-gradient(145deg,rgba(58,53,42,.97),rgba(20,18,14,.97) 42%,rgba(9,8,7,.98));
+    border:2px solid var(--wc3-bronze); border-radius:2px; backdrop-filter:none;
+    box-shadow:inset 0 0 0 2px #17130d,inset 0 0 22px rgba(0,0,0,.72),0 3px 12px rgba(0,0,0,.6);
+    clip-path:polygon(8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px);
+  }
+  #hud.survival #topLeft { top:10px;left:10px;min-width:250px;padding:11px 14px; }
+  #hud.survival #topLeft h1,#hud.survival #waveInfo { color:var(--wc3-bronze-hi);text-shadow:0 2px #000; }
+  #hud.survival .row { color:#bcb08f; }
+  #hud.survival #waveInfo { top:10px;padding:8px 30px;border-width:2px; }
+  #hud.survival #hpBarWrap,#hud.survival #baseBarWrap,#hud.survival .spBar {
+    background:#080705;border:1px solid #7e6030;border-radius:0;box-shadow:inset 0 2px 5px #000;
+  }
+  #hud.survival #hpBar,#hud.survival .spBarFg { background:linear-gradient(90deg,#256f31,#62d56f); }
+  #hud.survival #baseBar { background:linear-gradient(90deg,#754321,#d19948); }
+
+  #wc3dock {
+    height:clamp(194px,21.5vh,232px);align-items:stretch;justify-content:center;gap:9px;padding:13px 12px 12px;
+    background:linear-gradient(180deg,rgba(13,11,8,.2),rgba(9,8,6,.95) 16%,#080705);
+    border-top:3px ridge #7d6133;
+  }
+  #wc3dock::before { content:"";position:absolute;top:2px;left:0;right:0;height:6px;
+    background:repeating-linear-gradient(90deg,#30291d 0 36px,#8c6b36 36px 39px,#17130e 39px 72px);opacity:.8; }
+  #mmDock { width:194px;height:194px;padding:7px;margin:0;align-self:flex-end; }
+  #mmDock canvas { width:176px;height:176px;border:2px inset #806330;background:#080705; }
+  #cmdWrap { flex-direction:row;align-items:stretch;gap:9px;margin:0;flex:none; }
+  #selPanel { width:min(360px,32vw);height:194px;min-height:194px;padding:12px;gap:10px;align-items:flex-start;overflow:hidden; }
+  #spPortraitFrame { position:relative;width:104px;height:104px;flex:none;border:3px ridge #9b7637;
+    background:radial-gradient(circle,#453c2c,#14110c 72%);box-shadow:inset 0 0 18px #000;overflow:hidden; }
+  #spPortraitCanvas { width:100%;height:100%;display:block;background:radial-gradient(circle at 50% 42%,#484231,#11100d 72%); }
+  #selPanel .spIcon { width:92px;height:92px;border-radius:0;background:radial-gradient(circle,#453c2c,#14110c 72%);
+    border:0;color:var(--wc3-parch);font-size:38px;box-shadow:none;position:absolute;inset:3px;display:none; }
+  #spPortraitGrid { position:absolute;inset:3px;display:none;grid-template-columns:repeat(4,1fr);gap:2px;background:#100d09; }
+  #spPortraitGrid .portraitMini { display:flex;align-items:center;justify-content:center;min-width:0;border:1px solid #806330;
+    background:radial-gradient(circle,#4d4735,#17130e 75%);font-size:17px;color:#e8d8ad;box-shadow:inset 0 0 5px #000; }
+  #selPanel .spName { color:var(--wc3-bronze-hi);font-size:17px;text-transform:uppercase;text-shadow:0 2px #000; }
+  #selPanel .spStat { color:#bdb08f;font-size:12px; }
+  #selPanel .spBtn { border-radius:0;border:2px outset #8b6b36;background:linear-gradient(#4b4030,#201a12);color:var(--wc3-parch); }
+
+  #hud.survival #cmdcard,#hud.survival.hasSel #cmdcard,#hud.survival #selPanel.show ~ #cmdcard {
+    display:grid;grid-template-columns:repeat(4,64px);grid-template-rows:repeat(3,54px);
+    grid-auto-rows:54px;align-content:start;justify-content:center;
+    gap:6px;width:286px;min-width:286px;height:194px;padding:10px 8px;overflow:hidden;flex:none;
+  }
+  .factoryQueue { display:none !important; }
+  .cmdBtn { width:64px;height:54px;min-width:0;overflow:hidden;border-radius:0;border:2px outset #8e6d37;
+    background:linear-gradient(145deg,#403725,#17130d);box-shadow:inset 0 0 9px #000;transition:filter .1s,transform .1s; }
+  .cmdBtn:hover { border-color:var(--wc3-bronze-hi);transform:none;filter:brightness(1.25);box-shadow:inset 0 0 8px #000,0 0 8px rgba(224,185,95,.35); }
+  .cmdBtn .ci { font-size:18px; }
+  .cmdBtn .cn { color:#c9bb98;font-size:9px;margin-top:2px;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .cmdBtn .ck { color:#ffe28c;background:#181109;padding:1px 3px;top:1px;left:2px; }
+  .cmdBtn .cp { bottom:2px;right:3px;font-size:9px; }
+  .cmdBtn .cq { position:absolute;top:1px;right:2px;min-width:12px;padding:0 3px;background:#181109;color:#ffe28c;font-size:10px;text-align:center; }
+  .cmdBtn .cprog { position:absolute;left:0;bottom:0;height:3px;background:linear-gradient(90deg,#c69a45,#f5d37d); }
+  .cmdSlot { width:64px;height:54px;border:2px inset #4a3d28;background:linear-gradient(145deg,#1a1610,#0e0c09);box-shadow:inset 0 0 8px #000;pointer-events:none; }
+  .cmdBtn.active { border-color:#ffe18a;background:linear-gradient(145deg,#745c2b,#241a0c);
+    box-shadow:inset 0 0 0 2px #f2ca68,inset 0 0 10px #000,0 0 10px rgba(242,202,104,.58); }
+  .cmdBtn.disabled { filter:grayscale(1) brightness(.55);opacity:1; }
+  #resDock { width:186px;height:194px;min-width:186px;margin:0;padding:12px 10px;align-self:flex-end; }
+  #resDock .rr { display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 2px;margin:0;
+    border-bottom:1px solid rgba(167,122,53,.28);color:#bdb08f;white-space:nowrap; }
+  #resDock .rr span { flex:none; }
+  #resDock .rr b { overflow:hidden;text-overflow:ellipsis; }
+  #resDock .rr b.gold,#wc3tip .t { color:var(--wc3-bronze-hi); }
+  #hintWC3,#wc3tip { bottom:226px; }
+  #wc3tip { background:rgba(17,13,8,.97);border:2px solid var(--wc3-bronze);border-radius:0;color:var(--wc3-parch); }
+  #prepBar,#questPanel { border-radius:0;background:rgba(24,20,14,.94);border:2px solid var(--wc3-bronze);color:var(--wc3-parch);backdrop-filter:none; }
+  #hud.survival #minimapWrap { display:none; }
+
+  @media (max-width:1100px) {
+    #wc3dock { gap:5px;padding-left:5px;padding-right:5px; }
+    #mmDock { width:160px; } #mmDock canvas { width:142px;height:176px; }
+    #selPanel { width:290px; }
+    #resDock { width:150px;min-width:150px; }
+  }
 </style>
 </head>
 <body>
@@ -298,7 +410,7 @@
     <div id="baseBarWrap"><div id="baseBar"></div></div>
     <div class="row"><span>分数</span><b id="score">0</b></div>
     <div class="row" id="goldRow"><span>💰 金币</span><b id="gold" style="color:#ffd75e">0</b></div>
-    <div class="row" id="survivalRes"><span>👥 人口</span><b id="popText" style="color:#8af0bd">0/12</b><span style="margin-left:14px">🧪 科技</span><b id="techText" style="color:#8be0ff">0</b></div>
+    <div class="row" id="survivalRes"><span>👥 人口</span><b id="popText" style="color:#8af0bd">0/12</b></div>
     <div id="buffs"></div>
   </div>
 
@@ -307,9 +419,14 @@
   <!-- ★ P4-5 底部常驻 HUD：小地图 | 状态面板/命令卡 | 资源速览 -->
   <div id="wc3dock">
     <div id="mmDock" class="panel"><canvas id="minimap" width="176" height="176"></canvas></div>
+    <div id="factoryQueueDock" class="panel" hidden></div>
     <div id="cmdWrap">
       <div id="selPanel" class="panel">
-        <div class="spIcon" id="spIcon">🚫</div>
+        <div id="spPortraitFrame">
+          <canvas id="spPortraitCanvas" width="128" height="128"></canvas>
+          <div class="spIcon" id="spIcon">🚫</div>
+          <div id="spPortraitGrid"></div>
+        </div>
         <div class="spMain">
           <div class="spName" id="spName">未选中</div>
           <div class="spStat" id="spStat">左键点击单位 / 建筑 / 敌人查看状态</div>
@@ -330,7 +447,7 @@
   <div id="announce"></div>
   <div id="prepBar">⏱ 准备阶段</div>
   <div id="questPanel"></div>
-  <div id="hintWC3">右键 移动/攻击 · A+左键 攻击移动 · S 停止 · B 商店 · T 科技 · G 大门 · 空格 跳转基地 · 滚轮 缩放</div>
+  <div id="hintWC3">右键 移动/攻击 · A+左键 攻击移动 · S 停止 · P 巡逻 · B 选基地/建造 · T 选研究院 · G 基地升级 · Shift 多选 · 方向键 移镜头</div>
   <div id="hint">WASD 移动 · 鼠标瞄准 · 左键/空格 开火 · B 商店/构筑 · T 科技树 · P 空袭轰炸 · ESC 暂停 · 高地与坡道可行驶</div>
 </div>
 
@@ -385,9 +502,10 @@
     <circle cx="1640" cy="240" r="52" fill="rgba(255,180,60,.14)" filter="url(#glow)"/>
   </svg>
   <h1>坦克大战 3D</h1>
-  <div class="sub">三种玩法 · 一套引擎 —— 选择你的战场</div>
+  <div class="sub">经典坦克肉鸽独立运行 · 高台生存基地防守</div>
+  <div id="saveFlow"><button class="btn" id="newGameBtn">新游戏</button><button class="btn ghost" id="continueBtn">继续游戏</button><span id="saveHint"></span></div>
   <div id="modeCards"></div>
-  <div class="foot">v0.8 三模式合辑 · WASD 移动 · 鼠标瞄准射击 · 坡道可开上高地 · ESC 暂停</div>
+  <div class="foot">v6.22.0 生存可靠性与战斗结算收口 · ESC 暂停</div>
 </div>
 
 <div id="upgrade" class="overlay hidden">
@@ -414,7 +532,7 @@
 </div>
 
 <div id="settle" class="overlay hidden">
-  <h2>🏆 第 15 波 荣耀肃清！</h2>
+  <h2>🏆 第 30 波 荣耀肃清！</h2>
   <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— Boss 将在第 16 波起周期性降临！</div>
   <div class="settleBtns">
     <button class="btn" id="settleWinBtn">🏆 胜 利 结 算</button>
@@ -423,8 +541,8 @@
 </div>
 
 <div id="tech" class="overlay hidden">
-  <h2>🧬 科技树 · 升级全局科技</h2>
-  <div class="tip">战斗中进行决策：花费金币解锁 / 升级科技（部分科技需要先解锁前置）· <b>T</b> 键关闭</div>
+  <h2>🏛 研究院 · 战地科技</h2>
+  <div class="tip">使用金币研究防御、炮台、坦克和经济四条科技，每条最高十级 · <b>T</b> 键关闭</div>
   <div id="techBranches"></div>
   <br><button class="btn ghost" id="techDoneBtn">✅ 完 成</button>
 </div>
@@ -445,7 +563,11 @@
 <script src="lib/three.min.js"></script>
 <script src="lib/GLTFLoader.js"></script>
 <script src="js/lib/SkeletonUtils.js"></script>
+<script src="js/survival-system.js"></script>
 <script src="js/config.js"></script>
+<script src="js/survival-assets.js"></script>
+<script src="js/terrain-surface.js"></script>
+<script src="js/flow-field.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/home.js"></script>
 </body>

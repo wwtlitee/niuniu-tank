@@ -8,6 +8,14 @@ node_modules/
 
 # 截图/诊断产物（保留脚本，忽略输出）
 smoke/out/
+output/
+.playwright-cli/
+
+# 旧的本地发布镜像；Vercel 与 GameHub 均从项目根入口提供页面
+play/
+
+# 临时工具残留
+console.log(s.address().port))
 
 # 大体积备份
 .workbuddy/backups/

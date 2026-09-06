@@ -1,0 +1,22 @@
+/* Isolated classic combat HUD — v6.22.0 */
+body{background:#181818;color:#ecebe3}
+.panel{background:rgba(24,26,25,.94);border:1px solid #55574d;border-radius:0;backdrop-filter:none;box-shadow:0 8px 24px #0004}
+#classicTop{top:20px;left:20px;min-width:224px;padding:18px 20px;border-top:3px solid #bd4935}
+#classicTop h1{color:#ede9dc;font-size:23px;font-weight:500;letter-spacing:3px;margin-bottom:16px}
+#classicTop h1 small{display:block;color:#aaa99b;font-size:9px;letter-spacing:2px;margin-bottom:8px}
+.row{color:#a7ab9f;font-size:12px;margin-top:9px;font-variant-numeric:tabular-nums}
+.row b{font-weight:500;color:#e6e8dc}
+#classicHp{font-size:12px;margin-top:18px;color:#d4d6c7}
+#classicHpWrap{height:6px;border:0;border-radius:0;background:#363b35}
+#classicHpBar{background:#a5ba82;transition:width .15s}
+#classicHint{top:auto;bottom:20px;right:20px;font-size:11px;line-height:1.9;padding:12px 18px;color:#b7b9ad;border-left:3px solid #a5ba82}
+.overlay{background:rgba(17,20,19,.9);gap:28px;color:#d0d2c7}
+.overlay h2{color:#e8e8de;font-size:28px;font-weight:500;letter-spacing:3px}
+.classicCard{border-radius:0;width:240px;min-height:205px;padding:24px;text-align:left;background:#242924;border:1px solid #596052;transition:transform .15s,border-color .15s}
+.classicCard:hover,.classicCard:focus-visible{transform:translateY(-5px);border-color:#c3cdaa;outline:2px solid #a5ba82;filter:none}
+.ci{font-size:34px;margin-bottom:20px}.cn{font-size:18px;color:#e7e8dc;margin-bottom:12px}.cd{font-size:13px;color:#a9b09f;line-height:1.7}
+.btn{border-radius:0;padding:14px 26px;background:#bd4935;color:white;min-height:46px}
+#classicPause{background:rgba(17,20,19,.85)}
+#classicHint .btn{font-size:11px;min-height:32px;padding:5px 9px;margin-top:6px}
+#classicHint .btn:focus-visible{outline:2px solid #a5ba82;outline-offset:2px}
+@media(max-width:760px){#classicTop{top:8px;left:8px;min-width:175px;padding:10px}#classicTop h1{font-size:16px;margin-bottom:6px}#classicHint{bottom:8px;right:8px}#classicCards{gap:8px;max-width:96vw}.classicCard{width:30vw;padding:12px;min-height:180px}.cn{font-size:15px}}
