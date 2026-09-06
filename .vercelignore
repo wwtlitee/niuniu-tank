@@ -1,0 +1,16 @@
+.git/
+.github/
+.playwright-cli/
+.shots/
+.tmp/
+.workbuddy/
+output/
+play/
+pdoc/
+smoke/
+tests/
+tools/
+assets_src/
+node_modules/
+*.bak-*
+*.log
