@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="data:,">
+  <title>坦克大战 3D · 经典巷战</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html,body { width:100%; height:100%; overflow:hidden; background:#0a0d12;
+      font-family:"Segoe UI","Microsoft YaHei",sans-serif; user-select:none; }
+    #game { position:absolute; inset:0; }
+    canvas { display:block; }
+    #classicHud { position:absolute; inset:0; pointer-events:none; color:#e8eef7; }
+    .panel { background:rgba(10,16,26,.78); border:1px solid rgba(255,215,94,.35);
+      border-radius:10px; backdrop-filter:blur(6px); padding:10px 14px; }
+    #classicTop { position:absolute; top:14px; left:14px; min-width:210px; }
+    #classicTop h1 { font-size:15px; color:#ffd75e; letter-spacing:1px; margin-bottom:6px; }
+    .row { display:flex; justify-content:space-between; gap:16px; font-size:13px; color:#9fb4cc; margin-top:4px; }
+    .row b { color:#fff; }
+    #classicHpWrap { height:10px; background:#1a2333; border-radius:5px; overflow:hidden; margin-top:8px; border:1px solid rgba(255,255,255,.12); }
+    #classicHpBar { height:100%; width:100%; background:linear-gradient(90deg,#39d98a,#7cf7c0); }
+    #classicHint { position:absolute; top:14px; right:14px; font-size:12px; color:#9fb4cc; text-align:right; }
+    .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      background:rgba(6,10,18,.82); pointer-events:auto; gap:16px; }
+    .overlay.hidden { display:none; }
+    .overlay h2 { color:#ffd75e; font-size:28px; }
+    .classicCard { width:200px; padding:16px; background:rgba(20,30,46,.92); border:1px solid rgba(255,215,94,.4);
+      border-radius:12px; cursor:pointer; text-align:center; color:#e8eef7; }
+    .classicCard:hover { filter:brightness(1.15); }
+    #classicCards { display:flex; gap:16px; pointer-events:auto; }
+    .btn { pointer-events:auto; padding:10px 18px; border:0; border-radius:8px; background:#c69a45; color:#1a1408; font-weight:700; cursor:pointer; }
+    .btn.ghost { background:transparent; color:#d9e2ec; border:1px solid rgba(255,255,255,.25); }
+  </style>
+  <link rel="stylesheet" href="js/classic/classic-ui.css">
+</head>
+<body>
+  <div id="game"></div>
+  <div id="classicHud">
+    <div id="classicTop" class="panel">
+      <h1><small>IRON DISTRICT / 01</small>钢铁巷战</h1>
+      <div class="row"><span id="classicWave">WAVE 1</span><b id="classicLives">命 3</b></div>
+      <div class="row"><span id="classicRemaining">敌军 0</span><span>守住老鹰</span></div>
+      <div class="row"><span id="classicScore">分 0</span><b id="classicEagle">老鹰 8 / 8</b></div>
+      <div id="classicHp">装甲 5 / 5</div>
+      <div id="classicHpWrap"><div id="classicHpBar"></div></div>
+    </div>
+    <div id="classicHint" class="panel">WASD 移动 · 鼠标瞄准射击<br>清波三选一 · ESC 暂停 · P 空袭<br><button class="btn ghost" id="classicSound" aria-pressed="false">声音开启 · M</button> <button class="btn ghost" id="classicMusic" aria-pressed="true">配乐开启</button></div>
+  </div>
+  <div id="classicUpgrade" class="overlay hidden">
+    <h2>波次肃清 · 选择强化</h2>
+    <div id="classicCards"></div>
+  </div>
+  <div id="classicPause" class="overlay hidden"><h2>战斗已暂停</h2><button class="btn" id="classicResume">继续战斗</button><button class="btn ghost" onclick="location.href='index.html'">返回菜单</button></div>
+  <div id="classicOver" class="overlay hidden">
+    <h2>GAME OVER</h2>
+    <div id="classicOverText"></div>
+    <div id="classicOverScore"></div>
+    <div>
+      <button class="btn" id="classicRestart">再来一局</button>
+      <button class="btn ghost" id="classicMenu">返回菜单</button>
+    </div>
+  </div>
+  <script src="lib/three.min.js"></script>
+  <script src="lib/GLTFLoader.js"></script>
+  <script src="js/classic/classic-visuals.js"></script>
+  <script src="js/classic/classic-feedback.js"></script>
+  <script src="js/classic/classic-config.js"></script>
+  <script src="js/classic/classic-upgrades.js"></script>
+  <script src="js/classic/classic-rules.js"></script>
+  <script src="js/classic/classic-audio.js"></script>
+  <script src="js/classic/classic-engine.js"></script>
+</body>
+</html>
