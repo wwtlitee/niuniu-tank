@@ -10,6 +10,7 @@ node_modules/
 smoke/out/
 output/
 .playwright-cli/
+.vercel/
 
 # 旧的本地发布镜像；Vercel 与 GameHub 均从项目根入口提供页面
 play/
@@ -24,3 +25,5 @@ console.log(s.address().port))
 Thumbs.db
 ehthumbs.db
 .DS_Store
+
+.vercel
