@@ -1,0 +1,188 @@
+/* =====================================================================
+   js/home.js —— 主菜单 / 模式选择
+   依赖 config.js（GAME_MODES / setActiveMode）与 engine.js（applyModeConfig、
+   resetGame、genMap、playIntro 等全局函数）
+   ===================================================================== */
+"use strict";
+
+const MODE_CARDS = [
+  {
+    key: "classic",
+    ...GAME_MODES.classic,
+    desc: "经典坦克大战融合肉鸽：你开坦克打坦克，砖墙老鹰还在，清波三选一。镜头锁定看全图。",
+    features: ["13×13 砖钢水林 + 老鹰", "玩家坦克 WASD + 鼠标开火", "敌方坦克波次 · 无丧尸", "清波三选一 + 星铲炸弹命"],
+    state: "ready",
+  },
+  {
+    key: "survival",
+    ...GAME_MODES.survival,
+    desc: "高台生存：单点咽喉 + 金矿每秒产金 + 科技树投资。30 秒发育期布局，撑过 30 波并击杀最终 Boss，可选择【胜利】收官或【无尽】继续滚雪球。",
+    features: ["47 格高台 + 单坡口", "金矿每秒产金 · 6 级升级", "7 分支科技树 · 即时生效", "30 波胜利 · 每 5 波 Boss"],
+    state: "ready",
+  },
+  {
+    key: "td",
+    ...GAME_MODES.td,
+    desc: "高速赛道上的装甲竞逐：抢道具、打干扰、在弯道和火力中争夺第一。",
+    features: ["非卡通军事赛道", "随机战斗道具", "坦克互相攻击", "竞速与生存并行"],
+    state: "soon",
+  },
+];
+
+function hexToRgba(hex, a) {
+  const v = hex.replace("#", "");
+  const n = parseInt(v, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function buildHome() {
+  const wrap = document.getElementById("modeCards");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  MODE_CARDS.forEach(m => {
+    const card = document.createElement("div");
+    card.className = "modeCard" + (m.state === "soon" ? " soon" : "");
+    card.style.setProperty("--mc", m.color);
+    card.style.setProperty("--mcGlow", hexToRgba(m.color, 0.18));
+    card.innerHTML = `
+      <div class="mcPreview" data-preview="${m.key}"></div>
+      <div class="mcName">${m.key === "classic" ? "经典" : m.key === "survival" ? "生存" : "竞速"}</div>
+      ${m.state === "soon"
+        ? `<div class="mcBtn soonBtn">敬请期待</div>`
+        : `<div class="mcBtn">${m.key === "classic" ? "进入游戏" : "进入战场"} →</div>`}
+    `;
+    card.addEventListener("click", () => {
+      if (m.state === "soon") {
+        const b = card.querySelector(".mcBtn");
+        b.textContent = "开发中，敬请期待";
+        b.classList.add("shake");
+        setTimeout(() => { b.textContent = "即将上线"; b.classList.remove("shake"); }, 1200);
+        return;
+      }
+      if (m.key === "classic") { location.href = "classic.html"; return; }
+      enterMode(m.key);
+    });
+    wrap.appendChild(card);
+  });
+}
+
+function refreshSaveButton(){
+  const continueBtn=document.getElementById("continueBtn"),has=!!readSurvivalSnapshot();
+  if(continueBtn)continueBtn.disabled=!has;
+  const hint=document.getElementById("saveHint");if(hint)hint.textContent=has?"已有生存进度":"暂无生存存档";
+}
+
+function enterMode(key, continueGame = false) {
+  const m = setActiveMode(key);
+  applyModeConfig(m);
+  /* 经典/塔防无金币系统：隐藏 HUD 金币行 */
+  const goldRow = document.getElementById("goldRow");
+  if (goldRow) goldRow.style.display = m.buildEnabled ? "" : "none";
+  audio();
+  playIntro();
+  document.getElementById("menu").classList.add("hidden");
+  /* 模型未就绪时先等加载完成再开局，避免整局灰盒 */
+  if (!assetsReady()) {
+    const el = document.createElement("div");
+    el.style.cssText =
+      "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;" +
+      "justify-content:center;background:rgba(6,8,18,.82);color:#cfe6ff;" +
+      "font-size:20px;letter-spacing:2px";
+    document.body.appendChild(el);
+    const tick = setInterval(() => {
+      if (assetsReady()) {
+        clearInterval(tick);
+        el.remove();
+        resetGame();
+        if (continueGame && key === "survival") {
+          const snapshot = readSurvivalSnapshot();
+          if (!restoreSurvivalSnapshot(snapshot)) toast("没有可继续的生存存档");
+        }
+        return;
+      }
+      const [d, t] = assetsProgress();
+      el.textContent = `⚔️ 战场素材加载中… ${d}/${t}`;
+    }, 100);
+    return;
+  }
+  resetGame();
+  if(continueGame&&key==="survival"){
+    const snapshot=readSurvivalSnapshot();
+    if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
+  }
+}
+
+/* 返回主菜单（游戏结束/暂停时） */
+function backToMenu() {
+  /* 清空场上实体，回到菜单背景 */
+  [...enemies].forEach(e => { scene.remove(e.group); if (e.beam) { scene.remove(e.beam); disposeTransientObject3D(e.beam); } });
+  enemies.length = 0;
+  [...bullets].forEach(b => { scene.remove(b.mesh); disposeTransientObject3D(b.mesh); }); bullets.length = 0;
+  [...particles].forEach(p => scene.remove(p.mesh)); particles.length = 0;
+  [...powerups].forEach(p => scene.remove(p.group)); powerups.length = 0;
+  builtTurrets.forEach(t => scene.remove(t.group)); builtTurrets.length = 0;
+  builtMines.forEach(m => scene.remove(m.group)); builtMines.length = 0;
+
+  ["gameover", "pause", "upgrade", "build"].forEach(id => {
+    document.getElementById(id).classList.add("hidden");
+  });
+  document.getElementById("hud").classList.add("hidden");
+  document.getElementById("menu").classList.remove("hidden");
+  refreshSaveButton();
+  state = STATE.MENU;
+  genMap(1);
+  camera.position.set(0, 52, 38);
+  camera.lookAt(0, 0, 0);
+}
+
+/* 绑定游戏内按钮（engine 只绑了 restart/resume，这里补返回菜单） */
+function bindHome() {
+  const menuBtn = document.getElementById("menuBtn");
+  if (menuBtn) menuBtn.addEventListener("click", backToMenu);
+  const pauseMenuBtn = document.getElementById("pauseMenuBtn");
+  if (pauseMenuBtn) pauseMenuBtn.addEventListener("click", backToMenu);
+  const newGameBtn=document.getElementById("newGameBtn");
+  if(newGameBtn)newGameBtn.addEventListener("click",()=>{clearSurvivalSnapshot();enterMode("survival",false);});
+  const continueBtn=document.getElementById("continueBtn");
+  if(continueBtn){continueBtn.addEventListener("click",()=>{if(!continueBtn.disabled)enterMode("survival",true);});refreshSaveButton();}
+}
+
+/* 给菜单 SVG 背景加随机闪烁的战场光点/火花 */
+function buildMenuBackground() {
+  const svg = document.querySelector(".menuBg");
+  if (!svg) return;
+  const NS = "http://www.w3.org/2000/svg";
+  // 清空旧光点（避免重复调用时累积）
+  svg.querySelectorAll(".menuStar").forEach(el => el.remove());
+  for (let i = 0; i < 45; i++) {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("class", "menuStar");
+    c.setAttribute("cx", Math.random() * 1920);
+    c.setAttribute("cy", Math.random() * 1080);
+    c.setAttribute("r", Math.random() * 1.4 + .4);
+    c.setAttribute("fill", Math.random() > .65 ? "#ffd75e" : "#7ec8ff");
+    c.setAttribute("opacity", Math.random() * .35 + .08);
+    c.style.animation = `twinkle ${2 + Math.random() * 3}s ease-in-out infinite alternate`;
+    c.style.animationDelay = `${Math.random() * 4}s`;
+    svg.appendChild(c);
+  }
+}
+
+/* 脚本位于 body 末尾，DOM 已就绪，直接初始化 */
+buildHome();
+if (typeof window.initMenuShowcase === "function") window.initMenuShowcase();
+buildMenuBackground();
+bindHome();
+
+/* 兼容 ?mode=xxx&autotest=1 调试入口 */
+(function () {
+  const q = new URLSearchParams(location.search);
+  const mode = q.get("mode");
+  if (mode && GAME_MODES[mode]) {
+    setTimeout(() => {
+      buildHome();
+      enterMode(mode);
+    }, 500);
+  }
+})();
