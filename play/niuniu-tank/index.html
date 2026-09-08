@@ -6,7 +6,7 @@
 <title>坦克大战 3D · 三模式合辑</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { width:100vw; min-width:100%; height:100vh; min-height:100%; overflow:hidden; background:#0a0d12;
+  html,body { width:100vw; min-width:100%; height:100vh; min-height:100%; overflow:hidden; background:#030405;
     font-family:"Segoe UI","Microsoft YaHei",sans-serif; user-select:none; }
   #game { position:absolute; inset:0; width:100vw; height:100vh; overflow:hidden; }
   canvas { display:block; }
@@ -196,50 +196,52 @@
   .hidden { display:none !important; }
 
   /* ---------- 主菜单 ---------- */
-  #menu { width:100vw; min-width:100%; height:100vh; min-height:100%; justify-content:flex-start; padding:7vh 40px 0; overflow-y:auto; background:transparent; }
-  #menu > *:not(.menuBg) { position:relative; z-index:1; }
-  .menuBg { position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
-  #menu h1 { font-size:64px; font-weight:900; letter-spacing:18px; text-align:center;
+  #menu { width:100vw; min-width:100%; height:100vh; min-height:100%; justify-content:flex-start; padding:7vh 40px 0; overflow-y:auto; background:#030405; }
+  #menu > *:not(.menuBg):not(.hyperspeedBg) { position:relative; z-index:1; }
+  .menuBg { display:none; }
+  .hyperspeedBg { position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; opacity:.92; }
+  /* Display size is independent of the DPR-scaled WebGL drawing buffer. */
+  .hyperspeedBg > canvas { width:100%; height:100%; }
+  #menu::after { content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 18%,transparent 82%,rgba(255,255,255,.018)); }
+  #menu h1 { font-size:58px; font-weight:800; letter-spacing:12px; text-align:center;
     background:linear-gradient(180deg,#fffce8 0%,#ffd75e 40%,#c88a1a 100%);
     -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    filter:drop-shadow(0 0 24px rgba(255,190,60,.55)) drop-shadow(0 4px 0 rgba(90,60,10,.6));
-    animation:titlePulse 3s ease-in-out infinite; }
+    filter:none; }
   @keyframes titlePulse { 0%,100%{filter:drop-shadow(0 0 24px rgba(255,190,60,.55)) drop-shadow(0 4px 0 rgba(90,60,10,.6));} 50%{filter:drop-shadow(0 0 44px rgba(255,200,80,.85)) drop-shadow(0 4px 0 rgba(90,60,10,.6));} }
   #menu .sub { color:#9fbfe8; margin:12px 0 30px; font-size:16px; letter-spacing:3px; text-align:center; line-height:1.9; text-shadow:0 0 12px rgba(120,180,255,.35); }
-  #modeCards { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; max-width:1200px; }
-  .modeCard { pointer-events:auto; cursor:pointer; width:320px; padding:28px 26px 24px; border-radius:20px;
-    background:linear-gradient(170deg,rgba(22,42,67,.92),rgba(10,20,34,.92)); border:1px solid rgba(110,170,255,.35);
-    text-align:center; transition:.25s; position:relative; overflow:hidden; opacity:0; transform:translateY(30px);
-    animation:cardIn .65s cubic-bezier(.22,.61,.36,1) forwards; backdrop-filter:blur(4px); }
+  #modeCards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; width:min(1080px,100%); align-items:start; }
+  .modeCard { pointer-events:auto; cursor:pointer; height:360px; padding:0 12px; border:0; background:transparent;
+    display:flex; flex-direction:column; align-items:center; text-align:center; transition:.25s; position:relative; overflow:visible; opacity:0; transform:translateY(30px);
+    animation:cardIn .65s cubic-bezier(.22,.61,.36,1) forwards; }
   .modeCard:nth-child(1){animation-delay:.1s;}
   .modeCard:nth-child(2){animation-delay:.25s;}
   .modeCard:nth-child(3){animation-delay:.4s;}
   @keyframes cardIn { to { opacity:1; transform:translateY(0);} }
-  .modeCard::before { content:""; position:absolute; top:0; left:0; right:0; height:4px;
-    background:var(--mc,#ffd75e); }
-  .modeCard::after { content:""; position:absolute; inset:-1px; border-radius:20px; padding:1px;
-    background:linear-gradient(120deg,transparent 30%,var(--mc,transparent) 50%,transparent 70%); opacity:0;
-    -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
-    transition:.25s; }
-  .modeCard:hover { transform:none; border-color:transparent; box-shadow:none; }
-  .modeCard:hover::after { opacity:0; animation:none; }
+  .modeCard::before,.modeCard::after { display:none; }
+  .modeCard:hover { transform:none; }
+  .modeCard:hover::after { opacity:0; }
   @keyframes borderFlow { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
   .modeCard.soon { opacity:.55; cursor:default; pointer-events:none; animation:none !important; transition:none !important; transform:none !important; translate:none !important; scale:1 !important; rotate:none !important; }
   .modeCard.soon:hover { transform:none; border-color:rgba(110,170,255,.35); box-shadow:none; }
-  .mcIcon { font-size:54px; filter:drop-shadow(0 0 10px var(--mcGlow,rgba(255,215,94,.35))); }
-  .mcName { font-size:28px; font-weight:800; color:#fff4c2; margin-top:12px; letter-spacing:4px; }
-  .mcTag { font-size:13px; color:#8ec8ff; margin-top:8px; letter-spacing:1px; }
-  .mcFeats { list-style:none; margin:18px 0 20px; text-align:left; padding:0 16px; }
-  .mcFeats li { font-size:13px; color:#a9c3df; line-height:1.95; padding-left:18px; position:relative; }
-  .mcFeats li::before { content:"▸"; position:absolute; left:0; color:var(--mc,#ffd75e); }
-  .mcBtn { display:inline-block; border:1px solid var(--mc,#ffd75e); color:var(--mc,#ffd75e);
-    font-size:15px; letter-spacing:3px; padding:11px 32px; border-radius:14px; transition:.15s; margin-top:4px; }
-  .soonBtn { border-color:#5b7291; color:#5b7291; }
+  .mcPreview { width:100%; height:224px; margin:2px -8px 0; position:relative; overflow:visible; flex:none; }
+  .mcPreview canvas { display:block; width:100%; height:100%; }
+  .mcQuestion { height:100%; display:flex; align-items:center; justify-content:center; color:#8b9397; font:700 142px/1 "Segoe UI",sans-serif; text-shadow:0 3px 0 #303437,0 10px 22px rgba(0,0,0,.75); transform:skew(-5deg); }
+  .mcName { height:30px; flex:none; font-size:20px; font-weight:750; color:#e7d6aa; margin-top:8px; letter-spacing:3px; }
+  .mcBtn { display:inline-flex; align-items:center; justify-content:center; width:136px; height:42px; box-sizing:border-box; white-space:nowrap; border:1px solid #bd9141; color:#15110a;
+    background:linear-gradient(180deg,#f3d27a 0%,#bd8840 52%,#76501e 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -3px 0 rgba(45,25,5,.35),0 5px 0 #3d2911,0 9px 18px rgba(0,0,0,.32);
+    font-size:13px; font-weight:700; letter-spacing:2px; padding:0 12px; border-radius:5px; transition:.12s; margin-top:auto; }
+  .mcBtn:active { transform:translateY(4px); box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 0 #3d2911,0 4px 10px rgba(0,0,0,.3); }
+  .soonBtn { border-color:#555c62; color:#969da1; background:linear-gradient(180deg,#51575b,#292d30); box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -3px 0 rgba(0,0,0,.3),0 5px 0 #151719,0 9px 18px rgba(0,0,0,.25); }
   .shake { animation:shake .4s; }
   @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #menu .foot { margin-top:34px; font-size:12px; color:#5b7291; letter-spacing:2px; text-align:center; line-height:2; }
   #saveFlow { display:flex; justify-content:center; gap:14px; margin:0 0 22px; }
-  #saveFlow .btn { min-width:150px; }
+  #saveFlow .btn, #saveFlow .btn.ghost { width:136px; height:42px; min-width:136px; box-sizing:border-box; padding:0 12px; display:inline-flex; align-items:center; justify-content:center; white-space:nowrap;
+    border:1px solid #bd9141; border-radius:5px; background:linear-gradient(180deg,#f3d27a 0%,#bd8840 52%,#76501e 100%); color:#15110a; font-size:13px; font-weight:700; letter-spacing:2px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -3px 0 rgba(45,25,5,.35),0 5px 0 #3d2911,0 9px 18px rgba(0,0,0,.32); }
+  #saveFlow .btn:hover, #saveFlow .btn.ghost:hover { transform:none; background:linear-gradient(180deg,#ffe39a 0%,#d29a4c 52%,#865d25 100%); box-shadow:inset 0 1px 0 rgba(255,255,255,.6),inset 0 -3px 0 rgba(45,25,5,.35),0 5px 0 #3d2911,0 9px 18px rgba(0,0,0,.32); }
   #continueBtn[disabled] { opacity:.38; cursor:not-allowed; filter:grayscale(1); }
   #saveHint { align-self:center; color:#8b9bb5; font-size:12px; letter-spacing:1px; }
   @keyframes twinkle { 0%{opacity:.1;} 100%{opacity:.55;} }
@@ -249,8 +251,8 @@
     letter-spacing:4px; padding:14px 58px; border-radius:12px; transition:.18s; }
   .btn:hover { background:linear-gradient(180deg,#2a4a78,#1a3055); transform:translateY(-2px);
     box-shadow:0 8px 24px rgba(60,140,255,.35); }
-  .btn.ghost { background:transparent; border-color:rgba(120,140,170,.5); color:#8fa8c8;
-    font-size:15px; letter-spacing:3px; padding:10px 34px; margin-top:14px; }
+  .btn.ghost { background:linear-gradient(180deg,#151d28,#0b1017); border-color:rgba(120,140,170,.5); color:#b9c8d8;
+    font-size:18px; letter-spacing:4px; padding:14px 58px; margin-top:0; }
   .btn.ghost:hover { background:rgba(120,140,170,.12); box-shadow:none; }
 
   #upgrade h2 { font-size:30px; color:#ffd75e; letter-spacing:6px; margin-bottom:8px;
@@ -307,6 +309,23 @@
     --wc3-bronze:#a77a35; --wc3-bronze-hi:#e0b95f; --wc3-parch:#e8d8ad;
     --wc3-green:#48e06f; --wc3-red:#b84135;
   }
+  #difficultySelect { background:radial-gradient(circle at 50% 32%,rgba(38,54,76,.48),rgba(5,8,13,.94) 68%); z-index:20; }
+  .difficultyShell { width:min(980px,calc(100vw - 44px)); padding:38px 42px 42px; border:1px solid rgba(252,213,53,.42); border-radius:18px; background:linear-gradient(145deg,rgba(20,27,37,.97),rgba(10,14,20,.98)); box-shadow:0 22px 70px rgba(0,0,0,.58),inset 0 1px 0 rgba(255,255,255,.06); text-align:left; }
+  .difficultyEyebrow { color:#fcd535; font-size:12px; letter-spacing:4px; text-transform:uppercase; margin-bottom:12px; }
+  .difficultyShell h2 { margin:0 0 10px; color:#f5f7fa; font-size:34px; letter-spacing:2px; }
+  .difficultyLead { margin:0 0 28px; color:#929aa5; font-size:14px; }
+  #difficultyOptions { display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px !important; }
+  .difficultyCard { position:relative; min-height:178px; padding:20px 18px; border:1px solid #2b3139; border-radius:12px; background:#1e2329; color:#eaecef; text-align:left; cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease; }
+  .difficultyCard:hover,.difficultyCard:focus-visible { transform:translateY(-5px); outline:none; border-color:#fcd535; box-shadow:0 12px 26px rgba(0,0,0,.32),0 0 0 1px rgba(252,213,53,.18); }
+  .difficultyCard .diffIcon { display:block; font-size:30px; margin-bottom:20px; filter:drop-shadow(0 3px 8px rgba(0,0,0,.35)); }
+  .difficultyCard strong { display:block; font-size:20px; margin-bottom:7px; }
+  .difficultyCard small { display:block; color:#929aa5; line-height:1.5; font-size:12px; }
+  .difficultyCard .diffTag { position:absolute; top:14px; right:14px; padding:4px 7px; border-radius:4px; font-size:10px; letter-spacing:1px; background:rgba(255,255,255,.08); color:#cdd1d6; }
+  .difficultyCard[data-difficulty="easy"] { border-top:3px solid #0ecb81; }
+  .difficultyCard[data-difficulty="normal"] { border-top:3px solid #2dbdb6; }
+  .difficultyCard[data-difficulty="hard"] { border-top:3px solid #f0b90b; }
+  .difficultyCard[data-difficulty="hell"] { border-top:3px solid #f6465d; background:linear-gradient(145deg,#291c22,#1e2329); }
+  @media (max-width:760px){ .difficultyShell{padding:28px 20px}.difficultyShell h2{font-size:27px}#difficultyOptions{grid-template-columns:repeat(2,minmax(0,1fr))}.difficultyCard{min-height:145px} }
   .factoryQueue { min-width:210px; padding:6px 8px; border:1px solid rgba(198,154,69,.45); background:rgba(18,15,11,.72); }
   .factoryQueueTitle { color:#f1c86a; font-size:11px; margin-bottom:4px; }
   .factoryQueueItems { display:flex; gap:5px; flex-wrap:wrap; color:#d9e2ec; font-size:11px; max-width:220px; }
@@ -452,6 +471,7 @@
 </div>
 
 <div id="menu" class="overlay">
+  <div class="hyperspeedBg" id="hyperspeedBg" aria-hidden="true"></div>
   <svg class="menuBg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <radialGradient id="bgGrad" cx="50%" cy="40%" r="85%">
@@ -501,17 +521,31 @@
     <circle cx="1640" cy="240" r="110" fill="rgba(255,120,40,.08)" filter="url(#glow)"/>
     <circle cx="1640" cy="240" r="52" fill="rgba(255,180,60,.14)" filter="url(#glow)"/>
   </svg>
-  <h1>坦克大战 3D</h1>
-  <div class="sub">经典坦克肉鸽独立运行 · 高台生存基地防守</div>
+  <h1>牛牛坦克大战</h1>
+  <div class="sub">经典坦克肉鸽 · 高台生存基地防守 · 装甲竞速筹备中</div>
   <div id="saveFlow"><button class="btn" id="newGameBtn">新游戏</button><button class="btn ghost" id="continueBtn">继续游戏</button><span id="saveHint"></span></div>
   <div id="modeCards"></div>
-  <div class="foot">v6.22.0 生存可靠性与战斗结算收口 · ESC 暂停</div>
+  <div class="foot">v6.34.0 三模式 3D 展示菜单 · ESC 暂停</div>
 </div>
 
 <div id="upgrade" class="overlay hidden">
   <h2>⚡ 波次肃清 · 选择强化 ⚡</h2>
   <div class="tip">🛡 绿色为基地流 · 🔥 黄色为坦克流 —— 三选一</div>
   <div id="cards"></div>
+</div>
+
+<div id="difficultySelect" class="overlay hidden">
+  <div class="difficultyShell">
+    <div class="difficultyEyebrow">SURVIVAL PROTOCOL / 01</div>
+    <h2>选择你的战场</h2>
+    <p class="difficultyLead">确认后才会开始准备阶段。难度会同时改变敌人的生命与攻击强度。</p>
+    <div id="difficultyOptions">
+      <button class="difficultyCard" data-difficulty="easy"><span class="diffIcon">🌿</span><span class="diffTag">低压</span><strong>简单</strong><small>适合熟悉基地、施工和炮塔协同。</small></button>
+      <button class="difficultyCard" data-difficulty="normal"><span class="diffIcon">🛰</span><span class="diffTag">标准</span><strong>普通</strong><small>资源与战斗压力保持平衡。</small></button>
+      <button class="difficultyCard" data-difficulty="hard"><span class="diffIcon">⚡</span><span class="diffTag">高压</span><strong>困难</strong><small>需要尽早布局墙体和火力网。</small></button>
+      <button class="difficultyCard" data-difficulty="hell"><span class="diffIcon">☠</span><span class="diffTag">极限</span><strong>地狱</strong><small>每一次建造和升级都必须精确。</small></button>
+    </div>
+  </div>
 </div>
 
 <div id="build" class="overlay hidden">
@@ -532,8 +566,8 @@
 </div>
 
 <div id="settle" class="overlay hidden">
-  <h2>🏆 第 30 波 荣耀肃清！</h2>
-  <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— Boss 将在第 16 波起周期性降临！</div>
+  <h2>🏆 战役荣耀肃清！</h2>
+  <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— 无尽阶段的 Boss 将周期性降临！</div>
   <div class="settleBtns">
     <button class="btn" id="settleWinBtn">🏆 胜 利 结 算</button>
     <button class="btn ghost" id="settleEndlessBtn">♾️ 进 入 无 尽 模 式</button>
@@ -568,7 +602,17 @@
 <script src="js/survival-assets.js"></script>
 <script src="js/terrain-surface.js"></script>
 <script src="js/flow-field.js"></script>
+<script src="js/wave-pressure.js"></script>
+<script src="js/crowd-lod.js"></script>
+<script src="js/construction-system.js"></script>
+<script src="js/building-models.js"></script>
+<script src="js/combat-specializations.js"></script>
+<script src="js/survival-audio.js"></script>
+<script src="js/natural-terrain.js"></script>
+<script src="js/construction-runtime.js"></script>
 <script src="js/engine.js"></script>
-<script src="js/home.js"></script>
+<script src="js/hyperspeed-bg.js?v=6.29.8"></script>
+<script src="js/menu-showcase.js?v=6.29.8"></script>
+<script src="js/home.js?v=6.29.8"></script>
 </body>
 </html>

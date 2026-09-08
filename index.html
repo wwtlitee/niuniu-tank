@@ -309,6 +309,23 @@
     --wc3-bronze:#a77a35; --wc3-bronze-hi:#e0b95f; --wc3-parch:#e8d8ad;
     --wc3-green:#48e06f; --wc3-red:#b84135;
   }
+  #difficultySelect { background:radial-gradient(circle at 50% 32%,rgba(38,54,76,.48),rgba(5,8,13,.94) 68%); z-index:20; }
+  .difficultyShell { width:min(980px,calc(100vw - 44px)); padding:38px 42px 42px; border:1px solid rgba(252,213,53,.42); border-radius:18px; background:linear-gradient(145deg,rgba(20,27,37,.97),rgba(10,14,20,.98)); box-shadow:0 22px 70px rgba(0,0,0,.58),inset 0 1px 0 rgba(255,255,255,.06); text-align:left; }
+  .difficultyEyebrow { color:#fcd535; font-size:12px; letter-spacing:4px; text-transform:uppercase; margin-bottom:12px; }
+  .difficultyShell h2 { margin:0 0 10px; color:#f5f7fa; font-size:34px; letter-spacing:2px; }
+  .difficultyLead { margin:0 0 28px; color:#929aa5; font-size:14px; }
+  #difficultyOptions { display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px !important; }
+  .difficultyCard { position:relative; min-height:178px; padding:20px 18px; border:1px solid #2b3139; border-radius:12px; background:#1e2329; color:#eaecef; text-align:left; cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease; }
+  .difficultyCard:hover,.difficultyCard:focus-visible { transform:translateY(-5px); outline:none; border-color:#fcd535; box-shadow:0 12px 26px rgba(0,0,0,.32),0 0 0 1px rgba(252,213,53,.18); }
+  .difficultyCard .diffIcon { display:block; font-size:30px; margin-bottom:20px; filter:drop-shadow(0 3px 8px rgba(0,0,0,.35)); }
+  .difficultyCard strong { display:block; font-size:20px; margin-bottom:7px; }
+  .difficultyCard small { display:block; color:#929aa5; line-height:1.5; font-size:12px; }
+  .difficultyCard .diffTag { position:absolute; top:14px; right:14px; padding:4px 7px; border-radius:4px; font-size:10px; letter-spacing:1px; background:rgba(255,255,255,.08); color:#cdd1d6; }
+  .difficultyCard[data-difficulty="easy"] { border-top:3px solid #0ecb81; }
+  .difficultyCard[data-difficulty="normal"] { border-top:3px solid #2dbdb6; }
+  .difficultyCard[data-difficulty="hard"] { border-top:3px solid #f0b90b; }
+  .difficultyCard[data-difficulty="hell"] { border-top:3px solid #f6465d; background:linear-gradient(145deg,#291c22,#1e2329); }
+  @media (max-width:760px){ .difficultyShell{padding:28px 20px}.difficultyShell h2{font-size:27px}#difficultyOptions{grid-template-columns:repeat(2,minmax(0,1fr))}.difficultyCard{min-height:145px} }
   .factoryQueue { min-width:210px; padding:6px 8px; border:1px solid rgba(198,154,69,.45); background:rgba(18,15,11,.72); }
   .factoryQueueTitle { color:#f1c86a; font-size:11px; margin-bottom:4px; }
   .factoryQueueItems { display:flex; gap:5px; flex-wrap:wrap; color:#d9e2ec; font-size:11px; max-width:220px; }
@@ -508,13 +525,27 @@
   <div class="sub">经典坦克肉鸽 · 高台生存基地防守 · 装甲竞速筹备中</div>
   <div id="saveFlow"><button class="btn" id="newGameBtn">新游戏</button><button class="btn ghost" id="continueBtn">继续游戏</button><span id="saveHint"></span></div>
   <div id="modeCards"></div>
-  <div class="foot">v6.29.10 三模式 3D 展示菜单 · ESC 暂停</div>
+  <div class="foot">v6.34.0 三模式 3D 展示菜单 · ESC 暂停</div>
 </div>
 
 <div id="upgrade" class="overlay hidden">
   <h2>⚡ 波次肃清 · 选择强化 ⚡</h2>
   <div class="tip">🛡 绿色为基地流 · 🔥 黄色为坦克流 —— 三选一</div>
   <div id="cards"></div>
+</div>
+
+<div id="difficultySelect" class="overlay hidden">
+  <div class="difficultyShell">
+    <div class="difficultyEyebrow">SURVIVAL PROTOCOL / 01</div>
+    <h2>选择你的战场</h2>
+    <p class="difficultyLead">确认后才会开始准备阶段。难度会同时改变敌人的生命与攻击强度。</p>
+    <div id="difficultyOptions">
+      <button class="difficultyCard" data-difficulty="easy"><span class="diffIcon">🌿</span><span class="diffTag">低压</span><strong>简单</strong><small>适合熟悉基地、施工和炮塔协同。</small></button>
+      <button class="difficultyCard" data-difficulty="normal"><span class="diffIcon">🛰</span><span class="diffTag">标准</span><strong>普通</strong><small>资源与战斗压力保持平衡。</small></button>
+      <button class="difficultyCard" data-difficulty="hard"><span class="diffIcon">⚡</span><span class="diffTag">高压</span><strong>困难</strong><small>需要尽早布局墙体和火力网。</small></button>
+      <button class="difficultyCard" data-difficulty="hell"><span class="diffIcon">☠</span><span class="diffTag">极限</span><strong>地狱</strong><small>每一次建造和升级都必须精确。</small></button>
+    </div>
+  </div>
 </div>
 
 <div id="build" class="overlay hidden">
@@ -535,8 +566,8 @@
 </div>
 
 <div id="settle" class="overlay hidden">
-  <h2>🏆 第 30 波 荣耀肃清！</h2>
-  <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— Boss 将在第 16 波起周期性降临！</div>
+  <h2>🏆 战役荣耀肃清！</h2>
+  <div class="tip">你守住了核心。<br>选择「胜利结算」结束本局，或「无尽模式」继续挑战更野的敌人 —— 无尽阶段的 Boss 将周期性降临！</div>
   <div class="settleBtns">
     <button class="btn" id="settleWinBtn">🏆 胜 利 结 算</button>
     <button class="btn ghost" id="settleEndlessBtn">♾️ 进 入 无 尽 模 式</button>
@@ -571,6 +602,14 @@
 <script src="js/survival-assets.js"></script>
 <script src="js/terrain-surface.js"></script>
 <script src="js/flow-field.js"></script>
+<script src="js/wave-pressure.js"></script>
+<script src="js/crowd-lod.js"></script>
+<script src="js/construction-system.js"></script>
+<script src="js/building-models.js"></script>
+<script src="js/combat-specializations.js"></script>
+<script src="js/survival-audio.js"></script>
+<script src="js/natural-terrain.js"></script>
+<script src="js/construction-runtime.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/hyperspeed-bg.js?v=6.29.8"></script>
 <script src="js/menu-showcase.js?v=6.29.8"></script>

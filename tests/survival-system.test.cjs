@@ -1,6 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+test('近战波次线性成长以第十波减甲后800伤害每秒为锚点',()=>{
+  const system=require('../js/survival-system.js'),r=system.WALL_ASSAULT_REFERENCE;
+  const values=Array.from({length:10},(_,i)=>system.meleeWaveMultiplier(i+1));
+  assert.equal(values[0],1);
+  for(let i=2;i<10;i++)assert.ok(Math.abs(values[i]-values[i-1]-(values[1]-values[0]))<1e-10);
+  const dps=values[9]*system.ZOMBIE_COMBAT_SCALE*4*r.typeWeight*r.contacts/r.interval*r.timeMultiplier*(1-r.armor);
+  assert.ok(Math.abs(dps-800)<1e-8);assert.equal(system.structureAttackCapacity(1,system.ZOMBIE_COMBAT_SCALE),6);
+});
+
 const {
   WALL_TIERS,
   RESEARCH_LINES,
@@ -44,20 +53,22 @@ const {
   enemyMoveSpeed,
   enemyRunTimeScale,
   structureAttackCapacity,
+  ZOMBIE_COMBAT_SCALE,
 } = require("../js/survival-system.js");
 
 test("墙体攻击位按占地限制前排数量", () => {
   assert.equal(structureAttackCapacity(1), 2);
   assert.equal(structureAttackCapacity(2), 4);
   assert.equal(structureAttackCapacity(9), 6);
+  assert.equal(structureAttackCapacity(1, ZOMBIE_COMBAT_SCALE), 6);
 });
 
 test("奔跑尸群显著缩短进场等待且保留兵种速度层级", () => {
   const normal = enemyMoveSpeed("normal", waveProfile(1).speedMultiplier);
   const fast = enemyMoveSpeed("fast", 1);
   const siege = enemyMoveSpeed("siege", 1);
-  assert.ok(normal >= 9.5, `普通尸群仍然过慢：${normal}`);
-  assert.ok(160 / normal <= 17, "普通怪穿越 160 世界单位不应超过 17 秒");
+  assert.ok(normal >= 3.8 && normal <= 4.5, `普通尸群比例移速异常：${normal}`);
+  assert.ok(160 / normal <= 75, "缩小后的普通怪穿越 160 世界单位不应无限拖慢");
   assert.ok(fast >= normal * 1.3, "快速怪需要与普通怪拉开明显差异");
   assert.ok(siege >= normal * 0.55, "攻城怪不能慢到继续拖长整波时间");
   assert.ok(ENEMY_MOVEMENT.boss.base >= 5, "Boss 基础移速不能低于可接受下限");
@@ -65,15 +76,16 @@ test("奔跑尸群显著缩短进场等待且保留兵种速度层级", () => {
 
 test("高速增益有碰撞安全上限且奔跑动画跟随实际速度", () => {
   const capped = enemyMoveSpeed("fast", 1.42, 1.8);
-  assert.equal(capped, ENEMY_MOVEMENT.fast.max);
+  assert.equal(capped, ENEMY_MOVEMENT.fast.max * ZOMBIE_COMBAT_SCALE);
   assert.ok(enemyRunTimeScale(14) > enemyRunTimeScale(10));
   assert.ok(enemyRunTimeScale(99) <= 1.75, "动画倍率必须有稳定上限");
 });
 
-test("尸潮碰撞体积小于视觉体积但仍阻止完全重叠", () => {
-  assert.equal(hordeCollisionRadius(1.5), 1.23);
-  assert.equal(hordeCollisionRadius(3, true), 2.64);
-  assert.ok(hordeCollisionRadius(1.5) >= 1.1, "普通僵尸仍需保留实体肩宽");
+test("尸潮碰撞体积收缩以允许人形单位自然挤压", () => {
+  assert.equal(hordeCollisionRadius(1.5), .87);
+  assert.equal(hordeCollisionRadius(3, true), 2.16);
+  assert.ok(hordeCollisionRadius(1.5) >= .7, "普通僵尸仍需保留最小实体体积");
+  assert.ok(hordeCollisionRadius(1.5) < 1, "普通僵尸不可再使用接近坦克宽度的碰撞半径");
 });
 
 test("暗红血雾随波次和可见尸群增强但不会遮住地图", () => {
@@ -173,7 +185,8 @@ test("标准炮台只有四个不可互换分支", () => {
   assert.ok(TURRET_BRANCHES.rapid.stats.fireRate > TURRET_BRANCHES.cannon.stats.fireRate);
   assert.ok(TURRET_BRANCHES.cannon.stats.splash > 0);
   assert.ok(TURRET_BRANCHES.antitank.stats.armorPierce > 0);
-  assert.ok(TURRET_BRANCHES.emp.stats.slow > 0 || TURRET_BRANCHES.emp.stats.stun > 0);
+  assert.equal(TURRET_BRANCHES.emp.name,'贯穿激光炮');
+  assert.equal(TURRET_BRANCHES.emp.stats.slow,0);
   assert.ok(TURRET_BRANCHES.rapid.stats.damage * TURRET_BRANCHES.rapid.stats.fireRate <= 14, "速射炮台不可单塔形成退化解");
   assert.ok(TURRET_BRANCHES.cannon.stats.damage * TURRET_BRANCHES.cannon.stats.fireRate <= 11, "范围炮台必须用溅射换取单体输出");
   assert.ok(TURRET_BRANCHES.antitank.stats.damage * TURRET_BRANCHES.antitank.stats.fireRate <= 13, "反装甲炮必须依赖穿甲职责");
@@ -353,7 +366,7 @@ test("炮台和巨岩随等级温和增大且存在上限",()=>{
 
 test("机枪炮弹穿甲弹冰弹和坦克弹使用不同弹体合同",()=>{
   const keys=["machinegun","cannon","antitank","emp","tank"];
-  assert.deepEqual(Object.keys(PROJECTILE_VISUALS).sort(),keys.sort());
+  assert.deepEqual(Object.keys(PROJECTILE_VISUALS).sort(),[...keys,'shotgun','incendiary','grenade'].sort());
   assert.equal(new Set(keys.map((key)=>PROJECTILE_VISUALS[key].shape)).size,keys.length);
   assert.ok(PROJECTILE_VISUALS.cannon.radius>PROJECTILE_VISUALS.machinegun.radius);
   assert.equal(PROJECTILE_VISUALS.emp.trail,"frost");

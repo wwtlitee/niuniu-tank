@@ -73,6 +73,16 @@ function refreshSaveButton(){
   const hint=document.getElementById("saveHint");if(hint)hint.textContent=has?"已有生存进度":"暂无生存存档";
 }
 
+const SURVIVAL_DIFFICULTIES=Object.freeze({easy:{label:"简单",multiplier:.5},normal:{label:"普通",multiplier:.75},hard:{label:"困难",multiplier:1},hell:{label:"地狱",multiplier:1.5}});
+function chooseSurvivalDifficulty(continueGame,onDone){
+  const panel=document.getElementById("difficultySelect"),options=document.querySelectorAll("#difficultyOptions [data-difficulty]");
+  if(!panel||!options.length){onDone("normal");return;}
+  panel.classList.remove("hidden");
+  const finish=(key)=>{panel.classList.add("hidden");options.forEach(button=>button.removeEventListener("click",button._difficultyHandler));onDone(key);};
+  options.forEach(button=>{const handler=()=>finish(button.dataset.difficulty);button._difficultyHandler=handler;button.addEventListener("click",handler);});
+  if(new URLSearchParams(location.search).get("autotest")==="1")setTimeout(()=>finish("normal"),0);
+}
+
 function enterMode(key, continueGame = false) {
   const m = setActiveMode(key);
   applyModeConfig(m);
@@ -82,6 +92,19 @@ function enterMode(key, continueGame = false) {
   audio();
   playIntro();
   document.getElementById("menu").classList.add("hidden");
+  const launch=()=>{
+    if(key==="survival"&&!continueGame&&!window.__autoTestDifficulty){
+      chooseSurvivalDifficulty(false,(difficulty)=>{game.difficultyMultiplier=SURVIVAL_DIFFICULTIES[difficulty].multiplier;game.difficultyId=difficulty;resetGame();});
+      return;
+    }
+    if(key==="survival"&&continueGame){game.difficultyMultiplier=1;game.difficultyId="normal";}
+    resetGame();
+    if(continueGame&&key==="survival"){
+      const snapshot=readSurvivalSnapshot();
+      if(snapshot?.game?.difficultyMultiplier){game.difficultyMultiplier=snapshot.game.difficultyMultiplier;game.difficultyId=snapshot.game.difficultyId||"normal";}
+      if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
+    }
+  };
   /* 模型未就绪时先等加载完成再开局，避免整局灰盒 */
   if (!assetsReady()) {
     const el = document.createElement("div");
@@ -94,11 +117,7 @@ function enterMode(key, continueGame = false) {
       if (assetsReady()) {
         clearInterval(tick);
         el.remove();
-        resetGame();
-        if (continueGame && key === "survival") {
-          const snapshot = readSurvivalSnapshot();
-          if (!restoreSurvivalSnapshot(snapshot)) toast("没有可继续的生存存档");
-        }
+        launch();
         return;
       }
       const [d, t] = assetsProgress();
@@ -106,11 +125,7 @@ function enterMode(key, continueGame = false) {
     }, 100);
     return;
   }
-  resetGame();
-  if(continueGame&&key==="survival"){
-    const snapshot=readSurvivalSnapshot();
-    if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
-  }
+  launch();
 }
 
 /* 返回主菜单（游戏结束/暂停时） */

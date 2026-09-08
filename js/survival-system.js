@@ -63,11 +63,25 @@
     boss: { base: 6.5, max: 14 },
   });
 
+  /* 人形尸潮已经按约四分之一的坦克尺度渲染；战斗参数必须共用同一比例，
+     否则小模型会以坦克级伤害和速度冲刺。 */
+  const ZOMBIE_COMBAT_SCALE = 0.375;
+
+  // 第10波六个接触位，兵种平均权重46/18；20分钟×3、25%护甲后800 HP/s。
+  const WALL_ASSAULT_REFERENCE=Object.freeze({dps:800,contacts:6,timeMultiplier:3,armor:.25,typeWeight:46/18,interval:.9});
+  function meleeWaveMultiplier(wave){
+    const r=WALL_ASSAULT_REFERENCE;
+    const end=r.dps*r.interval/(r.contacts*r.timeMultiplier*(1-r.armor)*r.typeWeight*4*ZOMBIE_COMBAT_SCALE);
+    const safe=clampInt(wave,1,1000);
+    return 1+(end-1)*(Math.min(10,safe)-1)/9+Math.max(0,safe-10)*(end-1)/9;
+  }
+
   function enemyMoveSpeed(type, waveMultiplier = 1, modifier = 1) {
     const movement = ENEMY_MOVEMENT[type] || ENEMY_MOVEMENT.normal;
     const waveScale = Math.max(0, Number(waveMultiplier) || 0);
     const extraScale = Math.max(0, Number(modifier) || 0);
-    return Math.min(movement.max, movement.base * waveScale * extraScale);
+    return Math.min(movement.max * ZOMBIE_COMBAT_SCALE,
+      movement.base * waveScale * extraScale * ZOMBIE_COMBAT_SCALE);
   }
 
   function enemyRunTimeScale(speed) {
@@ -75,9 +89,11 @@
     return Math.max(1.05, Math.min(1.75, 0.85 + safeSpeed / 18));
   }
 
-  function structureAttackCapacity(cellCount = 1) {
+  function structureAttackCapacity(cellCount = 1, unitScale = 1) {
     const cells = Math.max(1, Number(cellCount) || 1);
-    return Math.min(6, Math.max(2, Math.ceil(Math.sqrt(cells)) * 2));
+    const scale = Math.max(0.25, Number(unitScale) || 1);
+    const baseCapacity = Math.ceil(Math.sqrt(cells)) * 2;
+    return Math.min(24, Math.max(2, Math.ceil(baseCapacity / scale)));
   }
 
   const MEDICAL_BEACON_RULES = Object.freeze({
@@ -95,6 +111,9 @@
     cannon: { shape: "round-shell", radius: 0.25, length: 0.72, color: 0xd68b42, trail: "smoke" },
     antitank: { shape: "sabot-dart", radius: 0.11, length: 1.15, color: 0xf1dfbb, trail: "streak" },
     emp: { shape: "crystal-orb", radius: 0.38, length: 0.55, color: 0xa7e9ff, trail: "frost" },
+    shotgun: { shape: "pellet", radius: 0.075, length: 0.3, color: 0xffd677, trail: "spark" },
+    incendiary: { shape: "fire-shell", radius: 0.2, length: 0.65, color: 0xff682e, trail: "fire" },
+    grenade: { shape: "round-shell", radius: 0.27, length: 0.6, color: 0xd8aa58, trail: "smoke" },
     tank: { shape: "tank-shell", radius: 0.18, length: 0.82, color: 0xc7d5d7, trail: "smoke-light" },
   });
 
@@ -152,7 +171,7 @@
     rapid: { id: "rapid", name: "速射机枪", color: 0xc7a45a, stats: Object.freeze({ damage: 1.2, fireRate: 3.5, range: 11, splash: 0, armorPierce: 0, slow: 0, stun: 0 }) },
     cannon: { id: "cannon", name: "范围火炮", color: 0xb85b35, stats: Object.freeze({ damage: 1.8, fireRate: 0.55, range: 13, splash: 4.2, armorPierce: 0, slow: 0, stun: 0 }) },
     antitank: { id: "antitank", name: "反装甲炮", color: 0x9a9b91, stats: Object.freeze({ damage: 1.8, fireRate: 0.38, range: 16, splash: 0, armorPierce: 0.65, slow: 0, stun: 0 }) },
-    emp: { id: "emp", name: "冰冻 EMP", color: 0x66b8c7, stats: Object.freeze({ damage: 0.9, fireRate: 0.78, range: 12, splash: 2.8, armorPierce: 0, slow: 0.3, stun: 0.22 }) },
+    emp: { id: "emp", name: "贯穿激光炮", color: 0x66b8c7, stats: Object.freeze({ damage: 1.2, fireRate: 0.8, range: 12, splash: 0, armorPierce: 0, slow: 0, stun: 0 }) },
   });
 
   const FRIENDLY_UNIT_TYPES = freezeTable({
@@ -425,7 +444,8 @@
 
   function hordeCollisionRadius(visualRadius, isBoss = false) {
     const radius = Math.max(0.1, Number(visualRadius) || 0.1);
-    return Number((radius * (isBoss ? 0.88 : 0.82)).toFixed(3));
+    /* 人形尸潮按肩宽而非整块模型包围盒碰撞；Boss 保留更大的压迫边界。 */
+    return Number((radius * (isBoss ? 0.72 : 0.58)).toFixed(3));
   }
 
   function bloodMistOpacity(wave, visibleEnemies) {
@@ -499,6 +519,9 @@
     enemyMoveSpeed,
     enemyRunTimeScale,
     structureAttackCapacity,
+    ZOMBIE_COMBAT_SCALE,
+    WALL_ASSAULT_REFERENCE,
+    meleeWaveMultiplier,
     wallProgress,
     wallUpgradeCost,
     researchCost,

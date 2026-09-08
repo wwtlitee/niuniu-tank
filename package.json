@@ -1,6 +1,6 @@
 {
   "name": "tank-battle-3d",
-  "version": "6.29.10",
+  "version": "6.34.0",
   "private": true,
   "description": "坦克大战 3D 三模式合辑",
   "scripts": {
@@ -11,8 +11,10 @@
     "assets:sheets": "node tools/generate-asset-contact-sheets.cjs",
     "build:play": "node tools/sync-play.cjs",
     "capture:survival": "node tools/capture-survival.cjs",
-    "check": "node --check js/survival-system.js && node --check js/config.js && node --check js/engine.js && node --check js/home.js && node --check js/survival-assets.js && node --check js/terrain-surface.js && node --check js/flow-field.js && node --check js/classic/classic-config.js && node --check js/classic/classic-rules.js && node --check js/classic/classic-upgrades.js && node --check js/classic/classic-engine.js && node tools/sync-play.cjs --check",
+    "check": "node --check js/survival-audio.js && node --check js/natural-terrain.js && node --check js/combat-specializations.js && node --check js/building-models.js && node --check js/wave-pressure.js && node --check js/construction-system.js && node --check js/construction-runtime.js && node --check js/crowd-lod.js && node --check js/survival-system.js && node --check js/config.js && node --check js/engine.js && node --check js/home.js && node --check js/survival-assets.js && node --check js/terrain-surface.js && node --check js/flow-field.js && node --check js/classic/classic-config.js && node --check js/classic/classic-rules.js && node --check js/classic/classic-upgrades.js && node --check js/classic/classic-engine.js && node tools/sync-play.cjs --check",
     "test": "node --test tests/*.test.cjs",
-    "test:terrain": "node --test tests/terrain-surface.test.cjs"
+    "test:terrain": "node --test tests/terrain-surface.test.cjs",
+    "test:construction": "node --test tests/construction-system.test.cjs tests/construction-runtime.test.cjs",
+    "profile:survival": "node tools/profile-construction.cjs hardware"
   }
 }

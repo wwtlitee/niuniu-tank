@@ -23,8 +23,8 @@ const MODE_CARDS = [
   {
     key: "td",
     ...GAME_MODES.td,
-    desc: "固定路径刷怪，沿途布置塔防炮台与坦克火力位，规划你的死亡走廊。",
-    features: ["固定进攻路线", "多种防御塔", "坦克位升级", "规划式塔防"],
+    desc: "高速赛道上的装甲竞逐：抢道具、打干扰、在弯道和火力中争夺第一。",
+    features: ["非卡通军事赛道", "随机战斗道具", "坦克互相攻击", "竞速与生存并行"],
     state: "soon",
   },
 ];
@@ -45,15 +45,12 @@ function buildHome() {
     card.className = "modeCard" + (m.state === "soon" ? " soon" : "");
     card.style.setProperty("--mc", m.color);
     card.style.setProperty("--mcGlow", hexToRgba(m.color, 0.18));
-    const feats = m.features.map(f => `<li>${f}</li>`).join("");
     card.innerHTML = `
-      <div class="mcIcon">${m.icon}</div>
-      <div class="mcName">${m.name}</div>
-      <div class="mcTag">${m.tagline}</div>
-      <ul class="mcFeats">${feats}</ul>
+      <div class="mcPreview" data-preview="${m.key}"></div>
+      <div class="mcName">${m.key === "classic" ? "经典" : m.key === "survival" ? "生存" : "竞速"}</div>
       ${m.state === "soon"
-        ? `<div class="mcBtn soonBtn">即将上线</div>`
-        : `<div class="mcBtn">进入战场 →</div>`}
+        ? `<div class="mcBtn soonBtn">敬请期待</div>`
+        : `<div class="mcBtn">${m.key === "classic" ? "进入游戏" : "进入战场"} →</div>`}
     `;
     card.addEventListener("click", () => {
       if (m.state === "soon") {
@@ -76,6 +73,16 @@ function refreshSaveButton(){
   const hint=document.getElementById("saveHint");if(hint)hint.textContent=has?"已有生存进度":"暂无生存存档";
 }
 
+const SURVIVAL_DIFFICULTIES=Object.freeze({easy:{label:"简单",multiplier:.5},normal:{label:"普通",multiplier:.75},hard:{label:"困难",multiplier:1},hell:{label:"地狱",multiplier:1.5}});
+function chooseSurvivalDifficulty(continueGame,onDone){
+  const panel=document.getElementById("difficultySelect"),options=document.querySelectorAll("#difficultyOptions [data-difficulty]");
+  if(!panel||!options.length){onDone("normal");return;}
+  panel.classList.remove("hidden");
+  const finish=(key)=>{panel.classList.add("hidden");options.forEach(button=>button.removeEventListener("click",button._difficultyHandler));onDone(key);};
+  options.forEach(button=>{const handler=()=>finish(button.dataset.difficulty);button._difficultyHandler=handler;button.addEventListener("click",handler);});
+  if(new URLSearchParams(location.search).get("autotest")==="1")setTimeout(()=>finish("normal"),0);
+}
+
 function enterMode(key, continueGame = false) {
   const m = setActiveMode(key);
   applyModeConfig(m);
@@ -85,6 +92,19 @@ function enterMode(key, continueGame = false) {
   audio();
   playIntro();
   document.getElementById("menu").classList.add("hidden");
+  const launch=()=>{
+    if(key==="survival"&&!continueGame&&!window.__autoTestDifficulty){
+      chooseSurvivalDifficulty(false,(difficulty)=>{game.difficultyMultiplier=SURVIVAL_DIFFICULTIES[difficulty].multiplier;game.difficultyId=difficulty;resetGame();});
+      return;
+    }
+    if(key==="survival"&&continueGame){game.difficultyMultiplier=1;game.difficultyId="normal";}
+    resetGame();
+    if(continueGame&&key==="survival"){
+      const snapshot=readSurvivalSnapshot();
+      if(snapshot?.game?.difficultyMultiplier){game.difficultyMultiplier=snapshot.game.difficultyMultiplier;game.difficultyId=snapshot.game.difficultyId||"normal";}
+      if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
+    }
+  };
   /* 模型未就绪时先等加载完成再开局，避免整局灰盒 */
   if (!assetsReady()) {
     const el = document.createElement("div");
@@ -97,11 +117,7 @@ function enterMode(key, continueGame = false) {
       if (assetsReady()) {
         clearInterval(tick);
         el.remove();
-        resetGame();
-        if (continueGame && key === "survival") {
-          const snapshot = readSurvivalSnapshot();
-          if (!restoreSurvivalSnapshot(snapshot)) toast("没有可继续的生存存档");
-        }
+        launch();
         return;
       }
       const [d, t] = assetsProgress();
@@ -109,11 +125,7 @@ function enterMode(key, continueGame = false) {
     }, 100);
     return;
   }
-  resetGame();
-  if(continueGame&&key==="survival"){
-    const snapshot=readSurvivalSnapshot();
-    if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
-  }
+  launch();
 }
 
 /* 返回主菜单（游戏结束/暂停时） */
@@ -174,6 +186,7 @@ function buildMenuBackground() {
 
 /* 脚本位于 body 末尾，DOM 已就绪，直接初始化 */
 buildHome();
+if (typeof window.initMenuShowcase === "function") window.initMenuShowcase();
 buildMenuBackground();
 bindHome();
 

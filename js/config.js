@@ -37,10 +37,10 @@ function turretBranchUpgradeSteps(id, stats) {
       { dmg: 4.2, fireRate: .5, pierce: .88 },
     ],
     emp: [
-      { dmg: 1.05, fireRate: .82, splash: 3, slow: .34, stun: .24 },
-      { dmg: 1.22, fireRate: .87, splash: 3.25, slow: .39, stun: .27 },
-      { dmg: 1.45, fireRate: .92, splash: 3.55, slow: .44, stun: .31 },
-      { dmg: 1.8, fireRate: 1, splash: 3.9, slow: .5, stun: .36 },
+      { dmg: 1.45, fireRate: .85 },
+      { dmg: 1.75, fireRate: .9 },
+      { dmg: 2.15, fireRate: .95 },
+      { dmg: 2.65, fireRate: 1 },
     ],
   };
   return steps[id] || [
@@ -53,7 +53,7 @@ function turretBranchUpgradeSteps(id, stats) {
 for (const [id, branch] of Object.entries(SurvivalSystem.TURRET_BRANCHES)) {
   const stats = branch.stats;
   TURRET_TYPES[id] = {
-    id, name: branch.name, desc: `标准炮台专精：${branch.name}`, cost: 70, color: branch.color,
+    id, name: branch.name, desc: id==="antitank"?"远程单体 · 基础忽略65%护甲 · 对重甲(≥18%护甲)/Boss命中伤害×2.8":id==="emp"?"贯穿射线 · 命中射线沿途所有敌人":id==="cannon"?"低射速范围爆炸 · 压制密集尸群":"高速单体射击 · 持续输出", cost: 70, color: branch.color,
     stats: { dmg: stats.damage, fireRate: stats.fireRate, range: SurvivalSystem.rangeAtResearchLevel(id,0), splash: stats.splash,
       slow: stats.slow, stun: stats.stun, pierce: stats.armorPierce },
     upgrade: turretBranchUpgradeSteps(id, stats),
@@ -281,7 +281,7 @@ const GAME_MODES = {
     buildEnabled: true,
     cameraY: 36, cameraZ: 28,
     /* 开场看向高台东沿/谷口，基地在画面左上，不贴着司令部。 */
-    startFocus: { col: 8, row: 16 },
+    startFocus: { col: 8, row: 17 },
     fogFar: 110,
     prepTime: 30,
     victoryWave: 10,
@@ -293,12 +293,12 @@ const GAME_MODES = {
     endlessScale: wave => wave <= 10 ? 1 : Math.pow(1.1, wave - 10),
     goldStart: 460,
     buildTimer: 0,
-    // GRID=24。峡谷只切进高台 1 格宽 × 3 格长；外面是平地。刷怪点左上 / 右上 / 右下。
-    base: { col: 3, row: 13, gateCol: 3, gateRow: 13 },
+    // GRID=24。峡谷只切进高台 1 格宽 × 3 格长；外面是平地。尸潮统一从上方进入。
+    base: { col: 6, row: 15, gateCol: 6, gateRow: 15 },
     ramp: { col: 10, row: 18 },
     enclosure: { x0: 1, x1: 13, z0: 11, z1: 22 },
     canyon: { x0: 11, x1: 13, z0: 18, z1: 18 },
-    spawns: [ {x: 3, z: 3}, {x: 20, z: 3}, {x: 20, z: 20} ],
+    spawns: [ {x: 3, z: 3}, {x: 20, z: 3} ],
     economy: {
       /* v6.2.2：基础矿固定70；五次升级价格×4、收益×5。 */
       mineCost: SurvivalSystem.MINE_ECONOMY.baseCost,

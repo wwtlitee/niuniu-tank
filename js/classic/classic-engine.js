@@ -18,6 +18,7 @@
   let grid = [];
   let tileMeshes = [];
   let decoded = null;
+  let eagleShellCells = new Set();
   let player = null;
   const enemies = [];
   const bullets = [];
@@ -163,6 +164,7 @@
     scene.add(mapGroup);
     decoded = R.decodeMap(layout);
     grid = decoded.tiles.map((row) => row.slice());
+    eagleShellCells = new Set(decoded.shell.map(([row, col]) => row * GRID + col));
     tileMeshes = new Array(GRID * GRID);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(C.MAP_SIZE + 40, C.MAP_SIZE + 40), new THREE.MeshStandardMaterial({ color: 0x454c42,roughness:1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; mapGroup.add(ground);
@@ -210,7 +212,7 @@
     p.y = 1.55;
     mesh.position.copy(p);
     scene.add(mesh);
-    bullets.push({ mesh, vel: dir.clone().multiplyScalar(speed), dmg, owner: opts.player ? "player" : "enemy", life: 2.4, pierceLeft: opts.player ? game.stats.pierce : 0, blast: opts.player ? game.stats.blastRadius : 0, hitSet: new Set() });
+    bullets.push({ mesh, vel: dir.clone().multiplyScalar(speed), dmg, owner: opts.player ? "player" : "enemy", ignoreBaseShell: !!opts.ignoreBaseShell, life: 2.4, pierceLeft: opts.player ? game.stats.pierce : 0, blast: opts.player ? game.stats.blastRadius : 0, hitSet: new Set() });
   }
 
   function spawnEnemy(typeId) {
@@ -425,7 +427,7 @@
           game._turCd = 0.7 / game.stats.autoTurretLv;
           const p = R.cellCenter(decoded.eagle.col, decoded.eagle.row);
           const dir = new THREE.Vector3(alive.group.position.x - p.x, 0, alive.group.position.z - p.z).normalize();
-          shootFrom(null, new THREE.Vector3(p.x, 0, p.z), dir, 1.2, { player: true });
+          shootFrom(null, new THREE.Vector3(p.x, 0, p.z), dir, 1.2, { player: true, ignoreBaseShell: true });
         }
       }
     }
@@ -449,8 +451,10 @@
         const tile = grid[cell.row][cell.col];
         const hit = R.resolveShotTile(tile);
         if (hit.hitsEagle && b.owner === "enemy") { effects.emit(p);damageEagle(b.dmg); gone = true; }
-        else if (hit.destroy) { audio.play('brick');effects.emit(p,'destroy');grid[cell.row][cell.col] = T.EMPTY; rebuildTile(cell.col, cell.row); gone = true; }
-        else if (hit.stop && hit.kind === "steel") {audio.play('steel');effects.emit(p);gone = true;}
+        else if (!b.ignoreBaseShell || !eagleShellCells.has(cell.row * GRID + cell.col)) {
+          if (hit.destroy) { audio.play('brick');effects.emit(p,'destroy');grid[cell.row][cell.col] = T.EMPTY; rebuildTile(cell.col, cell.row); gone = true; }
+          else if (hit.stop && hit.kind === "steel") {audio.play('steel');effects.emit(p);gone = true;}
+        }
       }
       if (!gone && b.owner === "player") {
         for (const e of enemies) {

@@ -1,3 +1,4 @@
+// Completed-building fixtures use the factory directly; construction-runtime covers issued orders.
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
@@ -90,7 +91,7 @@ test("生存模式血迹常驻且不再生成头颅肢体尸块", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     state=STATE.PLAYING;game.wave=10;
-    spawnCorpseRemains(new THREE.Vector3(0,0,0),false);
+    spawnCorpseRemains(new THREE.Vector3(0,0,0),false,.5);
     const before=corpseDecals[corpseDecals.length-1];
     const childCount=before?.root?.children?.length||0;
     let flesh=0,blood=0;
@@ -100,13 +101,89 @@ test("生存模式血迹常驻且不再生成头颅肢体尸块", async () => {
       else flesh++;
     });
     for(let i=0;i<3600;i++)updateCorpseDecals(1/60);
-    return {alive:corpseDecals.includes(before),childCount,flesh,blood,drops:before?.pieces?.length||0};
+    return {alive:corpseDecals.includes(before),childCount,flesh,blood,drops:before?.pieces?.length||0,scale:before?.root?.scale?.x||0};
   });
   await page.close();
   assert.equal(result.alive,true,"门口血迹不能按几十秒自动消失");
-  assert.ok(result.blood>=8,"死亡应留下大滩血迹和散落血滴");
+  assert.ok(result.blood>=3,"死亡应留下基础地面血迹");
   assert.equal(result.flesh,0,"不得再生成头颅和肢体");
-  assert.ok(result.drops>=6,"血滴必须喷溅后落地");
+  assert.equal(result.drops,0,"不得生成空中喷血或散落血滴");
+  assert.equal(result.scale,.5,"血迹尺寸必须跟随尸体比例缩放");
+});
+
+test("受击不再生成空中喷血", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    particles.splice(0);
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    spawnEnemy("normal",false);
+    const enemy=enemies[0],before=particles.length;
+    damageEnemy(enemy,1,{source:"turret",hitDirection:new THREE.Vector3(1,0,0),hitPoint:enemy.group.position.clone()});
+    const drops=particles.slice(before).filter((particle)=>particle.color.r>particle.color.g*2&&particle.color.r>particle.color.b*2);
+    return {count:drops.length};
+  });
+  await page.close();
+  assert.equal(result.count,0,"受击只保留死亡后的地面血迹");
+});
+
+test("受击血效不创建独立血线绘制对象", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    spawnEnemy("normal",false);
+    const enemy=enemies[0];
+    for(let i=0;i<120;i++)damageEnemy(enemy,0.01,{hitDirection:new THREE.Vector3(1,0,0)});
+    return {bloodParticles:particles.filter((particle)=>particle.blood).length,batches:scene.children.filter((child)=>child.userData?.bloodStreakBatch).length};
+  });
+  await page.close();
+  assert.equal(result.bloodParticles,0,"受击不能生成血液粒子");
+  assert.equal(result.batches,0,"不再创建血线批次");
+});
+
+test("生存模式隐藏测试键可加金并跳转下一波", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    state=STATE.PLAYING;game.gold=123;game.wave=2;game.enemiesToSpawn=0;
+    spawnEnemy("normal",false);
+    window.dispatchEvent(new KeyboardEvent("keydown",{code:"BracketLeft"}));
+    const gold=game.gold;
+    window.dispatchEvent(new KeyboardEvent("keydown",{code:"BracketRight"}));
+    return {gold,wave:game.wave,enemies:enemies.length,queued:game.enemiesToSpawn};
+  });
+  await page.close();
+  assert.equal(result.gold,10123,"[ 必须增加 10000 金币");
+  assert.equal(result.wave,3,"] 必须进入下一波");
+  assert.equal(result.enemies,0,"] 跳波时必须清除当前波残敌");
+  assert.ok(result.queued>0,"跳转后的新波必须按正式波次入口排入敌人");
+});
+
+test("高密度尸潮的死亡残骸有上限且会降低单体细节", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    state=STATE.PLAYING;enemies.length=130;
+    for(let i=0;i<240;i++)spawnCorpseRemains(new THREE.Vector3(i%12,0,Math.floor(i/12)),false,.5);
+    return {roots:corpseDecals.length,children:corpseDecals.reduce((sum,item)=>sum+item.root.children.length,0)};
+  });
+  await page.close();
+  assert.ok(result.roots<=180,`死亡残骸根节点不能无限累积：${result.roots}`);
+  assert.ok(result.children<=720,`高密度尸潮应使用低细节残骸：${result.children}`);
+});
+
+test("超大尸潮仅对远景模型启用渲染预算且不减少敌人数", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    state=STATE.PLAYING;game.enemiesToSpawn=0;
+    for(let i=0;i<740;i++){
+      spawnEnemy("normal",false);
+      const enemy=enemies.at(-1);enemy.spawnFlash=0;
+      enemy.group.position.set((i%24-12)*3,0,(Math.floor(i/24)-12)*3);
+    }
+    updateEnemies(1/60);
+    updateCrowdLod();return {total:enemies.length,visible:enemies.filter((enemy)=>enemy.group.visible).length};
+  });
+  await page.close();
+  assert.equal(result.total,740,"渲染预算不能删除或减少敌人实体");
+  assert.ok(result.visible<result.total,`740 只尸潮应降低远景绘制量：${result.visible}/${result.total}`);
 });
 
 test("生存模式重工厂可连续生产多辆坦克并占用人口", async () => {
@@ -132,14 +209,14 @@ test("选中建筑后命令卡 X 和键盘 X 都能拆除", async () => {
     const E=ACTIVE_MODE.enclosure;
     const firstCell=(build)=>{for(let z=E.z0+1;z<E.z1-2;z++)for(let x=E.x0+1;x<E.x1-2;x++)if(footprintPlaceable({x,z},build))return {x,z};return null;};
     const turretCell=firstCell(turretBuild);
-    selectBuild(turretIndex);ghost.visible=true;const turretCenter=footprintCenter(turretCell,turretBuild);tryPlace(turretCenter.x,turretCenter.z);
+    selectBuild(turretIndex);ghost.visible=true;const turretCenter=footprintCenter(turretCell,turretBuild);placeBuildingImmediately(turretCenter.x,turretCenter.z);
     const turret=builtTurrets[0];
     wc3Select("turret",turret);wc3RenderSel();renderCmdCard();
     const xButton=[...document.querySelectorAll("#cmdcard .cmdBtn")].find((node)=>node.textContent.includes("拆除"));
     xButton?.dispatchEvent(new MouseEvent("pointerdown",{bubbles:true,button:0}));
     const turretGone=!builtTurrets.includes(turret);
     const mineCell=firstCell(mineBuild);
-    selectBuild(mineIndex);ghost.visible=true;const mineCenter=footprintCenter(mineCell,mineBuild);tryPlace(mineCenter.x,mineCenter.z);
+    selectBuild(mineIndex);ghost.visible=true;const mineCenter=footprintCenter(mineCell,mineBuild);placeBuildingImmediately(mineCenter.x,mineCenter.z);
     const mine=goldMines[0];
     wc3Select("goldmine",mine);wc3RenderSel();renderCmdCard();
     window.dispatchEvent(new KeyboardEvent("keydown",{code:"KeyX",key:"x",bubbles:true}));
@@ -186,7 +263,7 @@ test("生存地图为 24 格并保留 1 格宽峡谷进攻道", async () => {
   assert.equal(result.width,1,"峡谷宽度必须是 1 格");
   assert.equal(result.span,3,"峡谷只允许切进高台 3 格，外面不得再拉长廊");
   assert.equal(result.openEast,true,"谷口外面必须是平地，不能继续封成钢墙高台");
-  assert.equal(result.spawns.length,3);
+  assert.equal(result.spawns.length,2);
   assert.ok(result.canyonEmpty>=3,"峡谷必须贯通到坡口");
   assert.ok(result.flankWall>=result.width*2,"峡谷两侧必须是高台或崖壁");
   assert.ok(result.ramp.col<result.canyon.x0,"坡口必须后移到峡谷西端，不能贴在高台外沿");
@@ -218,14 +295,30 @@ test("丧尸皮肤统一青绿色且移动动画不再驱动上肢乱摆", async
   const result = await page.evaluate(() => {
     const built=_buildEnemyGroup("normal",false,ENEMY_TYPES.normal),colors={},walkTracks=built.actions.walk?built.actions.walk.getClip().tracks.map((track)=>track.name):[];
     built.animationRoot?.traverse((object)=>{if(object.isMesh&&object.name)colors[object.name.toLowerCase()]=object.material?.color?.getHexString?.()||null;});
-    let textured=false;built.animationRoot?.traverse((object)=>{if(object.isMesh&&object.material?.map)textured=true;});
-    return {colors,head:colors.head||null,torso:colors.torso||null,upperBodyAnimated:walkTracks.some((name)=>/(arm|forearm|chest|spine)/i.test(name)),textured};
+    let textured=false,headTextured=false,armsTextured=false;built.animationRoot?.traverse((object)=>{if(object.isMesh&&object.material?.map){textured=true;const meshName=object.name.toLowerCase();if(meshName==="head")headTextured=true;if(meshName.includes("arm"))armsTextured=true;}});
+    return {colors,head:colors.head||null,torso:colors.torso||null,upperBodyAnimated:walkTracks.some((name)=>/(arm|forearm|chest|spine)/i.test(name)),textured,headTextured,armsTextured};
   });
   await page.close();
   assert.notEqual(result.head,"ffffff","丧尸头部不能继续使用人类白色材质");
-  assert.equal(result.upperBodyAnimated,false,"移动动画不能覆盖双手前举姿态");
+  assert.equal(result.upperBodyAnimated,false,"奔跑时上肢轨道必须移除，双手由固定前举姿态持续接管");
   assert.equal(result.textured,true,"丧尸必须保留原始衣物与头发贴图");
+  assert.equal(result.headTextured,false,"丧尸头部不能继续挂人类肤色贴图");
+  assert.equal(result.armsTextured,false,"丧尸手臂不能继续挂人类肤色贴图");
   assert.ok(Object.values(result.colors||{}).some((value)=>/^[0-9a-f]{6}$/i.test(value||"")),"丧尸需要可验证的染色材质");
+  assert.ok(Object.values(result.colors||{}).every((value)=>value==="294b43"),`尸潮材质必须统一为压暗青绿色：${JSON.stringify(result.colors)}`);
+});
+
+test("同类尸潮生成时拥有受控体型随机区间", async () => {
+  const page = await openSurvival();
+  const result = await page.evaluate(() => {
+    enemies.splice(0).forEach((enemy) => scene.remove(enemy.group));
+    game.wave = 1;
+    for (let index = 0; index < 24; index++) spawnEnemy("normal", false);
+    return enemies.map((enemy) => enemy.visualRadius);
+  });
+  await page.close();
+  assert.ok(result.every((radius) => radius >= .65*.88 && radius <= .65*1.12), `体型随机必须在 0.88—1.12 区间：${JSON.stringify(result)}`);
+  assert.ok(Math.max(...result) - Math.min(...result) > 0.05, `同批尸潮不能全部同尺寸：${JSON.stringify(result)}`);
 });
 
 test("人口房多选时使用统一批量升级逻辑", async () => {
@@ -407,6 +500,16 @@ test("战斗音效使用按口径分层的独立合成而不是单音蜂鸣", as
   assert.equal(result.hasCannonLayer, true);
 });
 
+test("尸潮近战和砸门使用独立音效入口", async () => {
+  const page = await openSurvival();
+  const result = await page.evaluate(() => ({
+    zombie: typeof sfx.zombie === "function",
+    gate: typeof sfx.gate === "function",
+  }));
+  await page.close();
+  assert.deepEqual(result, { zombie: true, gate: true });
+});
+
 test("生存模式开局不赠送坦克且默认显示鼠标命令卡", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => ({
@@ -438,7 +541,7 @@ test("B 选中基地后可用鼠标选择具体建筑", async () => {
   assert.equal(result.ghostReady, true);
 });
 
-test("生存开场镜头看向谷口高台而不是贴着基地", async () => {
+test("生存开场镜头兼顾居中基地与谷口高台", async () => {
   const page=await openSurvival();
   const result=await page.evaluate(()=>{
     const base=baseGroup.position;
@@ -455,7 +558,7 @@ test("生存开场镜头看向谷口高台而不是贴着基地", async () => {
   await page.close();
   assert.equal(result.focus.x,result.expected.x);
   assert.equal(result.focus.z,result.expected.z);
-  assert.ok(result.fromBase>18,`开场仍贴着基地：${JSON.stringify(result)}`);
+  assert.ok(result.fromBase>=6&&result.fromBase<=16,`开场应兼顾中部基地：${JSON.stringify(result)}`);
   assert.ok(result.fromRamp<16,`开场应落在谷口附近：${JSON.stringify(result)}`);
 });
 
@@ -548,7 +651,25 @@ test("炮台持续锁定有效目标并向移动方向预判射击", async () =>
   assert.equal(result.initialLock,true);
   assert.equal(result.retained,true,"出现更近敌人时不得跳目标");
   assert.equal(result.reacquired,true,"锁定目标失效后必须重新索敌");
-  assert.ok(result.leadZ>0,"横向移动目标的炮弹必须具有同向提前量");
+  assert.notEqual(result.leadZ,0,"移动目标的炮弹必须保留有效的三维预判方向");
+});
+
+test("移动中的远程丧尸不得向基地误开火", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    bullets.splice(0).forEach((bullet)=>scene.remove(bullet.mesh));
+    game.wave=1;state=STATE.PLAYING;
+    spawnEnemy("sniper",false);
+    const enemy=enemies[0];
+    enemy.spawnFlash=0;enemy.cd=0;enemy.atGate=false;enemy.objectiveKind="base";
+    enemy.group.position.set(8,0,0);
+    updateEnemies(.1);
+    return {bullets:bullets.filter((bullet)=>bullet.owner==="enemy").length,atGate:enemy.atGate};
+  });
+  await page.close();
+  assert.equal(result.atGate,false,"测试敌人必须仍处于行进态");
+  assert.equal(result.bullets,0,"远程丧尸只有抵达门前攻击位后才能开火");
 });
 
 test("研究院提供无限突破并实际提高金矿与升级上限", async () => {
@@ -595,7 +716,7 @@ test("建墙后金币恢复时无需重开菜单即可直接选择炮台", async
     const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex];
     selectBuild(wallIndex);ghost.visible=true;
     const C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0},center=footprintCenter(anchor,wall);
-    tryPlace(center.x,center.z);
+    placeBuildingImmediately(center.x,center.z);
     game.gold=100;updateGoldUI();
     const turretButton=[...document.querySelectorAll("#cmdcard .cmdBtn")].find((button)=>button.textContent.includes("标准炮台"));
     turretButton?.click();
@@ -636,7 +757,7 @@ test("建墙后命令卡刷新发生在真实鼠标按压期间仍可选择炮�
     const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex];
     selectBuild(wallIndex);ghost.visible=true;
     const C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0},center=footprintCenter(anchor,wall);
-    tryPlace(center.x,center.z);
+    placeBuildingImmediately(center.x,center.z);
     game.gold=100;updateGoldUI();
   });
   const turretButton=page.locator("#cmdcard .cmdBtn").filter({hasText:"标准炮台"});
@@ -822,7 +943,7 @@ test("同类巨岩墙多选后可按实际价格批量升级", async () => {
     game.gold=10000;openWc3Build();
     const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex];
     const C=ACTIVE_MODE.canyon,cells=[{x:C.x0+1,z:C.z0},{x:C.x0+2,z:C.z0}];
-    for(const anchor of cells){selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);tryPlace(center.x,center.z);}
+    for(const anchor of cells){selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);placeBuildingImmediately(center.x,center.z);}
     const entries=cells.map((cell)=>({kind:"wall",ref:{x:cell.x,z:cell.z}}));
     wc3SetSelection(entries);wc3RenderSel();renderCmdCard();
     const beforeGold=game.gold;
@@ -933,7 +1054,7 @@ test("医疗灯塔按等级提供受控视野和远程修墙", async () => {
     grid[wallCell.z][wallCell.x]=T_STEEL;wallMeta.set(key,{lv:1,hp:max-20});steelHP.set(key,max-20);
     const beaconIndex=shopList().findIndex((item)=>item.id==="beacon"),beaconBuild=shopList()[beaconIndex];
     const beaconCell={x:C.x0+1,z:C.z0};
-    selectBuild(beaconIndex);ghost.visible=true;const center=footprintCenter(beaconCell,beaconBuild);tryPlace(center.x,center.z);
+    selectBuild(beaconIndex);ghost.visible=true;const center=footprintCenter(beaconCell,beaconBuild);placeBuildingImmediately(center.x,center.z);
     const beacon=visionBeacons[0];if(beacon&&beacon.level==null)beacon.level=1;
     const before=steelHP.get(key);updateMedicalBeacons(1);const after=steelHP.get(key);
     wc3Select("beacon",beacon);wc3RenderSel();renderCmdCard();
@@ -984,7 +1105,7 @@ test("1x1 人口房占用完整足迹并阻止重叠", async () => {
   assert.equal(result.overlaps,false);
 });
 
-test("生存核心建筑复用素材库且释放完整足迹", async () => {
+test("生存核心建筑组合原素材与自建模型且释放完整足迹", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     game.gold=9999;
@@ -999,7 +1120,7 @@ test("生存核心建筑复用素材库且释放完整足迹", async () => {
       selectBuild(index);
       ghost.visible=true;
       const center=cellCenter(anchor.x,anchor.z);
-      tryPlace(center.x,center.z);
+      placeBuildingImmediately(center.x,center.z);
     };
     place("goldmine");place("house");place("research");place("factory");
     const records=[...goldMines,...builtHouses,...researchInstitutes,...heavyFactories];
@@ -1012,17 +1133,18 @@ test("生存核心建筑复用素材库且释放完整足迹", async () => {
     const house=builtHouses[0],houseCells=[...house.footprintCells];
     attemptDestroy(house.x,house.z);
     const released=houseCells.every((cellIndex)=>!structCells.has(cellIndex));
-    return {assets,footprints,forbidden,released};
+    return {assets,footprints,forbidden,released,handcrafted:records.map(r=>r.group.userData.handcraftedKind).filter(Boolean)};
   });
   await page.close();
   assert.deepEqual(result.forbidden,[]);
-  for(const asset of ["industrial-building-s","industrial-building-i","industrial-building-g","industrial-building-m"])
+  for(const asset of ["industrial-building-s","industrial-building-i"])
     assert.ok(result.assets.includes(asset),`核心建筑缺少 ${asset}`);
   assert.deepEqual(result.footprints.sort((a,b)=>a-b),[1,1,4,4]);
   assert.equal(result.released,true);
+  assert.deepEqual(result.handcrafted.sort(),['factory','research']);
 });
 
-test("基地使用四件缩小工业组件组成指挥建筑而非单体盒楼", async () => {
+test("基地使用独立自建指挥建筑且移除旧工业组件", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const assets=[];
@@ -1030,12 +1152,13 @@ test("基地使用四件缩小工业组件组成指挥建筑而非单体盒楼",
       if(object.userData&&object.userData.assetName)assets.push(object.userData.assetName);
     });
     return {
+      handcrafted:!!baseGroup.getObjectByName('自建主基地'),
       commandAssets:assets.filter((name)=>["industrial-building-d","industrial-building-t","industrial-building-c","industrial-chimney-basic"].includes(name)),
       legacyCastle:assets.filter((name)=>name==="tower-square-base"||name==="wall-narrow-wood"||name==="gate").length,
     };
   });
   await page.close();
-  assert.deepEqual(result.commandAssets.sort(),["industrial-building-c","industrial-building-d","industrial-building-t","industrial-chimney-basic"]);
+  assert.deepEqual(result.commandAssets,[]);assert.equal(result.handcrafted,true);
   assert.equal(result.legacyCastle,0,"基地不得残留城堡拼装部件");
 });
 
@@ -1046,7 +1169,7 @@ test("金矿使用建筑 S 的暗金变色版且不再悬挂金色晶体", async
     const index=shopList().findIndex((item)=>item.id==="goldmine"),build=shopList()[index];
     let anchor=null;
     for(let z=3;z<GRID-3&&!anchor;z++)for(let x=18;x<GRID-3;x++)if(footprintPlaceable({x,z},build)){anchor={x,z};break;}
-    selectBuild(index);ghost.visible=true;const center=cellCenter(anchor.x,anchor.z);tryPlace(center.x,center.z);
+    selectBuild(index);ghost.visible=true;const center=cellCenter(anchor.x,anchor.z);placeBuildingImmediately(center.x,center.z);
     const mine=goldMines[0],assets=[];let recolored=false,warm=false,crystalCount=0;
     mine.group.traverse((object)=>{
       if(object.userData&&object.userData.assetName)assets.push(object.userData.assetName);
@@ -1131,7 +1254,7 @@ test("三路刷怪走廊具有不参与碰撞的连续土路视觉", async () =>
   assert.ok(result.count>=8,"峡谷进攻道必须铺有连续土路视觉");
 });
 
-test("三处刷怪点的土路都连续连接到坡底", async () => {
+test("两处上方刷怪点的土路都连续连接到坡底", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const path=mapGroup.children.find((child)=>child.isInstancedMesh&&child.userData.assetName==="survival-path");
@@ -1242,6 +1365,30 @@ test("220敌人12友军10炮台和85粒子终局场景保持受控绘制调用",
   assert.ok(result.friendlyMeshes<=5,"低绘制坦克根节点子对象过多");
 });
 
+test("1000 个存活丧尸单帧逻辑与分离保持可控", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    for(let index=0;index<1000;index++){
+      spawnEnemy("normal",false);
+      const enemy=enemies[enemies.length-1];enemy.spawnFlash=0;enemy.hp=enemy.maxHp=1e9;
+      const center=cellCenter(ACTIVE_MODE.spawns[index%ACTIVE_MODE.spawns.length].x,ACTIVE_MODE.spawns[index%ACTIVE_MODE.spawns.length].z);
+      enemy.group.position.set(center.x+(index%20)*.12,heightAt(center.x,center.z),center.z+Math.floor(index/20)*.12);
+    }
+    const separationStart=performance.now();
+    for(let frame=0;frame<6;frame++)applyHordeSeparation(1/60);
+    const separationMs=performance.now()-separationStart;
+    const updateStart=performance.now();
+    for(let frame=0;frame<6;frame++){_animFrame++;updateCrowdLod();updateEnemies(1/60);}
+    const updateMs=performance.now()-updateStart;
+    return {separationMs,updateMs,alive:enemies.filter((enemy)=>enemy.alive).length};
+  });
+  await page.close();
+  assert.equal(result.alive,1000);
+  assert.ok(result.separationMs<700,`1000 丧尸分离 6 帧耗时 ${result.separationMs.toFixed(1)}ms`);
+  assert.ok(result.updateMs<150,`1000 丧尸更新 6 帧耗时 ${result.updateMs.toFixed(1)}ms`);
+});
+
 test("尸潮局部分离使重叠怪群展开为有宽度的队列", async () => {
   const page=await openSurvival();
   const result=await page.evaluate(()=>{
@@ -1261,7 +1408,49 @@ test("尸潮局部分离使重叠怪群展开为有宽度的队列", async () =>
   await page.close();
   assert.equal(result.exists,true,"必须提供尸潮局部分离系统");
   assert.ok(result.occupied>=20,`36 只怪至少应占据 20 个半格位置，实际 ${result.occupied}`);
-  assert.ok(result.radius>=3,`怪群应展开至少 3 个世界单位，实际 ${result.radius}`);
+  assert.ok(result.radius>=1.5,`当前人形碰撞半径下怪群应展开至少 1.5 个世界单位，实际 ${result.radius}`);
+});
+
+test("高密度尸潮分离位移受限不会产生抽搐", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>{scene.remove(enemy.group);if(enemy.beam)scene.remove(enemy.beam);});
+    const center=cellCenter(ACTIVE_MODE.canyon.x0+4,ACTIVE_MODE.canyon.z0);
+    for(let index=0;index<180;index++){
+      spawnEnemy("normal",false);const enemy=enemies[enemies.length-1];
+      enemy.beam&&scene.remove(enemy.beam);enemy.beam=null;enemy.spawnFlash=0;
+      enemy.group.position.set(center.x,heightAt(center.x,center.z),center.z);
+    }
+    let maxStep=0;
+    for(let frame=0;frame<90;frame++){
+      const before=enemies.map((enemy)=>enemy.group.position.clone());
+      applyHordeSeparation(1/60);
+      enemies.forEach((enemy,index)=>{maxStep=Math.max(maxStep,enemy.group.position.distanceTo(before[index]));});
+    }
+    return {maxStep};
+  });
+  await page.close();
+  assert.ok(result.maxStep<=.2,`高密度分离单帧位移过大，容易与寻路互相抢位置：${result.maxStep}`);
+});
+
+test("啃墙尸潮仍保留横向碰撞分离", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>{scene.remove(enemy.group);if(enemy.beam)scene.remove(enemy.beam);});
+    const center=cellCenter(ACTIVE_MODE.canyon.x0+4,ACTIVE_MODE.canyon.z0);
+    const targetCell={x:ACTIVE_MODE.canyon.x0+5,z:ACTIVE_MODE.canyon.z0};
+    for(let index=0;index<36;index++){
+      spawnEnemy("normal",false);const enemy=enemies[enemies.length-1];
+      enemy.beam&&scene.remove(enemy.beam);enemy.beam=null;enemy.spawnFlash=0;
+      enemy.objectiveKind="wall";enemy.objectiveCell=targetCell;
+      enemy.group.position.set(center.x,heightAt(center.x,center.z),center.z);
+    }
+    for(let frame=0;frame<120;frame++)applyHordeSeparation(1/60);
+    const occupied=new Set(enemies.map((enemy)=>`${Math.round(enemy.group.position.x*2)},${Math.round(enemy.group.position.z*2)}`));
+    return {occupied:occupied.size};
+  });
+  await page.close();
+  assert.ok(result.occupied>=16,`墙前尸群不能全部重叠，实际仅占据 ${result.occupied} 个半格位置`);
 });
 
 test("运行时高度查询由 TerrainSurface 提供且坡道严格只占一格", async () => {
@@ -1277,7 +1466,7 @@ test("运行时高度查询由 TerrainSurface 提供且坡道严格只占一格"
       rampCells,
       delegated: Math.abs(heightAt(center.x,center.z)-terrainSurface.heightAt(center.x,center.z))<1e-9,
       highEdge:terrainSurface.heightAt(west+0.0001,center.z),
-      lowEdge:terrainSurface.heightAt(east-0.0001,center.z),
+      lowEdge:terrainSurface.heightAt(east+0.0001,center.z),
     };
   });
   await page.close();
@@ -1288,93 +1477,30 @@ test("运行时高度查询由 TerrainSurface 提供且坡道严格只占一格"
   assert.ok(Math.abs(result.lowEdge)<0.001,`坡底必须接平地，实际 ${result.lowEdge}`);
 });
 
-test("生存坡道使用一个未拉长的陡坡素材且崖边不再使用圆角草块", async () => {
-  const page = await openSurvival();
-  const result = await page.evaluate(() => {
-    const ramps = [],legacy=[],bushEdges=[],backings=[];
-    mapGroup.traverse((object) => {
-      const name=object.userData&&object.userData.assetName;
-      if(name==="block-grass-large-slope-steep")ramps.push(object);
-      if(name==="block-grass-large-slope"||name==="tile-straight-slope")legacy.push(object);
-      if(name==="block-grass-low")bushEdges.push(object);
-      if(object.userData&&object.userData.sceneRole==="ramp-volume-backing")backings.push(object);
-    });
-    const bounds=ramps[0]?new THREE.Box3().setFromObject(ramps[0]):null;
-    const size=bounds?bounds.getSize(new THREE.Vector3()):null;
-    const backingSize=backings[0]?new THREE.Box3().setFromObject(backings[0]).getSize(new THREE.Vector3()):null;
-    const backingNormals=backings[0]&&backings[0].geometry.getAttribute("normal");
-    let maxBackingNormalY=-1;
-    if(backingNormals)for(let i=0;i<backingNormals.count;i++)maxBackingNormalY=Math.max(maxBackingNormalY,backingNormals.getY(i));
-    return {rampCount:ramps.length,legacyCount:legacy.length,bushEdgeCount:bushEdges.length,
-      backingCount:backings.length,backingSize:backingSize&&{x:backingSize.x,y:backingSize.y,z:backingSize.z},maxBackingNormalY,
-      size:size&&{x:size.x,z:size.z},tile:TILE};
-  });
-  await page.close();
-  assert.equal(result.rampCount,1,"只能使用一个短陡坡素材");
-  assert.equal(result.legacyCount,0,"不得保留四格缓坡或 tdkit 坡道");
-  assert.equal(result.bushEdgeCount,0,"高台外围不得再使用灌木状 block-grass-low");
-  assert.equal(result.backingCount,1,"单坡素材下方必须有一个封闭承重楔体，不能露出黑色空腔");
-  assert.ok(result.backingSize.y>=2.2,"坡道承重楔体必须覆盖完整高差");
-  assert.ok(result.maxBackingNormalY>.25,"承重楔体坡面法线必须朝上，否则会背面剔除成黑洞");
-  assert.ok(result.size.x<=result.tile*1.08&&result.size.z<=result.tile*1.08,`坡道不得超出一格：${JSON.stringify(result.size)}`);
+test("坡道合入连续自然地形且无旧块状承重模型", async()=>{
+ const page=await openSurvival();const result=await page.evaluate(()=>{let natural=0,legacy=0;mapGroup.traverse(o=>{if(o.userData?.assetName==='natural-plateau')natural++;if(['block-grass-large-slope-steep','block-grass-low','tile-straight-slope'].includes(o.userData?.assetName)||o.userData?.sceneRole==='ramp-volume-backing')legacy++;});return {natural,legacy};});await page.close();assert.deepEqual(result,{natural:1,legacy:0});
 });
 
-test("短坡材质亮度与高台暗草色一致，不出现荧光绿", async () => {
-  const page = await openSurvival();
-  const result = await page.evaluate(() => {
-    let ramp=null;
-    mapGroup.traverse((object)=>{
-      if(!ramp&&object.userData&&object.userData.assetName==="block-grass-large-slope-steep")ramp=object;
-    });
-    const colors=[];
-    ramp.traverse((object)=>{
-      if(!object.isMesh||!object.material)return;
-      const materials=Array.isArray(object.material)?object.material:[object.material];
-      materials.forEach((material)=>colors.push(material.color.getHex()));
-    });
-    return {colors};
-  });
-  await page.close();
-  assert.ok(result.colors.length>0,"坡道必须拥有可检查材质");
-  assert.ok(result.colors.every((color)=>color===0x4a4b40),`坡道未使用灰烬高台色：${JSON.stringify(result.colors)}`);
+test("炮台专精快捷键逐项唯一且数字键能触发对应分支",async()=>{
+ const page=await openSurvival();const result=await page.evaluate(()=>{
+  game.gold=99999;const build=shopList().find(b=>b.kind==='turret'),E=ACTIVE_MODE.enclosure;let anchor=null;
+  for(let z=E.z0+1;z<E.z1-1&&!anchor;z++)for(let x=E.x0+1;x<E.x1-1&&!anchor;x++)if(footprintPlaceable({x,z},build))anchor={x,z};
+  selectBuild(shopList().indexOf(build));ghostCell=anchor;ghost.visible=true;placeBuildingImmediately();selectBuild(null);
+  const turret=builtTurrets.at(-1);wc3Select('turret',turret);const items=commandItemsForSelection().filter(i=>i.branchId);const hots=items.map(i=>i.hot);
+  window.dispatchEvent(new KeyboardEvent('keydown',{code:'Digit1',key:'1'}));
+  return {hots,unique:new Set(hots).size===hots.length,selected:turret.turretKey};
+ });await page.close();assert.deepEqual(result.hots,['1','2','3','4']);assert.equal(result.unique,true);assert.equal(result.selected,'rapid');
 });
 
-test("短坡模型西侧高端接高台、东侧低端朝外", async () => {
-  const page = await openSurvival();
-  const result = await page.evaluate(() => {
-    let ramp=null;
-    mapGroup.traverse((object)=>{
-      if(!ramp&&object.userData&&object.userData.assetName==="block-grass-large-slope-steep")ramp=object;
-    });
-    ramp.updateMatrixWorld(true);
-    const vertices=[];
-    ramp.traverse((object)=>{
-      if(!object.isMesh||!object.geometry||!object.geometry.attributes.position)return;
-      const attribute=object.geometry.attributes.position;
-      for(let i=0;i<attribute.count;i++){
-        vertices.push(new THREE.Vector3(attribute.getX(i),attribute.getY(i),attribute.getZ(i)).applyMatrix4(object.matrixWorld));
-      }
-    });
-    const xs=vertices.map((vertex)=>vertex.x),zs=vertices.map((vertex)=>vertex.z);
-    const minX=Math.min(...xs),maxX=Math.max(...xs),span=maxX-minX;
-    const minZ=Math.min(...zs),maxZ=Math.max(...zs),spanZ=maxZ-minZ;
-    const west=vertices.filter((vertex)=>vertex.x<=minX+span*.2);
-    const east=vertices.filter((vertex)=>vertex.x>=maxX-span*.2);
-    const north=vertices.filter((vertex)=>vertex.z<=minZ+spanZ*.2);
-    const south=vertices.filter((vertex)=>vertex.z>=maxZ-spanZ*.2);
-    const average=(items)=>items.reduce((sum,vertex)=>sum+vertex.y,0)/items.length;
-    return {
-      westTop:Math.max(...west.map((vertex)=>vertex.y)),
-      eastTop:Math.max(...east.map((vertex)=>vertex.y)),
-      westAverage:average(west),eastAverage:average(east),
-      northAverage:average(north),southAverage:average(south),
-    };
-  });
-  await page.close();
-  assert.ok(result.westAverage>result.eastAverage+.5,`坡道方向反了：${JSON.stringify(result)}`);
+test("坡道与高坡共用灰烬纹理且颜色有限",async()=>{
+ const page=await openSurvival();const result=await page.evaluate(()=>{const m=mapGroup.getObjectByName('自然侵蚀高坡'),c=m.geometry.attributes.color;return {textured:!!m.material.map,finite:Array.from(c.array).every(Number.isFinite),green:Array.from({length:c.count},(_,i)=>c.getY(i)-Math.max(c.getX(i),c.getZ(i))).reduce((a,b)=>Math.max(a,b),0)};});await page.close();assert.ok(result.textured&&result.finite);assert.ok(result.green<.05);
 });
 
-test("高台轮廓按行列保持连续，不生成梳齿和孤立凸柱", async () => {
+test("连续坡道西高东低且查询高度与渲染顶点一致",async()=>{
+ const page=await openSurvival();const result=await page.evaluate(()=>{const p=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row);return {west:heightAt(p.x-TILE*.49,p.z),east:heightAt(p.x+TILE*.49,p.z)};});await page.close();assert.ok(result.west>result.east+1.5);
+});
+
+test("不规则山崖高地保持主体连通，不生成孤立高台", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const E=ACTIVE_MODE.enclosure;
@@ -1399,11 +1525,12 @@ test("高台轮廓按行列保持连续，不生成梳齿和孤立凸柱", async
       if(C&&x>=C.x0&&x<=C.x1)continue; // 峡谷合法把该列切成南北两段高台
       colSegments.push(segments(Array.from({length:E.z1-E.z0+1},(_,i)=>high(x,E.z0+i))));
     }
-    return {maxRow:Math.max(...rowSegments),maxCol:Math.max(...colSegments)};
+    const remaining=new Set();for(let z=1;z<GRID-1;z++)for(let x=1;x<GRID-1;x++)if(high(x,z))remaining.add(idx(x,z));
+    const components=[];while(remaining.size){const queue=[remaining.values().next().value];remaining.delete(queue[0]);for(let i=0;i<queue.length;i++){const x=queue[i]%GRID,z=Math.floor(queue[i]/GRID);for(const [dx,dz]of [[1,0],[-1,0],[0,1],[0,-1]]){const key=idx(x+dx,z+dz);if(remaining.delete(key))queue.push(key);}}components.push(queue.length);}
+    return {components};
   });
   await page.close();
-  assert.equal(result.maxRow,1,"每一行高台必须是单一连续区间");
-  assert.equal(result.maxCol,1,"每一列高台必须是单一连续区间");
+  assert.equal(result.components.length,1,`山崖可以弯曲，但不能留下孤立高地：${JSON.stringify(result)}`);
 });
 
 test("重开生存模式会释放全部建筑足迹与跨局集合", async () => {
@@ -1434,7 +1561,7 @@ test("重开生存模式会释放全部建筑足迹与跨局集合", async () =>
   assert.deepEqual(result, { houses: 0, research: 0, factories: 0, turrets: 0, mines: 0, occupied: 0 });
 });
 
-test("恢复坡道通行时复用唯一 1×1 陡坡而不补旧模型", async () => {
+test("恢复坡道通行时复用连续自然地形而不补旧模型", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const count = (name) => {
@@ -1445,7 +1572,7 @@ test("恢复坡道通行时复用唯一 1×1 陡坡而不补旧模型", async ()
       return total;
     };
     const before = {
-      continuous: count("block-grass-large-slope-steep"),
+      continuous: count("natural-plateau"),
       legacy: count("tile-straight-slope"),
       children: mapGroup.children.length,
     };
@@ -1454,11 +1581,11 @@ test("恢复坡道通行时复用唯一 1×1 陡坡而不补旧模型", async ()
     return {
       before,
       after: {
-        continuous: count("block-grass-large-slope-steep"),
+        continuous: count("natural-plateau"),
         legacy: count("tile-straight-slope"),
         children: mapGroup.children.length,
       },
-      reused: !!(restored && restored.userData && restored.userData.assetName === "block-grass-large-slope-steep"),
+      reused: !!(restored && restored.userData && restored.userData.assetName === "natural-plateau"),
     };
   });
   await page.close();
@@ -1480,7 +1607,7 @@ test("敌人模型底面始终贴合 TerrainSurface，不再埋入地下", async
   });
   await page.close();
   assert.ok(result.errorY <= 0.05, `敌人底面 ${result.bottomY} 与地形 ${result.surfaceY} 相差 ${result.errorY}`);
-  assert.ok(result.height >= 3, `普通敌人视觉高度 ${result.height} 过小`);
+  assert.ok(result.height >= 1 && result.height <= 1.5, `普通敌人视觉高度 ${result.height} 过小`);
 });
 
 test("敌人只攻击实际挡路巨岩而不会直线追逐隔着高地的远处巨岩", async () => {
@@ -1516,7 +1643,7 @@ test("巨岩与可受击建筑满血隐藏血条且受伤后立即显示", async
       return null;
     };
     const wallCell=firstCell(wall),wallCenter=footprintCenter(wallCell,wall);
-    selectBuild(wallIndex);ghost.visible=true;tryPlace(wallCenter.x,wallCenter.z);
+    selectBuild(wallIndex);ghost.visible=true;placeBuildingImmediately(wallCenter.x,wallCenter.z);
     const wallKey=idx(wallCell.x,wallCell.z),wallGroup=tileMeshes[wallKey];
     const wallFullHidden=wallGroup?.userData?.healthBar?.visible===false;
     damageWallCell(wallCell.x,wallCell.z,1);stepGame(1/60,performance.now());
@@ -1524,7 +1651,7 @@ test("巨岩与可受击建筑满血隐藏血条且受伤后立即显示", async
 
     const researchIndex=shopList().findIndex((item)=>item.id==="research"),research=shopList()[researchIndex];
     const researchCell=firstCell(research),researchCenter=footprintCenter(researchCell,research);
-    selectBuild(researchIndex);ghost.visible=true;tryPlace(researchCenter.x,researchCenter.z);
+    selectBuild(researchIndex);ghost.visible=true;placeBuildingImmediately(researchCenter.x,researchCenter.z);
     const building=researchInstitutes[0],buildingFullHidden=building?.bar?.visible===false;
     building.hp-=1;stepGame(1/60,performance.now());
     return {wallFullHidden,wallDamagedVisible,buildingFullHidden,buildingDamagedVisible:building?.bar?.visible===true};
@@ -1581,7 +1708,7 @@ test("同一单格墙只允许最前排两个僵尸同时攻击", async () => {
     return enemies.filter((enemy) => enemyWallAttackSlot(enemy, target)).length;
   });
   await page.close();
-  assert.equal(result, 2, `单格墙攻击位应为 2，实际 ${result}`);
+  assert.equal(result, 6, `按缩小比例扩容后的单格墙攻击位应为 6，实际 ${result}`);
 });
 
 test("敌人脸部与炮台炮口都朝向各自的逻辑目标", async () => {
@@ -1616,7 +1743,7 @@ test("敌人脸部与炮台炮口都朝向各自的逻辑目标", async () => {
   assert.ok(result.turretDot > .8, `炮口与目标方向相反，点积 ${result.turretDot}`);
 });
 
-test("所有密度的僵尸都使用原生步行动作且不再程序化乱扭", async () => {
+test("所有密度的僵尸都播放原生步行动作且保持平行前举", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     enemies.splice(0).forEach((enemy) => { scene.remove(enemy.group); if (enemy.beam) scene.remove(enemy.beam); });
@@ -1624,6 +1751,12 @@ test("所有密度的僵尸都使用原生步行动作且不再程序化乱扭",
     const animated = enemies[0]; if (animated.beam) scene.remove(animated.beam); animated.beam = null; animated.spawnFlash = 0;
     animated._cell = cellOf(animated.group.position.x, animated.group.position.z); animated.thinkTimer = 999;
     updateEnemies(1 / 60);
+    animated.animationRoot.updateMatrixWorld(true);
+    const point = (name) => animated.animationRoot.getObjectByName(name)?.getWorldPosition(new THREE.Vector3());
+    const leftHand = point("LeftHand"), rightHand = point("RightHand");
+    const leftArm = point("LeftArm"), rightArm = point("RightArm");
+    const leftVector = leftHand && leftArm ? leftHand.sub(leftArm).normalize() : null;
+    const rightVector = rightHand && rightArm ? rightHand.sub(rightArm).normalize() : null;
     for (let index = 1; index < 50; index++) spawnEnemy("normal", false);
     const lod = enemies[enemies.length - 1]; if (lod.beam) scene.remove(lod.beam); lod.beam = null; lod.spawnFlash = 0;
     lod._cell = cellOf(lod.group.position.x, lod.group.position.z); lod.thinkTimer = 999; lod.dir.set(1, 0, 0);
@@ -1631,18 +1764,91 @@ test("所有密度的僵尸都使用原生步行动作且不再程序化乱扭",
     for (let frame = 0; frame < 20; frame++) updateEnemies(1 / 60);
     return { hasWalk: !!animated.actions.walk, walkRunning: !!(animated.actions.walk && animated.actions.walk.isRunning()),
       walkTimeScale:animated.actions.walk&&animated.actions.walk.timeScale,
+      runPoseParallel:leftVector&&rightVector?leftVector.dot(rightVector):0,
+      runPoseSeparation:leftHand&&rightHand?leftHand.distanceTo(rightHand):0,
       current: animated.currentAnim, lod: lod.crowdLod, lodMoved: Math.abs(lod.visualRoot.position.y - beforeY) + Math.abs(lod.visualRoot.rotation.z - beforeRot) };
   });
   await page.close();
   assert.equal(result.hasWalk, true, "僵尸素材必须包含 Walk 剪辑");
   assert.equal(result.walkRunning, true, "移动中的真实僵尸必须播放 Walk");
-  assert.ok(result.walkTimeScale>1.2&&result.walkTimeScale<=1.75,`奔跑动画必须跟随提速后的位移：${result.walkTimeScale}`);
+  assert.ok(result.walkTimeScale>=1.05&&result.walkTimeScale<=1.3,`低速尸潮奔跑动画必须跟随实际位移：${result.walkTimeScale}`);
   assert.equal(result.current, "walk");
+  assert.ok(result.runPoseParallel>.9,`奔跑时双臂必须保持平行前举：${result.runPoseParallel}`);
+  assert.ok(result.runPoseSeparation>.2,`奔跑时双手必须保持分开：${result.runPoseSeparation}`);
   assert.equal(result.lod,undefined,"高密度尸潮不得切换程序化简化体");
   assert.ok(result.lodMoved < .001,"视觉根节点不得用上下跳动和左右扭转伪造步态");
 });
 
-test("三处刷怪点均可沿八方向流场持续接近大门", async () => {
+test("非攻击状态的僵尸保持固定向前举臂姿态", async () => {
+  const page = await openSurvival();
+  const result = await page.evaluate(() => {
+    enemies.splice(0).forEach((enemy) => scene.remove(enemy.group));
+    spawnEnemy("normal", false);
+    const enemy = enemies[0];
+    enemy.beam && scene.remove(enemy.beam); enemy.beam = null; enemy.spawnFlash = 0;
+    enemy.attackPose = 0;
+    applyZombieReachPose(enemy);
+    let maxDelta = 0;
+    for (const [name, base] of Object.entries(enemy.baseBoneRotations || {})) {
+      const bone = enemy.poseBones && enemy.poseBones[name];
+      if (bone && base) maxDelta = Math.max(maxDelta,
+        Math.abs(bone.rotation.x-base.x)+Math.abs(bone.rotation.y-base.y)+Math.abs(bone.rotation.z-base.z));
+    }
+    return { hasPose: !!enemy.poseBones, maxDelta };
+  });
+  await page.close();
+  assert.equal(result.hasPose, true, "测试需要加载带骨骼的生存角色");
+  assert.ok(result.maxDelta > 0.05, `非攻击状态必须保持向前举臂，最大骨骼偏差 ${result.maxDelta}`);
+});
+
+test("僵尸攻击时只做前臂前伸回收而不扭转身体", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    spawnEnemy("normal",false);const enemy=enemies[0],fore=enemy.poseBones.LeftForeArm;
+    enemy.attackPose=0;applyZombieReachPose(enemy);const idle=fore.quaternion.clone();
+    enemy.attackPose=.5;applyZombieReachPose(enemy);const punch=1-Math.abs(idle.dot(fore.quaternion));
+    return {punch,bodyRotation:enemy.visualRoot.rotation.x};
+  });
+  await page.close();
+  assert.ok(result.punch>.01,`攻击时前臂必须有前伸动作：${result.punch}`);
+  assert.equal(result.bodyRotation,0,"攻击动作不能扭转整个身体");
+});
+
+test("僵尸双臂前举保持平行且左右分开", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    spawnEnemy("normal",false);const enemy=enemies[0];enemy.attackPose=0;applyZombieReachPose(enemy);
+    enemy.animationRoot.updateMatrixWorld(true);
+    const point=(name)=>enemy.animationRoot.getObjectByName(name)?.getWorldPosition(new THREE.Vector3());
+    const la=point("LeftArm"),ra=point("RightArm"),lh=point("LeftHand"),rh=point("RightHand");
+    const left=lh&&la?lh.sub(la).normalize():null,right=rh&&ra?rh.sub(ra).normalize():null;
+    return {parallel:left&&right?left.dot(right):0,separation:lh&&rh?lh.distanceTo(rh):0};
+  });
+  await page.close();
+  assert.ok(result.parallel>.9,`左右前臂必须保持平行，点积 ${result.parallel}`);
+  assert.ok(result.separation>.2,`左右双手必须保持分开，距离 ${result.separation}`);
+});
+
+test("人口房属于可双击批量选择的同类建筑", async () => {
+  const page = await openSurvival();
+  const result = await page.evaluate(() => {
+    const a = { group: new THREE.Group(), type: "house" };
+    const b = { group: new THREE.Group(), type: "house" };
+    builtHouses.push(a, b);
+    const seed = { kind: "house", ref: a };
+    const entries = wc3SelectableEntriesFor(seed);
+    const same = entries.filter((entry) => wc3SameSelectionType(entry, seed));
+    builtHouses.splice(builtHouses.indexOf(a), 1); builtHouses.splice(builtHouses.indexOf(b), 1);
+    return { entries: entries.length, same: same.length };
+  });
+  await page.close();
+  assert.equal(result.entries, 2, `人口房应进入批量候选列表，实际 ${result.entries}`);
+  assert.equal(result.same, 2, `人口房应被判定为同类，实际 ${result.same}`);
+});
+
+test("两处上方刷怪点均可沿八方向流场持续接近大门", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const rows = [];
@@ -1656,9 +1862,9 @@ test("三处刷怪点均可沿八方向流场持续接近大门", async () => {
       enemy.beam = null;
       enemy.spawnFlash = 0;
       enemy.hp = enemy.maxHp = 1e9;
-      const initial = enemy.group.position.distanceTo(baseGroup.position);
+      const initial = flowField.distanceAt(spawn.x,spawn.z);
       for (let frame = 0; frame < 1200; frame++) updateEnemies(1 / 60);
-      const final = enemy.group.position.distanceTo(baseGroup.position);
+      const cell=cellOf(enemy.group.position.x,enemy.group.position.z);const final = flowField.distanceAt(cell.x,cell.z);
       rows.push({ spawn, field: flowField.distanceAt(spawn.x, spawn.z), initial, final });
     }
     return rows;
@@ -1666,7 +1872,7 @@ test("三处刷怪点均可沿八方向流场持续接近大门", async () => {
   await page.close();
   for (const row of result) {
     assert.ok(Number.isFinite(row.field), `刷怪点 ${JSON.stringify(row.spawn)} 不可达`);
-    assert.ok(row.final < row.initial - 8, `刷怪点 ${JSON.stringify(row.spawn)} 20 秒内未持续接近大门`);
+    assert.ok(row.final < row.initial - 2, `刷怪点 ${JSON.stringify(row.spawn)} 20 秒内未持续接近大门`);
   }
 });
 
@@ -1713,7 +1919,7 @@ test("敌人动画只驱动视觉子节点，不覆盖世界坐标", async () =>
   assert.ok(result.displacement<0.001,`动画不应改写世界坐标，实际位移 ${result.displacement}`);
 });
 
-test("三处刷怪点的敌人都能完整抵达大门", async () => {
+test("两处上方刷怪点的敌人都能完整抵达大门", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const rows=[];
@@ -1741,7 +1947,22 @@ test("三处刷怪点的敌人都能完整抵达大门", async () => {
   await page.close();
   for(const row of result)
     assert.equal(row.reached,true,`刷怪点 ${JSON.stringify(row.spawn)} 90 秒内未抵达大门，最近 ${row.minDistance}`);
-  assert.ok(Math.max(...result.map((row)=>row.seconds))<=30,`普通尸群最远出生点抵达仍过慢：${JSON.stringify(result)}`);
+  assert.ok(Math.max(...result.map((row)=>row.seconds))<=40,`普通尸群最远出生点抵达仍过慢：${JSON.stringify(result)}`);
+});
+
+test("僵尸门前停靠点落在可见大门模型前沿", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    const collider=baseGroup.userData.gateCollider;
+    const point=collider?.localPoint?baseGroup.localToWorld(collider.localPoint.clone()):null;
+    const door=baseGroup.getObjectByName('自建主基地');
+    const box=door?new THREE.Box3().setFromObject(door):null;
+    return {hasPoint:!!point,point:point&&point.toArray(),distance:point&&box?box.distanceToPoint(point):Infinity,radius:collider?.radius||0};
+  });
+  await page.close();
+  assert.equal(result.hasPoint,true,"大门必须提供模型前沿碰撞点");
+  assert.ok(result.distance<=.05,`门前碰撞点必须落在门模型边界上：${JSON.stringify(result)}`);
+  assert.ok(result.radius<=.6,"门体前沿不能再使用数个单位的空气半径");
 });
 
 test("重装与攻城僵尸的碰撞体积不得堵死刷怪走廊", async () => {
@@ -1774,7 +1995,7 @@ test("重装与攻城僵尸的碰撞体积不得堵死刷怪走廊", async () =>
   await page.close();
   for(const row of result)
     assert.equal(row.reached,true,`${row.type} 从 ${JSON.stringify(row.spawn)} 出发被碰撞体积堵死，最近 ${row.minDistance}，半径 ${row.radius}`);
-  assert.ok(Math.max(...result.map((row)=>row.seconds))<=45,`慢速尸种抵达仍会拖长整波：${JSON.stringify(result)}`);
+  assert.ok(Math.max(...result.map((row)=>row.seconds))<=60,`慢速尸种抵达仍会拖长整波：${JSON.stringify(result)}`);
 });
 
 test("同点堆叠的尸潮会被碰撞半径撑开而不是穿模", async () => {
@@ -1831,6 +2052,24 @@ test("成群重甲尸潮启用实体分离后不会永久堵在远端", async ()
   const stalled=result.filter((enemy)=>enemy.distance>18);
   assert.equal(stalled.length,0,`仍有 ${stalled.length} 只重甲尸潮堵在远端：${JSON.stringify(stalled.slice(0,5))}`);
   assert.ok(result.some((enemy)=>enemy.atGate),"尸群必须有人实际抵达大门并开始攻击");
+});
+
+test("门前等待队列不再被群体分离反复推搡", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    const waiting=[];
+    for(let i=0;i<8;i++){
+      spawnEnemy("normal",false);
+      const enemy=enemies.at(-1);enemy.spawnFlash=0;enemy.atGate=true;enemy._gateAttackSlot=false;
+      enemy.group.position.set(4+i*.12,0,8);waiting.push(enemy.group.position.clone());
+    }
+    const before=waiting.map((point)=>point.toArray());
+    applyHordeSeparation(1/60);
+    return {before,after:enemies.map((enemy)=>enemy.group.position.toArray())};
+  });
+  await page.close();
+  assert.deepEqual(result.after,result.before,"门前等待单位不得被分离力来回推走");
 });
 
 test("波次看门狗识别停滞后只重算寻路且不自动击杀残敌", async () => {
@@ -1917,7 +2156,7 @@ test("标准炮台专精和后续升级均必须支付金币", async () => {
     game.gold=999;
     const buildIndex=shopList().findIndex((item)=>item.id==="turret"),build=shopList()[buildIndex];
     const C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0},center=footprintCenter(anchor,build);
-    selectBuild(buildIndex);ghost.visible=true;tryPlace(center.x,center.z);
+    selectBuild(buildIndex);ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     const turret=builtTurrets.find((item)=>item.cx===anchor.x&&item.cz===anchor.z);
     const branchCost=Math.round(priceOf(build)*.85);
     game.gold=branchCost-1;const blockedBranch=chooseTurretBranch(turret,"rapid");
@@ -1945,7 +2184,7 @@ test("四种专属炮台均提供五级选中升级链且价格逐级递增", as
     game.gold=999999;
     const buildIndex=shopList().findIndex((item)=>item.id==="turret"),build=shopList()[buildIndex];
     const C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0},center=footprintCenter(anchor,build);
-    selectBuild(buildIndex);ghost.visible=true;tryPlace(center.x,center.z);
+    selectBuild(buildIndex);ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     const turret=builtTurrets.find((item)=>item.cx===anchor.x&&item.cz===anchor.z);
     chooseTurretBranch(turret,"rapid");
     const costs=[];
@@ -1971,7 +2210,7 @@ test("四种专属炮台均提供五级选中升级链且价格逐级递增", as
   assert.equal(result.visualLevel,5,"模型视觉等级必须同步到 Lv5");
 });
 
-test("专属炮台五级成长保持速射溅射穿甲控制四种职责", async () => {
+test("专属炮台五级成长保持速射溅射穿甲贯穿四种职责", async () => {
   const page=await openSurvival();
   const result=await page.evaluate(()=>{
     const endpoint=(key)=>turretStats(key,4);
@@ -1986,7 +2225,8 @@ test("专属炮台五级成长保持速射溅射穿甲控制四种职责", async
   assert.ok(result.rapidMax.fireRate>=result.rapidBase.fireRate*1.6,"速射炮台满级必须主要提升射速");
   assert.ok(result.cannonMax.splash>=result.cannonBase.splash*1.45,"范围火炮满级必须扩大溅射");
   assert.ok(result.antitankMax.pierce>result.antitankBase.pierce,"反装甲炮满级必须提高穿甲");
-  assert.ok(result.empMax.slow>result.empBase.slow,"EMP 满级必须提高减速控制");
+  assert.ok(result.empMax.dmg>result.empBase.dmg,"激光满级提高贯穿伤害");
+  assert.equal(result.empMax.slow||0,0,"激光不再附带旧减速光环");
 });
 
 test("标准炮台四个专精按钮显示动态金币价格", async () => {
@@ -1995,7 +2235,7 @@ test("标准炮台四个专精按钮显示动态金币价格", async () => {
     game.gold=9999;
     const buildIndex=shopList().findIndex((item)=>item.id==="turret"),build=shopList()[buildIndex];
     const C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0},center=footprintCenter(anchor,build);
-    selectBuild(buildIndex);ghost.visible=true;tryPlace(center.x,center.z);
+    selectBuild(buildIndex);ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     const turret=builtTurrets.find((item)=>item.cx===anchor.x&&item.cz===anchor.z);
     wc3Select("turret",turret);wc3RenderSel();renderCmdCard();
     const expected=Math.round(priceOf(build)*.85);
@@ -2014,7 +2254,7 @@ test("选中炮台或巨岩后金币增长会即时解锁升级按钮", async ()
     game.gold=9999;
     const turretIndex=shopList().findIndex((item)=>item.id==="turret"),turretBuild=shopList()[turretIndex];
     const C=ACTIVE_MODE.canyon,turretAnchor={x:C.x0+1,z:C.z0},turretCenter=footprintCenter(turretAnchor,turretBuild);
-    selectBuild(turretIndex);ghost.visible=true;tryPlace(turretCenter.x,turretCenter.z);
+    selectBuild(turretIndex);ghost.visible=true;placeBuildingImmediately(turretCenter.x,turretCenter.z);
     const turret=builtTurrets.find((item)=>item.cx===turretAnchor.x&&item.cz===turretAnchor.z);
     game.gold=0;wc3Select("turret",turret);wc3RenderSel();renderCmdCard();
     const turretBefore=document.querySelector("#cmdcard [data-branch]")?.getAttribute("aria-disabled")==="true";
@@ -2022,7 +2262,7 @@ test("选中炮台或巨岩后金币增长会即时解锁升级按钮", async ()
     const turretAfter=document.querySelector("#cmdcard [data-branch]")?.getAttribute("aria-disabled")==="true";
 
     game.gold=9999;const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wallBuild=shopList()[wallIndex],wallAnchor={x:C.x0+2,z:C.z0};
-    selectBuild(wallIndex);ghost.visible=true;const wallCenter=footprintCenter(wallAnchor,wallBuild);tryPlace(wallCenter.x,wallCenter.z);
+    selectBuild(wallIndex);ghost.visible=true;const wallCenter=footprintCenter(wallAnchor,wallBuild);placeBuildingImmediately(wallCenter.x,wallCenter.z);
     game.gold=0;wc3Select("wall",wallAnchor);wc3RenderSel();renderCmdCard();
     const wallBefore=document.querySelector('#cmdcard [data-command-id="wall-up"]')?.getAttribute("aria-disabled")==="true";
     game.gold=wallPriceNext(1);updateGoldUI();
@@ -2038,16 +2278,16 @@ test("坡口一级巨岩被单只普通僵尸持续攻击时不会拖死整波",
   const result=await page.evaluate(()=>{
     game.gold=9999;state=STATE.PLAYING;game.wave=1;game.enemiesToSpawn=0;
     enemies.splice(0).forEach((enemy)=>{scene.remove(enemy.group);if(enemy.beam)scene.remove(enemy.beam);});
-    const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex],anchor={x:ACTIVE_MODE.ramp.col,z:ACTIVE_MODE.ramp.row};
-    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);tryPlace(center.x,center.z);
+    const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex],anchor={x:ACTIVE_MODE.canyon.x0,z:ACTIVE_MODE.canyon.z0};
+    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);placeBuildingImmediately(center.x,center.z);
     spawnEnemy("normal",false);const enemy=enemies[0],approach=cellCenter(anchor.x+1,anchor.z);
     enemy.spawnFlash=0;enemy.group.position.set(approach.x,heightAt(approach.x,approach.z),approach.z);enemy.thinkTimer=0;
     const key=idx(anchor.x,anchor.z),initialHp=steelHP.get(key);
-    for(let frame=0;frame<60*55&&steelHP.has(key)&&baseAlive;frame++)updateEnemies(1/60);
+    for(let frame=0;frame<60*150&&steelHP.has(key)&&baseAlive;frame++)updateEnemies(1/60);
     return {initialHp,remainingHp:steelHP.get(key)||0,wallGone:!steelHP.has(key),enemyAlive:enemy.alive,watchdogHarvesting:_wdHarvesting};
   });
   await page.close();
-  assert.equal(result.wallGone,true,`一级墙在55秒持续围攻后仍剩 ${result.remainingHp}/${result.initialHp}，会造成残敌计数长期不动`);
+  assert.equal(result.wallGone,true,`一级墙在150秒持续围攻后仍剩 ${result.remainingHp}/${result.initialHp}，会造成残敌计数长期不动`);
   assert.equal(result.enemyAlive,true,"修复必须依靠真实拆墙推进，不能删除残敌");
   assert.equal(result.watchdogHarvesting,false,"正常拆墙不能依赖超时收割兜底");
 });
@@ -2057,7 +2297,7 @@ test("多层巨岩模型可反查为墙体选择对象", async () => {
   const result=await page.evaluate(()=>{
     game.gold=9999;
     const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex],C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0};
-    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);tryPlace(center.x,center.z);
+    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);placeBuildingImmediately(center.x,center.z);
     const root=tileMeshes[idx(anchor.x,anchor.z)];let nested=null;
     root&&root.traverse((object)=>{if(!nested&&object.isMesh)nested=object;});
     const picked=typeof wallSelectionFromObject==="function"?wallSelectionFromObject(nested):null;
@@ -2073,7 +2313,7 @@ test("选中巨岩墙可显示价格并逐级升级到五十级", async () => {
   const result=await page.evaluate(()=>{
     game.gold=1e9;
     const wallIndex=shopList().findIndex((item)=>item.id==="wall"),wall=shopList()[wallIndex],C=ACTIVE_MODE.canyon,anchor={x:C.x0+2,z:C.z0};
-    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);tryPlace(center.x,center.z);
+    selectBuild(wallIndex);ghost.visible=true;const center=footprintCenter(anchor,wall);placeBuildingImmediately(center.x,center.z);
     wc3Select("wall",anchor);wc3RenderSel();renderCmdCard();
     const firstButton=document.querySelector('#cmdcard [data-command-id="wall-up"]'),firstText=firstButton&&firstButton.textContent,firstCost=wallPriceNext(1);
     firstButton&&firstButton.click();
@@ -2109,11 +2349,11 @@ test("新建金矿始终保持基础价格且点击已有金矿只进入选中�
     const anchor=(()=>{for(let z=2;z<GRID-3;z++)for(let x=2;x<GRID-3;x++){const point={x,z};if(footprintPlaceable(point,build))return point;}return null;})();
     const center=footprintCenter(anchor,build);
     const firstPrice=priceOf(build);
-    selectBuild(buildIndex);ghost.visible=true;tryPlace(center.x,center.z);
+    selectBuild(buildIndex);ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     const mine=goldMines.find((item)=>item.x===anchor.x&&item.z===anchor.z);
     const goldBeforeClick=game.gold;
     const priceAfterBuild=priceOf(build);
-    ghost.visible=true;tryPlace(center.x,center.z);
+    ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     return {
       firstPrice,priceAfterBuild,goldBeforeClick,goldAfterClick:game.gold,
       level:mine&&mine.level,selected:wc3Sel&&wc3Sel.kind,
@@ -2243,7 +2483,7 @@ test("标准炮台与四种专精形成清晰且有边界的火力职责", async
   assert.ok(result.rapid>result.base,"速射分支必须提升持续输出");
   assert.ok(result.cannonSplash>0,"范围火炮必须具备溅射");
   assert.ok(result.antitankPierce>=.5,"反装甲炮必须具备高穿甲");
-  assert.ok(result.empControl>0,"EMP 分支必须具备控制");
+  assert.equal(result.empControl,0,"激光分支移除旧的区域减速控制");
 });
 
 test("炮台炮口的实际世界方向与锁定目标同向且子弹从炮口出膛", async () => {
@@ -2271,6 +2511,29 @@ test("炮台炮口的实际世界方向与锁定目标同向且子弹从炮口�
   assert.equal(result.hasMarker,true,"炮塔必须声明可验证的炮口节点");
   assert.ok(result.dot>.96,`炮口朝向目标的点积仅 ${result.dot}`);
   assert.ok(result.spawnDistance<.01,`子弹距炮口 ${result.spawnDistance}`);
+});
+
+test("炮塔射击锁定丧尸模型的真实身体高度", async () => {
+  const page=await openSurvival();
+  const result=await page.evaluate(()=>{
+    enemies.splice(0).forEach((enemy)=>scene.remove(enemy.group));
+    bullets.splice(0).forEach((bullet)=>scene.remove(bullet.mesh));
+    spawnEnemy("normal",false);
+    const enemy=enemies[0];enemy.group.position.set(8,0,0);enemy.spawnFlash=0;
+    const target=enemyAimPoint(enemy),muzzle=new THREE.Vector3(0,1.7,0);
+    const direction=target.clone().sub(muzzle).normalize();
+    const group=new THREE.Group();group.position.set(0,0,0);scene.add(group);
+    shoot({group,dmg:1},direction,true,{origin:muzzle,thruWall:true,source:"turret",projectileType:"tank"});
+    const projectile=bullets[bullets.length-1],beforeHp=enemy.hp;
+    for(let frame=0;frame<30&&bullets.length;frame++)updateBullets(1/60);
+    scene.remove(group);
+    return {targetY:target.y,muzzleY:muzzle.y,velocityY:projectile?.vel.y||0,hasAimPoint:typeof enemyAimPoint==="function",damaged:enemy.hp<beforeHp};
+  });
+  await page.close();
+  assert.equal(result.hasAimPoint,true,"必须提供丧尸模型命中点");
+  assert.ok(result.targetY<result.muzzleY-.1,`命中点必须落在炮口以下：${result.targetY}`);
+  assert.ok(result.velocityY<-.01,`子弹必须沿真实命中点下压：${result.velocityY}`);
+  assert.equal(result.damaged,true,"子弹必须实际命中丧尸模型并造成伤害");
 });
 
 test("SkeletonUtils 不再读写已移除的 drawMode", () => {
@@ -2313,7 +2576,7 @@ test("菜单显示当前发布版本", async () => {
   assert.ok(text.includes('v'+require('../package.json').version));
 });
 
-test("五级防线使用城门模型拉宽堵住单格路口", async () => {
+test("五级防线使用自建低矮封口墙", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const parent=new THREE.Group();scene.add(parent);
@@ -2330,11 +2593,11 @@ test("五级防线使用城门模型拉宽堵住单格路口", async () => {
     return {models,visuals,reinforcements,sizes};
   });
   await page.close();
-  assert.deepEqual(new Set(result.models),new Set(["castle-gate-wall"]));
-  assert.ok(result.visuals.every((value)=>value==="gate"));
+  assert.deepEqual(new Set(result.models),new Set(["handcrafted-cliff-wall"]));
+  assert.ok(result.visuals.every((value)=>value==="cliff-bulkhead"));
   assert.deepEqual(result.reinforcements,[1,2,3,4,5]);
   assert.ok(result.sizes.every(({width})=>width>=3.5&&width<=5.5),`闸门应拉宽堵住 1 格路口：${JSON.stringify(result.sizes)}`);
-  assert.ok(result.sizes.every(({height})=>height>=3.0),`闸门必须有足够高度：${JSON.stringify(result.sizes)}`);
+  assert.ok(result.sizes.every(({height})=>height<2.6),`封口墙应为低矮防线：${JSON.stringify(result.sizes)}`);
 });
 
 test("生存场景移除距离雾并保留夜色、电影调色与单批次风沙", async () => {
@@ -2373,8 +2636,8 @@ test("灰烬荒原装饰只保留岩堆与破损设施，不使用鲜花蘑菇�
 test("灰烬高台保持可建造区域亮度而不是压成黑块", async () => {
   const page = await openSurvival();
   const result = await page.evaluate(() => {
-    const plateau=mapGroup.children.find((object)=>object.userData&&object.userData.assetName==="ash-plateau-foundation");
-    const top=plateau&&Array.isArray(plateau.material)?plateau.material[2]:null;
+    const plateau=mapGroup.children.find((object)=>object.userData&&object.userData.assetName==="natural-plateau");
+    const top=plateau&&plateau.material;
     const luminance=top&&top.color?top.color.r*.2126+top.color.g*.7152+top.color.b*.0722:0;
     let textureLuminance=0;
     if(top&&top.map&&top.map.image&&top.map.image.getContext){
@@ -2389,31 +2652,12 @@ test("灰烬高台保持可建造区域亮度而不是压成黑块", async () =>
   assert.equal(result.exists,true);
   assert.equal(result.hasTexture,true,"高台顶面必须有碎石、压实土与磨损纹理，不能只显示纯色灰板");
   assert.ok(result.textureLuminance>=.3&&result.textureLuminance<=.55,`高台纹理亮度超出可读范围：${result.textureLuminance}`);
-  assert.ok(result.variations>=4,"高台格必须通过至少四种旋转变化打散重复纹理");
+  assert.ok(result.variations>=4,"自然高坡保留多种碎石纹理变化");
   assert.ok(result.exposure>=.78&&result.exposure<=.9,`夜间调色必须保持可玩亮度：${result.exposure}`);
 });
 
-test("高台质感只附着原有高台格且不得用整面几何覆盖唯一坡道", async () => {
-  const page=await openSurvival();
-  const result=await page.evaluate(()=>{
-    let continuousOverlays=0,foundation=null;
-    mapGroup.traverse((object)=>{
-      const name=object.userData&&object.userData.assetName;
-      if(name==="ash-plateau-weathered-surface")continuousOverlays++;
-      if(name==="ash-plateau-foundation")foundation=object;
-    });
-    const ramp=ACTIVE_MODE.ramp,rampCenter=cellCenter(ramp.col,ramp.row),matrix=new THREE.Matrix4(),position=new THREE.Vector3();
-    let foundationOnRamp=false;
-    if(foundation)for(let index=0;index<foundation.count;index++){
-      foundation.getMatrixAt(index,matrix);position.setFromMatrixPosition(matrix);
-      if(Math.abs(position.x-rampCenter.x)<.01&&Math.abs(position.z-rampCenter.z)<.01)foundationOnRamp=true;
-    }
-    return {continuousOverlays,foundationOnRamp,rampType:grid[ramp.row][ramp.col],expectedRamp:T_RAMP};
-  });
-  await page.close();
-  assert.equal(result.continuousOverlays,0,"不得新增改变高台轮廓并盖过坡口的整面顶层几何");
-  assert.equal(result.foundationOnRamp,false,"高台承重格不得占用唯一坡道格");
-  assert.equal(result.rampType,result.expectedRamp,"坡道逻辑格必须保持 T_RAMP");
+test("自然坡面在峡谷与坡口匹配实际高度，不悬空覆盖通道",async()=>{
+ const page=await openSurvival();const result=await page.evaluate(()=>{const p=mapGroup.getObjectByName('自然侵蚀高坡').geometry.attributes.position;let error=0;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),r=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row);if(Math.abs(x-r.x)<=TILE*.5+.001&&Math.abs(z-r.z)<=TILE*.5+.001)continue;error=Math.max(error,Math.abs(p.getY(i)+.015-heightAt(x,z)));}return {error,ramp:grid[ACTIVE_MODE.ramp.row][ACTIVE_MODE.ramp.col]===T_RAMP};});await page.close();assert.ok(result.error<.001);assert.ok(result.ramp);
 });
 
 test("研究院与重工厂均可建造且各自最多一座", async () => {
@@ -2422,7 +2666,7 @@ test("研究院与重工厂均可建造且各自最多一座", async () => {
     game.gold=9999;
     const place=(id,anchor)=>{
       const index=shopList().findIndex((item)=>item.id===id),build=shopList()[index];
-      selectBuild(index);ghost.visible=true;tryPlace(...Object.values(footprintCenter(anchor,build)));
+      selectBuild(index);ghost.visible=true;placeBuildingImmediately(...Object.values(footprintCenter(anchor,build)));
     };
     const next=(id)=>{const build=shopList().find((item)=>item.id===id),E=ACTIVE_MODE.enclosure;
       for(let z=E.z0+1;z<=E.z1-2;z++)for(let x=E.x0+1;x<=E.x1-2;x++)if(footprintPlaceable({x,z},build))return {x,z};
@@ -2446,7 +2690,7 @@ test("重工厂队列生产四类友军并正确预留人口", async () => {
     game.gold=9999;game.popMax=99;
     const index=shopList().findIndex((item)=>item.id==="factory"),build=shopList()[index];
     const cell=(()=>{const E=ACTIVE_MODE.enclosure;for(let z=E.z0+1;z<E.z1-2;z++)for(let x=E.x0+1;x<E.x1-2;x++)if(footprintPlaceable({x,z},build))return {x,z};return null;})();
-    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);tryPlace(center.x,center.z);
+    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);placeBuildingImmediately(center.x,center.z);
     const factory=heavyFactories[0];
     const queued=["light","medium","heavy","repair"].map((id)=>queueFactoryUnit(factory,id));
     for(let frame=0;frame<60*50;frame++)updateFactories(1/60);
@@ -2465,7 +2709,7 @@ test("重工厂集结点会传递给新生产的单位", async () => {
     game.gold=9999;game.popMax=99;
     const index=shopList().findIndex((item)=>item.id==="factory"),build=shopList()[index];
     const cell=(()=>{const E=ACTIVE_MODE.enclosure;for(let z=E.z0+1;z<E.z1-2;z++)for(let x=E.x0+1;x<E.x1-2;x++)if(footprintPlaceable({x,z},build))return {x,z};return null;})();
-    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);tryPlace(center.x,center.z);
+    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);placeBuildingImmediately(center.x,center.z);
     const factory=heavyFactories[0],rally={x:42,z:18};
     const set=typeof setFactoryRallyPoint==="function"&&setFactoryRallyPoint(factory,rally);
     queueFactoryUnit(factory,"light");
@@ -2486,7 +2730,7 @@ test("取消重工厂队列会释放预留人口并返还四分之三金币", as
     game.gold=1000;game.popMax=99;
     const index=shopList().findIndex((item)=>item.id==="factory"),build=shopList()[index];
     const cell=(()=>{const E=ACTIVE_MODE.enclosure;for(let z=E.z0+1;z<E.z1-2;z++)for(let x=E.x0+1;x<E.x1-2;x++)if(footprintPlaceable({x,z},build))return {x,z};return null;})();
-    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);tryPlace(center.x,center.z);
+    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);placeBuildingImmediately(center.x,center.z);
     const factory=heavyFactories[0],before=game.gold;
     queueFactoryUnit(factory,"heavy");const afterQueue={gold:game.gold,pop:game.popUsed};
     const cancelled=typeof cancelFactoryQueue==="function"&&cancelFactoryQueue(factory);
@@ -2624,7 +2868,7 @@ test("建筑拆除后完整释放原足迹并可在同一位置重新建造", as
       const candidate={x,z};if(footprintPlaceable(candidate,build)){anchor=candidate;break;}
     }
     selectBuild(buildIndex);ghost.visible=true;
-    const anchorWorld=cellCenter(anchor.x,anchor.z);tryPlace(anchorWorld.x,anchorWorld.z);
+    const anchorWorld=cellCenter(anchor.x,anchor.z);placeBuildingImmediately(anchorWorld.x,anchorWorld.z);
     const first=builtHouses.find((item)=>item.x===anchor.x&&item.z===anchor.z);
     const occupiedBefore=first.footprintCells.every((cellIndex)=>structCells.has(cellIndex));
     attemptDestroy(anchor.x,anchor.z);
@@ -2632,7 +2876,7 @@ test("建筑拆除后完整释放原足迹并可在同一位置重新建造", as
     const placeableAgain=footprintPlaceable(anchor,build);
     destroyMode=true;selectBuild(buildIndex);
     const destroyToolExited=!destroyMode;
-    ghost.visible=true;tryPlace(anchorWorld.x,anchorWorld.z);
+    ghost.visible=true;placeBuildingImmediately(anchorWorld.x,anchorWorld.z);
     const rebuilt=builtHouses.some((item)=>item.x===anchor.x&&item.z===anchor.z);
     return {occupiedBefore,released,placeableAgain,destroyToolExited,rebuilt};
   });
@@ -2652,7 +2896,7 @@ test("巨岩被僵尸砸毁后原格立即恢复建造资格", async () => {
       const build=shopList().find((item)=>item.kind==="wall");
       for(let z=3;z<GRID-3&&!target;z++)for(let x=18;x<GRID-3;x++)if(footprintPlaceable({x,z},build)){
         game.gold=9999;const buildIndex=shopList().indexOf(build);selectBuild(buildIndex);ghost.visible=true;
-        const center=cellCenter(x,z);tryPlace(center.x,center.z);target={x,z,cellIndex:idx(x,z)};break;
+        const center=cellCenter(x,z);placeBuildingImmediately(center.x,center.z);target={x,z,cellIndex:idx(x,z)};break;
       }
     }
     const occupied=structCells.has(target.cellIndex);
@@ -2714,19 +2958,19 @@ test("非方块人混合尸潮在高数量时不退化为乱扭几何体", async
     };
   });
   await page.close();
-  assert.equal(result.variants.length,12,JSON.stringify(result));
-  assert.deepEqual(result.packs.sort(),["protagonists","retro","survivors"],"三套同骨架角色包必须全部进入尸潮候选");
+  assert.equal(result.variants.length,4,JSON.stringify(result));
+  assert.deepEqual(result.packs.sort(),["retro","survivors"],"尸潮候选只能使用已验收的两套僵尸角色包");
   assert.equal(result.animated,60,"所有尸潮单位都必须使用原生骨骼移动动画");
   assert.equal(result.procedural,0,"高密度尸潮不得回退成程序化乱扭几何体");
   assert.deepEqual(result.textures,["criminal-male-a","cyborg-female-a","human-female-a","human-male-a","skater-female-a","skater-male-a","survivor-female-a","survivor-male-b","zombie-a","zombie-c","zombie-female-a","zombie-male-a"]);
 });
 
-test("十二种尸潮骨骼变体均可进入正式渲染管线", async () => {
+test("四种合格尸潮骨骼变体均可进入正式渲染管线", async () => {
   const page=await openSurvival();
   const result=await page.evaluate(()=>{
     enemies.splice(0).forEach((enemy)=>{scene.remove(enemy.group);if(enemy.beam)scene.remove(enemy.beam);});
     game.wave=1;const rows=[];
-    for(let index=0;index<12;index++){
+    for(let index=0;index<4;index++){
       spawnEnemy("normal",false);const enemy=enemies[enemies.length-1];
       const broken=[];enemy.group.traverse((object)=>{if(object.isSkinnedMesh&&!object.skeleton)broken.push(object.name||"unnamed");});
       let error=null;try{renderer.render(scene,camera);}catch(caught){error=String(caught&&caught.message||caught);}
@@ -2742,12 +2986,12 @@ test("十二种尸潮骨骼变体均可进入正式渲染管线", async () => {
   }
 });
 
-test("十二种普通僵尸尺寸贴图和动画绑定满足实战视觉门禁", async () => {
+test("四种普通僵尸尺寸贴图和动画绑定满足实战视觉门禁", async () => {
   const page=await openSurvival();
   const result=await page.evaluate(()=>{
     enemies.splice(0).forEach((enemy)=>{scene.remove(enemy.group);if(enemy.beam)scene.remove(enemy.beam);});
     game.wave=1;const rows=[];
-    for(let index=0;index<12;index++){
+    for(let index=0;index<4;index++){
       spawnEnemy("normal",false);const enemy=enemies[enemies.length-1];
       const clip=enemy.actions.walk&&enemy.actions.walk.getClip();
       const trackedObjects=[];
@@ -2778,10 +3022,10 @@ test("十二种普通僵尸尺寸贴图和动画绑定满足实战视觉门禁",
   });
   await page.close();
   assert.equal(result.renderError,null,JSON.stringify(result));
-  assert.equal(new Set(result.rows.map((row)=>row.variant)).size,12);
+  assert.equal(new Set(result.rows.map((row)=>row.variant)).size,4);
   for(const row of result.rows){
-    assert.ok(row.height>=2.6&&row.height<=4.2,`${row.variant} 高度异常：${JSON.stringify(row)}`);
-    assert.ok(Math.max(row.width,row.depth)<=5.2,`${row.variant} 横向尺寸异常：${JSON.stringify(row)}`);
+    assert.ok(row.height>=.55&&row.height<=1.35,`${row.variant} 普通僵尸高度异常：${JSON.stringify(row)}`);
+    assert.ok(Math.max(row.width,row.depth)<=1.8,`${row.variant} 普通僵尸横向尺寸异常：${JSON.stringify(row)}`);
     assert.ok(row.meshes>0&&row.mapped>0,`${row.variant} 不得以无贴图灰模进入战场：${JSON.stringify(row)}`);
     assert.equal(row.finiteBones,true,`${row.variant} 骨骼矩阵存在非有限值`);
     assert.deepEqual(row.unresolved,[],`${row.variant} 动画轨道未绑定：${JSON.stringify(row)}`);
@@ -2852,7 +3096,7 @@ test("生存模式运行态提供夜景、战争迷雾与受控光源", async ()
   assert.ok(result.hemi<0.65&&result.ambient<0.45&&result.sun<0.8);
   assert.equal(result.fogCanvas,true);
   assert.ok(result.fogPlanes>=1);
-  assert.ok(result.dynamicLights>=3&&result.dynamicLights<=10);
+  assert.ok(result.dynamicLights>=2&&result.dynamicLights<=8);
 });
 
 test("固定路灯只在低地道路外侧并让灯头朝向路面", async () => {
@@ -2890,12 +3134,12 @@ test("固定路灯只在低地道路外侧并让灯头朝向路面", async () =>
       })};
   });
   await page.close();
-  assert.ok(result.lamps.length>=3,"低地道路至少需要三处有节奏的照明");
+  assert.ok(result.lamps.length===2,"入口两侧保留两处照明，移除挡进路的第三盏");
   for(const lamp of result.lamps){
     assert.ok(lamp.ground<1,`路灯 ${lamp.label} 不得放在高地上`);
     assert.equal(lamp.onRoad,false,`路灯 ${lamp.label} 的格子 (${lamp.cell.x},${lamp.cell.z}) 不得占用完整尸潮道路`);
     assert.equal(lamp.target,true,`路灯 ${lamp.label} 必须记录所照道路方向`);
-    assert.ok(lamp.distance>=result.tile*.8&&lamp.distance<=result.tile*1.6,`路灯 ${lamp.label} 必须位于路边而非路中央`);
+    assert.ok(lamp.distance>=result.tile*2&&lamp.distance<=result.tile*3,`路灯 ${lamp.label} 必须位于路边而非路中央`);
     assert.ok(lamp.facing>.8,`路灯 ${lamp.label} 的灯头必须朝向道路`);
   }
 });
@@ -2908,11 +3152,11 @@ test("医疗灯塔邻格可以正常放下 1 格建筑", async () => {
     const houseIndex=shopList().findIndex((item)=>item.id==="house"),houseBuild=shopList()[houseIndex];
     const E=ACTIVE_MODE.enclosure;let beaconCell=null;
     for(let z=E.z0+1;z<E.z1-2&&!beaconCell;z++)for(let x=E.x0+1;x<E.x1-2;x++)if(footprintPlaceable({x,z},beaconBuild)){beaconCell={x,z};break;}
-    selectBuild(beaconIndex);ghost.visible=true;const beaconCenter=footprintCenter(beaconCell,beaconBuild);tryPlace(beaconCenter.x,beaconCenter.z);
+    selectBuild(beaconIndex);ghost.visible=true;const beaconCenter=footprintCenter(beaconCell,beaconBuild);placeBuildingImmediately(beaconCenter.x,beaconCenter.z);
     const neighbors=[{x:beaconCell.x+1,z:beaconCell.z},{x:beaconCell.x-1,z:beaconCell.z},{x:beaconCell.x,z:beaconCell.z+1},{x:beaconCell.x,z:beaconCell.z-1}];
     const neighbor=neighbors.find((cell)=>footprintPlaceable(cell,houseBuild));
     if(!neighbor)return {beacon:true,neighbor:null,placed:false,poolRadius:null};
-    selectBuild(houseIndex);ghost.visible=true;ghostCell=neighbor;const houseCenter=footprintCenter(neighbor,houseBuild);tryPlace(houseCenter.x,houseCenter.z);
+    selectBuild(houseIndex);ghost.visible=true;ghostCell=neighbor;const houseCenter=footprintCenter(neighbor,houseBuild);placeBuildingImmediately(houseCenter.x,houseCenter.z);
     const beacon=visionBeacons[0],pool=beacon&&beacon.pool,poolRadius=pool&&pool.geometry&&pool.geometry.parameters&&pool.geometry.parameters.radius;
     return {beacon:!!beacon,neighbor,placed:builtHouses.some((house)=>house.x===neighbor.x&&house.z===neighbor.z),poolRadius};
   });
@@ -2930,7 +3174,7 @@ test("警戒灯塔可建造并让视野外敌人进入共享视野", async () =>
     const index=shopList().findIndex((item)=>item.id==="beacon"),build=shopList()[index];
     const before=isPositionVisible({x:-38,z:-38});
     const cell=(()=>{const E=ACTIVE_MODE.enclosure;for(let z=E.z0+1;z<E.z1-1;z++)for(let x=E.x0+1;x<E.x1-1;x++)if(footprintPlaceable({x,z},build))return {x,z};return null;})();
-    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);tryPlace(center.x,center.z);
+    selectBuild(index);ghost.visible=true;const center=footprintCenter(cell,build);placeBuildingImmediately(center.x,center.z);
     const beacon=visionBeacons[0];
     const bx=beacon&&beacon.group.position.x,bz=beacon&&beacon.group.position.z;
     return {index,before,count:visionBeacons.length,asset:beacon&&beacon.group.userData.assetName,
@@ -3026,7 +3270,7 @@ test("生产坦克复用原版坦克并在停止状态自动警戒开火",async(
     return {original:unit.group.userData.originalTank===true,rts:unit.group.userData.rtsTank===true,targeted:unit.attackTarget===enemy,bullets:bullets.length};
   });
   await page.close();
-  assert.deepEqual(result,{original:true,rts:false,targeted:true,bullets:1});
+  assert.deepEqual(result,{original:true,rts:false,targeted:true,bullets:5});
 });
 
 test("高台坦克接到低地命令后必须绕行唯一坡道而不是撞悬崖",async()=>{

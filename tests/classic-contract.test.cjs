@@ -64,6 +64,13 @@ test("砖可摧毁钢不可摧毁", () => {
   assert.equal(Rules.resolveShotTile(Config.T.TREE).stop, false);
 });
 
+test("老鹰自动炮弹可穿过自有砖钢护墙但玩家炮弹仍受钢墙阻挡", () => {
+  const source = read("js/classic/classic-engine.js");
+  assert.match(source, /ignoreBaseShell/, "自动炮弹必须携带自有护墙豁免标记");
+  assert.match(source, /ignoreBaseShell[\s\S]*?hit\.destroy/, "自有护墙豁免必须覆盖可摧毁砖墙");
+  assert.match(source, /ignoreBaseShell[\s\S]*?hit\.stop/, "自有护墙豁免必须覆盖不可摧毁钢墙");
+});
+
 test("老鹰被毁或命数耗尽都会失败", () => {
   assert.deepEqual(Rules.loseState({ eagleHp: 0, lives: 3 }), { lost: true, reason: "eagle" });
   assert.deepEqual(Rules.loseState({ eagleHp: 4, lives: 0 }), { lost: true, reason: "lives" });

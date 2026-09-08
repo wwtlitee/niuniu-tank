@@ -15,9 +15,9 @@ test("页面在配置和引擎之前加载生存规则模块", () => {
   assert.ok(system < config && config < engine, "生存规则必须先于配置和引擎加载");
 });
 
-test("生存开场镜头配置看向谷口高台而不是司令部", () => {
+test("生存开场镜头配置兼顾中部基地与谷口", () => {
   const source = read("js/config.js");
-  assert.match(source, /startFocus:\s*\{\s*col:\s*8,\s*row:\s*16\s*\}/);
+  assert.match(source, /startFocus:\s*\{\s*col:\s*8,\s*row:\s*17\s*\}/);
   const engine = read("js/engine.js");
   assert.match(engine, /startFocus/);
   assert.doesNotMatch(engine, /camFocus\.set\(f\.x\+TILE\*4/);
