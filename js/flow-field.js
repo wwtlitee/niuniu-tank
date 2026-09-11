@@ -83,7 +83,8 @@
         if (current.distance > this.distanceAt(current.x, current.z) + 1e-5) continue;
         for (const [dx, dz, cost] of DIRECTIONS) {
           const x = current.x + dx, z = current.z + dz;
-          if (!this._canTraverse(current.x, current.z, x, z)) continue;
+          // Distances propagate backwards from the destination; the actual step is x,z -> current.
+          if (!this.contains(x,z) || !passable(x,z) || !this._canTraverse(x, z, current.x, current.z)) continue;
           const distance = current.distance + cost;
           const index = this.index(x, z);
           if (distance >= this.distances[index]) continue;
@@ -97,13 +98,13 @@
       const here = this.distanceAt(x, z);
       if (!Number.isFinite(here) || here <= 0) return { x: 0, z: 0 };
       let best = null;
-      let bestDistance = here;
-      for (const [dx, dz] of DIRECTIONS) {
+      let bestDistance = Infinity;
+      for (const [dx, dz, cost] of DIRECTIONS) {
         const nx = x + dx, nz = z + dz;
         if (!this._canTraverse(x, z, nx, nz)) continue;
         const distance = this.distanceAt(nx, nz);
-        if (distance < bestDistance) {
-          bestDistance = distance;
+        if (distance < here - 1e-5 && distance + cost < bestDistance - 1e-5) {
+          bestDistance = distance + cost;
           best = { x: dx, z: dz };
         }
       }

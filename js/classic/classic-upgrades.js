@@ -3,21 +3,21 @@
 (function (root) {
   const Config = root.ClassicConfig || (typeof require === "function" ? require("./classic-config.js") : {});
   const CARDS = Object.freeze([
-    Object.freeze({ id: "dmg", type: "tank", rar: 1, icon: "🔥", name: "钨芯穿甲弹", desc: "炮弹伤害 +40%", max: 6, applyKey: "dmg" }),
-    Object.freeze({ id: "rate", type: "tank", rar: 1, icon: "⚡", name: "自动装填机", desc: "射速 +25%", max: 6, applyKey: "rate" }),
-    Object.freeze({ id: "speed", type: "tank", rar: 1, icon: "🛞", name: "涡轮增压", desc: "移动速度 +18%", max: 5, applyKey: "speed" }),
-    Object.freeze({ id: "bspd", type: "tank", rar: 1, icon: "💨", name: "电磁加速", desc: "炮弹速度 +30%", max: 4, applyKey: "bspd" }),
-    Object.freeze({ id: "lucky", type: "tank", rar: 1, icon: "🍀", name: "幸运星", desc: "道具掉落率提高", max: 3, applyKey: "lucky" }),
-    Object.freeze({ id: "spare", type: "tank", rar: 1, icon: "🛠", name: "备用履带", desc: "额外 +1 条命", max: 2, applyKey: "spare" }),
-    Object.freeze({ id: "pierce", type: "tank", rar: 2, icon: "🎯", name: "超空化弹芯", desc: "炮弹穿透 +1", max: 3, applyKey: "pierce" }),
-    Object.freeze({ id: "armor", type: "tank", rar: 2, icon: "🛡", name: "复合装甲", desc: "最大装甲 +2", max: 4, applyKey: "armor" }),
-    Object.freeze({ id: "blast", type: "tank", rar: 2, icon: "💥", name: "高爆弹头", desc: "命中产生小爆炸", max: 3, applyKey: "blast" }),
-    Object.freeze({ id: "multi", type: "tank", rar: 3, icon: "🔱", name: "双联炮塔", desc: "每次 +1 发平行弹", max: 3, applyKey: "multi" }),
-    Object.freeze({ id: "baseRepair", type: "eagle", rar: 1, icon: "🔧", name: "工程抢修班", desc: "立即重修老鹰砖堡", max: 3, applyKey: "baseRepair" }),
-    Object.freeze({ id: "baseWall", type: "eagle", rar: 2, icon: "🧱", name: "基地钢壁", desc: "老鹰围墙换成钢墙", max: 2, applyKey: "baseWall" }),
-    Object.freeze({ id: "autoTurret", type: "eagle", rar: 2, icon: "🗼", name: "鹰旗自动炮", desc: "老鹰附近自动反击", max: 4, applyKey: "autoTurret" }),
-    Object.freeze({ id: "baseShield", type: "eagle", rar: 2, icon: "🔵", name: "护盾发生器", desc: "老鹰获得吸收护盾", max: 3, applyKey: "baseShield" }),
-    Object.freeze({ id: "airstrike", type: "eagle", rar: 2, icon: "✈", name: "空袭协同", desc: "获得一次清场轰炸", max: 3, applyKey: "airstrike" }),
+    Object.freeze({ id: "dmg", type: "tank", rar: 1, icon: "flame", name: "钨芯穿甲弹", desc: "炮弹伤害 +40%", max: 6, applyKey: "dmg" }),
+    Object.freeze({ id: "rate", type: "tank", rar: 1, icon: "speed", name: "自动装填机", desc: "射速 +25%", max: 6, applyKey: "rate" }),
+    Object.freeze({ id: "speed", type: "tank", rar: 1, icon: "tank", name: "涡轮增压", desc: "移动速度 +18%", max: 5, applyKey: "speed" }),
+    Object.freeze({ id: "bspd", type: "tank", rar: 1, icon: "speed", name: "电磁加速", desc: "炮弹速度 +30%", max: 4, applyKey: "bspd" }),
+    Object.freeze({ id: "lucky", type: "tank", rar: 1, icon: "star", name: "幸运星", desc: "道具掉落率提高", max: 3, applyKey: "lucky" }),
+    Object.freeze({ id: "spare", type: "tank", rar: 1, icon: "repair", name: "备用履带", desc: "额外 +1 条命", max: 2, applyKey: "spare" }),
+    Object.freeze({ id: "pierce", type: "tank", rar: 2, icon: "attack", name: "超空化弹芯", desc: "炮弹穿透 +1", max: 3, applyKey: "pierce" }),
+    Object.freeze({ id: "armor", type: "tank", rar: 2, icon: "shield", name: "复合装甲", desc: "最大装甲 +2", max: 4, applyKey: "armor" }),
+    Object.freeze({ id: "blast", type: "tank", rar: 2, icon: "blast", name: "高爆弹头", desc: "命中产生小爆炸", max: 3, applyKey: "blast" }),
+    Object.freeze({ id: "multi", type: "tank", rar: 3, icon: "turret", name: "双联炮塔", desc: "每次 +1 发平行弹", max: 3, applyKey: "multi" }),
+    Object.freeze({ id: "baseRepair", type: "eagle", rar: 1, icon: "repair", name: "工程抢修班", desc: "立即重修老鹰砖堡", max: 3, applyKey: "baseRepair" }),
+    Object.freeze({ id: "baseWall", type: "eagle", rar: 2, icon: "wall", name: "基地钢壁", desc: "围墙升级为每格 4 点耐久钢壁，再选增至 6 点；可被炮弹击毁", max: 2, applyKey: "baseWall" }),
+    Object.freeze({ id: "autoTurret", type: "eagle", rar: 2, icon: "turret", name: "鹰旗自动炮", desc: "老鹰附近自动反击", max: 4, applyKey: "autoTurret" }),
+    Object.freeze({ id: "baseShield", type: "eagle", rar: 2, icon: "shield", name: "护盾发生器", desc: "老鹰获得吸收护盾", max: 3, applyKey: "baseShield" }),
+    Object.freeze({ id: "airstrike", type: "eagle", rar: 2, icon: "airstrike", name: "空袭协同", desc: "获得一次清场轰炸", max: 3, applyKey: "airstrike" }),
   ]);
 
   function isBuildEconomyCard(card) {
@@ -38,7 +38,7 @@
       const index = Math.floor(rnd() * pool.length);
       picks.push(pool.splice(index, 1)[0]);
     }
-    return picks.length?picks:[{id:'continue',icon:'▶',name:'继续战斗',desc:'所有强化已满，进入下一波'}];
+    return picks.length?picks:[{id:'continue',icon:"move",name:'继续战斗',desc:'所有强化已满，进入下一波'}];
   }
 
   function applyCard(id, stats, game) {

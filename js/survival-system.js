@@ -63,11 +63,25 @@
     boss: { base: 6.5, max: 14 },
   });
 
+  /* 人形尸潮已经按约四分之一的坦克尺度渲染；战斗参数必须共用同一比例，
+     否则小模型会以坦克级伤害和速度冲刺。 */
+  const ZOMBIE_COMBAT_SCALE = 0.375;
+
+  // 第10波六个接触位，兵种平均权重46/18；20分钟×3、25%护甲后800 HP/s。
+  const WALL_ASSAULT_REFERENCE=Object.freeze({dps:800,contacts:6,timeMultiplier:3,armor:.25,typeWeight:46/18,interval:.9});
+  function meleeWaveMultiplier(wave){
+    const r=WALL_ASSAULT_REFERENCE;
+    const end=r.dps*r.interval/(r.contacts*r.timeMultiplier*(1-r.armor)*r.typeWeight*4*ZOMBIE_COMBAT_SCALE);
+    const safe=clampInt(wave,1,1000);
+    return 1+(end-1)*(Math.min(10,safe)-1)/9+Math.max(0,safe-10)*(end-1)/9;
+  }
+
   function enemyMoveSpeed(type, waveMultiplier = 1, modifier = 1) {
     const movement = ENEMY_MOVEMENT[type] || ENEMY_MOVEMENT.normal;
     const waveScale = Math.max(0, Number(waveMultiplier) || 0);
     const extraScale = Math.max(0, Number(modifier) || 0);
-    return Math.min(movement.max, movement.base * waveScale * extraScale);
+    return Math.min(movement.max * ZOMBIE_COMBAT_SCALE,
+      movement.base * waveScale * extraScale * ZOMBIE_COMBAT_SCALE);
   }
 
   function enemyRunTimeScale(speed) {
@@ -75,9 +89,11 @@
     return Math.max(1.05, Math.min(1.75, 0.85 + safeSpeed / 18));
   }
 
-  function structureAttackCapacity(cellCount = 1) {
+  function structureAttackCapacity(cellCount = 1, unitScale = 1) {
     const cells = Math.max(1, Number(cellCount) || 1);
-    return Math.min(6, Math.max(2, Math.ceil(Math.sqrt(cells)) * 2));
+    const scale = Math.max(0.25, Number(unitScale) || 1);
+    const baseCapacity = Math.ceil(Math.sqrt(cells)) * 2;
+    return Math.min(24, Math.max(2, Math.ceil(baseCapacity / scale)));
   }
 
   const MEDICAL_BEACON_RULES = Object.freeze({
@@ -95,6 +111,9 @@
     cannon: { shape: "round-shell", radius: 0.25, length: 0.72, color: 0xd68b42, trail: "smoke" },
     antitank: { shape: "sabot-dart", radius: 0.11, length: 1.15, color: 0xf1dfbb, trail: "streak" },
     emp: { shape: "crystal-orb", radius: 0.38, length: 0.55, color: 0xa7e9ff, trail: "frost" },
+    shotgun: { shape: "pellet", radius: 0.075, length: 0.3, color: 0xffd677, trail: "spark" },
+    incendiary: { shape: "fire-shell", radius: 0.2, length: 0.65, color: 0xff682e, trail: "fire" },
+    grenade: { shape: "round-shell", radius: 0.27, length: 0.6, color: 0xd8aa58, trail: "smoke" },
     tank: { shape: "tank-shell", radius: 0.18, length: 0.82, color: 0xc7d5d7, trail: "smoke-light" },
   });
 
@@ -110,6 +129,7 @@
     light: Object.freeze({ base: 9, max: 13 }),
     medium: Object.freeze({ base: 10, max: 14 }),
     heavy: Object.freeze({ base: 11, max: 15 }),
+    hero: Object.freeze({base:8,max:8}),
     repair: Object.freeze({ base: 4.5, max: 4.5 }),
   });
 
@@ -152,14 +172,16 @@
     rapid: { id: "rapid", name: "速射机枪", color: 0xc7a45a, stats: Object.freeze({ damage: 1.2, fireRate: 3.5, range: 11, splash: 0, armorPierce: 0, slow: 0, stun: 0 }) },
     cannon: { id: "cannon", name: "范围火炮", color: 0xb85b35, stats: Object.freeze({ damage: 1.8, fireRate: 0.55, range: 13, splash: 4.2, armorPierce: 0, slow: 0, stun: 0 }) },
     antitank: { id: "antitank", name: "反装甲炮", color: 0x9a9b91, stats: Object.freeze({ damage: 1.8, fireRate: 0.38, range: 16, splash: 0, armorPierce: 0.65, slow: 0, stun: 0 }) },
-    emp: { id: "emp", name: "冰冻 EMP", color: 0x66b8c7, stats: Object.freeze({ damage: 0.9, fireRate: 0.78, range: 12, splash: 2.8, armorPierce: 0, slow: 0.3, stun: 0.22 }) },
+    emp: { id: "emp", name: "贯穿激光炮", color: 0x66b8c7, stats: Object.freeze({ damage: 1.2, fireRate: 0.8, range: 12, splash: 0, armorPierce: 0, slow: 0, stun: 0 }) },
   });
 
+  const MEDICAL_SUPPORT_RULES = Object.freeze({unlockWave:5,researchLevel:5,maxUnits:2,maxTargetRepairPerSecond:36,maxTargetRepairPercent:0.1});
   const FRIENDLY_UNIT_TYPES = freezeTable({
     light: { id: "light", name: "轻型坦克", cost: 85, population: 2, buildTime: 7, maxHp: 150, armor: 0.08, damage: 1.6, fireRate: 1.8, range: 13, speed: 8.2, scale: 0.78 },
     medium: { id: "medium", name: "中型坦克", cost: 145, population: 3, buildTime: 11, maxHp: 280, armor: 0.18, damage: 1.8, fireRate: 1.35, range: 14, speed: 6.3, scale: 0.92 },
     heavy: { id: "heavy", name: "重型坦克", cost: 240, population: 5, buildTime: 17, maxHp: 520, armor: 0.32, damage: 1.95, fireRate: 0.8, range: 15, speed: 4.4, scale: 1.12 },
-    repair: { id: "repair", name: "维修车", cost: 115, population: 2, buildTime: 9, maxHp: 190, armor: 0.1, damage: 0, fireRate: 0, range: 4.5, speed: 6.8, scale: 0.82, repairPerSecond: 36 },
+    hero: { id:"hero", name:"英雄坦克", cost:1200, population:6, buildTime:25, maxHp:480, armor:.15, damage:3, fireRate:1, range:8, speed:6, scale:1.18 },
+    repair: { id: "repair", name: "维修车", cost: 2400, population: 4, buildTime: 30, maxHp: 190, armor: 0.1, damage: 0, fireRate: 0, range: 4.5, speed: 6.8, scale: 0.82, repairPerSecond: 36 },
   });
 
   const CAMPAIGN_WAVES = 10;
@@ -260,7 +282,7 @@
     if (safeWave === 5 || safeWave === 10) return BOSS_PROFILES.find((boss) => boss.wave === safeWave) || null;
     if (safeWave <= CAMPAIGN_WAVES || safeWave % 5 !== 0) return null;
     const cycle = Math.floor((safeWave - 5) / 5) % BOSS_PROFILES.length;
-    const extra = Math.pow(1.1, safeWave - CAMPAIGN_WAVES);
+    const extra = Math.min(1e9, Math.pow(1.1, Math.min(218, safeWave - CAMPAIGN_WAVES)));
     return Object.freeze({ ...BOSS_PROFILES[cycle], wave: safeWave, hpMultiplier: BOSS_PROFILES[cycle].hpMultiplier * extra });
   }
 
@@ -278,10 +300,10 @@
       boss: [0.78, 1.7, 0.95, 0.2], finale: [0.7, 1.85, 0.92, 0.26],
     }[archetype] || [1, 1, 1, 0];
     const campaignWave = Math.min(CAMPAIGN_WAVES, safeWave);
-    const endlessScale = isEndless ? Math.pow(1.1, safeWave - CAMPAIGN_WAVES) : 1;
+    const endlessScale = isEndless ? Math.min(1e9, Math.pow(1.1, Math.min(218, safeWave - CAMPAIGN_WAVES))) : 1;
     const hpStage = campaignWave <= 3 ? 1 : Math.pow(1.22, campaignWave - 3);
     const damageStage = campaignWave <= 3 ? 1 : Math.pow(1.16, campaignWave - 3);
-    const count = Math.max(1, Math.round(CAMPAIGN_COUNTS[campaignIndex] * endlessScale));
+    const count = Math.max(1, Math.round(CAMPAIGN_COUNTS[campaignIndex]));
     const giantChance = campaignWave <= 3 ? 0
       : campaignWave <= 6 ? 0.14
       : campaignWave <= 9 ? 0.26
@@ -303,7 +325,7 @@
       armor: tuning[3],
       spawnInterval: 0,
       spawnBatch: campaignWave <= 3 ? count : (campaignWave >= 10 || isEndless ? 48 : 36),
-      activeCap: Number.MAX_SAFE_INTEGER,
+      activeCap: 600,
       giantChance,
       isBoss: archetype === "boss" || archetype === "finale",
       isEndless,
@@ -425,7 +447,8 @@
 
   function hordeCollisionRadius(visualRadius, isBoss = false) {
     const radius = Math.max(0.1, Number(visualRadius) || 0.1);
-    return Number((radius * (isBoss ? 0.88 : 0.82)).toFixed(3));
+    /* 人形尸潮按肩宽而非整块模型包围盒碰撞；Boss 保留更大的压迫边界。 */
+    return Number((radius * (isBoss ? 0.72 : 0.58)).toFixed(3));
   }
 
   function bloodMistOpacity(wave, visibleEnemies) {
@@ -483,6 +506,7 @@
     NIGHT_VISUALS,
     VISION_RULES,
     MEDICAL_BEACON_RULES,
+    MEDICAL_SUPPORT_RULES,
     PROJECTILE_VISUALS,
     TURRET_RANGE_CURVES,
     FRIENDLY_RANGE_CURVES,
@@ -499,6 +523,9 @@
     enemyMoveSpeed,
     enemyRunTimeScale,
     structureAttackCapacity,
+    ZOMBIE_COMBAT_SCALE,
+    WALL_ASSAULT_REFERENCE,
+    meleeWaveMultiplier,
     wallProgress,
     wallUpgradeCost,
     researchCost,

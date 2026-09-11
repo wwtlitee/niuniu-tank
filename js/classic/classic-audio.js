@@ -1,4 +1,4 @@
-/* Original synthesized chip audio; no Nintendo/Namco recordings or transcribed score. */
+/* Original chip music with a bundled CC0 explosion recording. */
 'use strict';
 (function(root){
   const durations={start:2.4,clear:1.2,over:1.8,shoot:.12,brick:.13,steel:.18,hit:.22,explode:.72,pickup:.5,motor:.32,music:16};
@@ -8,12 +8,13 @@
   const triangle=phase=>1-4*Math.abs((phase%1)-.5);
 
   /** Deterministic PCM shared by runtime playback and offline audio validation. */
-  function renderCue(name,sampleRate=22050){
+  function cueRenderer(name,sampleRate=22050){
     if(!durations[name])throw new Error('Unknown classic cue: '+name);
     if(!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>96000)throw new Error('Invalid sample rate');
     const duration=durations[name],data=new Float32Array(Math.ceil(duration*sampleRate));
-    let seed=12345,phase=0;
-    for(let i=0;i<data.length;i++){
+    let seed=12345,phase=0,cursor=0;
+    function fill(count){const end=Math.min(data.length,cursor+count);
+    for(let i=cursor;i<end;i++){
       const t=i/sampleRate,progress=t/duration;
       seed=(Math.imul(seed,1664525)+1013904223)>>>0;
       const noise=(seed/4294967296)*2-1;
@@ -41,7 +42,12 @@
       const edge=Math.min(1,t/.004,(duration-t)/.008);
       data[i]=Math.max(-.95,Math.min(.95,value*Math.max(0,edge)));
     }
-    return data;
+    cursor=end;return cursor===data.length;
+    }
+    return {data,fill};
+  }
+  function renderCue(name,sampleRate=22050){
+    const task=cueRenderer(name,sampleRate);task.fill(task.data.length);return task.data;
   }
 
   /** One lazy AudioContext, bounded voices, independent classic-only preferences. */
@@ -49,10 +55,31 @@
     let context=null,master=null,muted=false,music=true,paused=false,failed=false;
     let musicSource=null,motorSource=null,mode='playing',pending='start';
     const buffers=new Map(),voices=new Set(),lastCue=new Map(),limit=24;
+    let musicPcm=null,disposed=false;
+    let explosionLoad=null,explosionReady=false,lastExplosionSource=null;
+    function warmExplosion(){
+      if(!context||disposed)return Promise.resolve(false);
+      if(explosionLoad)return explosionLoad;
+      const decoder=context;
+      explosionLoad=(async()=>{
+        try{
+          const response=await root.fetch('assets/audio/sfx/explosion.ogg');
+          if(!response.ok)throw Error('Explosion asset '+response.status);
+          const buffer=await decoder.decodeAudioData(await response.arrayBuffer());
+          if(disposed||decoder!==context)return false;
+          buffers.set('explode',buffer);explosionReady=true;return true;
+        }catch{return false;}
+      })();
+      return explosionLoad;
+    }
+    const musicTask=cueRenderer('music');
+    const defer=fn=>root.requestIdleCallback?root.requestIdleCallback(fn,{timeout:100}):root.setTimeout(fn,0);
+    function warmMusic(){if(disposed)return;if(musicTask.fill(4096)){musicPcm=musicTask.data;sync();}else defer(warmMusic);}
+    defer(warmMusic);
     try{const saved=JSON.parse(root.localStorage.getItem('tank.classic.audio')||'{}');muted=saved.muted===true;music=saved.music!==false;}catch{}
     function save(){try{root.localStorage.setItem('tank.classic.audio',JSON.stringify({muted,music}));}catch{}}
     function buffer(name){
-      if(!buffers.has(name)){const pcm=renderCue(name);const b=context.createBuffer(1,pcm.length,22050);b.copyToChannel(pcm,0);buffers.set(name,b);}
+      if(!buffers.has(name)){const pcm=name==='music'?musicPcm:renderCue(name);if(!pcm)return null;const b=context.createBuffer(1,pcm.length,22050);b.copyToChannel(pcm,0);buffers.set(name,b);}
       return buffers.get(name);
     }
     function stop(source){if(source){try{source.stop();}catch{}source.disconnect();}}
@@ -69,7 +96,7 @@
       master.gain.value=muted||paused?0:.6;
       const operation=muted||paused?context.suspend():context.resume();operation.catch(()=>{});
       if((!music||mode!=='playing'||muted)&&musicSource){stop(musicSource);musicSource=null;}
-      if(music&&!muted&&!paused&&mode==='playing'&&!musicSource)musicSource=source('music',.27,true);
+      if(musicPcm&&music&&!muted&&!paused&&mode==='playing'&&!musicSource)musicSource=source('music',.27,true);
     }
     async function unlock(){
       if(failed)return false;
@@ -80,15 +107,19 @@
           master.connect(limiter);limiter.connect(context.destination);
         }
         sync();
+        const warming=warmExplosion();
         if(!muted&&!paused){await context.resume();if(pending){const cue=pending;pending=null;play(cue);}}
+        await warming;
         return true;
       }catch{failed=true;return false;}
     }
     function play(name){
       if(!context||muted||paused||failed)return false;
       const time=context.currentTime;
-      if(time-(lastCue.get(name)??-100)<.045||voices.size>=limit)return false;
-      lastCue.set(name,time);const node=source(name,name==='explode'?.5:.42);voices.add(node);return true;
+      if(time-(lastCue.get(name)??-100)<(name==='explode'?.14:.045)||voices.size>=limit)return false;
+      lastCue.set(name,time);const node=source(name,name==='explode'?.65:.42);voices.add(node);
+      if(name==='explode')lastExplosionSource=explosionReady?'recorded':'synth';
+      return true;
     }
     function setMode(next){
       mode=next;setMoving(false);
@@ -107,9 +138,9 @@
     function setPaused(value){paused=!!value;if(paused)setMoving(false);sync();}
     function setMuted(value){muted=!!value;if(muted)setMoving(false);save();sync();}
     function setMusic(value){music=!!value;save();sync();}
-    function dispose(){reset();stopLoops();if(context)context.close().catch(()=>{});context=null;buffers.clear();}
+    function dispose(){disposed=true;stopLoops();for(const node of voices)stop(node);voices.clear();if(context)context.close().catch(()=>{});context=null;buffers.clear();}
     return {unlock,play,setMode,setMoving,reset,setPaused,setMuted,setMusic,dispose,
-      inspect:()=>({context:context?.state||'locked',muted,music,paused,failed,voices:voices.size,limit,mode})};
+      inspect:()=>({context:context?.state||'locked',muted,music,paused,failed,voices:voices.size,limit,mode,musicReady:!!musicPcm,explosionReady,lastExplosionSource})};
   }
   const api={renderCue,create};if(typeof module!=='undefined')module.exports=api;root.ClassicAudio=api;
 })(typeof window!=='undefined'?window:globalThis);

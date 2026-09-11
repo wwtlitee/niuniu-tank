@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta charset="UTF-8">
   <link rel="icon" href="data:,">
   <title>坦克大战 3D · 经典巷战</title>
@@ -32,6 +33,9 @@
     .btn.ghost { background:transparent; color:#d9e2ec; border:1px solid rgba(255,255,255,.25); }
   </style>
   <link rel="stylesheet" href="js/classic/classic-ui.css">
+<link rel="stylesheet" href="css/command-ui.css?v=8.2.0">
+<link rel="stylesheet" href="css/field-hud.css?v=8.2.0">
+<link rel="stylesheet" href="css/mobile.css?v=8.2.0">
 </head>
 <body>
   <div id="game"></div>
@@ -41,6 +45,7 @@
       <div class="row"><span id="classicWave">WAVE 1</span><b id="classicLives">命 3</b></div>
       <div class="row"><span id="classicRemaining">敌军 0</span><span>守住老鹰</span></div>
       <div class="row"><span id="classicScore">分 0</span><b id="classicEagle">老鹰 8 / 8</b></div>
+      <div class="row"><span>基地围墙</span><b id="classicWall">砖墙 · 1 耐久</b></div>
       <div id="classicHp">装甲 5 / 5</div>
       <div id="classicHpWrap"><div id="classicHpBar"></div></div>
     </div>
@@ -60,14 +65,17 @@
       <button class="btn ghost" id="classicMenu">返回菜单</button>
     </div>
   </div>
-  <script src="lib/three.min.js"></script>
+  <script src="js/ui-icons.js?v=8.2.0"></script>
+<script src="lib/three.min.js"></script>
   <script src="lib/GLTFLoader.js"></script>
-  <script src="js/classic/classic-visuals.js"></script>
-  <script src="js/classic/classic-feedback.js"></script>
-  <script src="js/classic/classic-config.js"></script>
-  <script src="js/classic/classic-upgrades.js"></script>
-  <script src="js/classic/classic-rules.js"></script>
-  <script src="js/classic/classic-audio.js"></script>
-  <script src="js/classic/classic-engine.js"></script>
+  <script src="js/classic/classic-visuals.js?v=8.2.0"></script>
+  <script src="js/battle-effects.js?v=8.2.0"></script>
+  <script src="js/classic/classic-feedback.js?v=8.2.0"></script>
+  <script src="js/classic/classic-config.js?v=8.2.0"></script>
+  <script src="js/classic/classic-upgrades.js?v=8.2.0"></script>
+  <script src="js/classic/classic-rules.js?v=8.2.0"></script>
+  <script src="js/classic/classic-audio.js?v=8.2.0"></script>
+  <script src="js/classic/classic-engine.js?v=8.2.0"></script>
+<script src="js/mobile-controls.js?v=8.2.0"></script>
 </body>
 </html>

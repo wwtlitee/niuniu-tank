@@ -18,6 +18,8 @@
   let grid = [];
   let tileMeshes = [];
   let decoded = null;
+  let eagleShellCells = new Set();
+  const eagleShellHealth = new Map();
   let player = null;
   const enemies = [];
   const bullets = [];
@@ -25,6 +27,7 @@
   let firedShots=0;
   let eagle = { hp: C.eagleHp, maxHp: C.eagleHp, group: null };
   let mapGroup = null;
+  let obstacleField = null;
   let lastT = 0;
   let respawnIn=0;
   const aimRay=new THREE.Raycaster(),aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0),aimPoint=new THREE.Vector3();
@@ -39,7 +42,7 @@
   };
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(1);
+  renderer.setPixelRatio(Math.min(root.devicePixelRatio||1,1.5));
   renderer.setSize(root.innerWidth, root.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -75,7 +78,7 @@
 
   function makeTank(bodyColor, turretColor, scale) {
     const g = new THREE.Group();
-    const M = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, metalness: 0.15 });
+    const M = (c,roughness=.7,metalness=.15) => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).convertSRGBToLinear(), roughness, metalness });
     const trackMat = M(0x1b2126, 0.95, 0.05), bodyMat = M(bodyColor, 0.5, 0.35), turMat = M(turretColor, 0.45, 0.4);
     [-1, 1].forEach((s) => {
       const tr = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.74, 3.5), trackMat);
@@ -100,6 +103,7 @@
     const hatch=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.1,8),dark);hatch.position.set(-.25,.6,.3);turret.add(hatch);
     const muzzle=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.3,10),trackMat);muzzle.rotation.x=Math.PI/2;muzzle.position.set(0,.3,-2.72);turret.add(muzzle);
     g.userData.turret = turret;
+    g.userData.recoil={barrel,muzzle,amount:0};
     g.scale.setScalar(scale || 1);
     return g;
   }
@@ -115,12 +119,14 @@
 
   function rebuildTile(col, row) {
     const index = row * GRID + col;
+    obstacleField?.clear(index);
     if (tileMeshes[index]) { mapGroup.remove(tileMeshes[index]);root.ClassicVisuals.dispose(tileMeshes[index]); tileMeshes[index] = null; }
     const tile = grid[row][col];
     if (tile === T.EMPTY) return;
     const c = R.cellCenter(col, row);
     if([T.BASE,T.BRICK,T.STEEL].includes(tile)){
-      const built=tile===T.BASE?root.ClassicFeedback.eagleBase():root.ClassicFeedback.obstacle(tile===T.STEEL,col+row);
+      if(tile!==T.BASE){obstacleField.set(index,tile===T.STEEL,col+row,c);return;}
+      const built=root.ClassicFeedback.eagleBase();
       built.position.set(c.x,0,c.z);mapGroup.add(built);tileMeshes[index]=built;if(tile===T.BASE)eagle.group=built;return;
     }
     let mesh;
@@ -160,11 +166,14 @@
   function buildMap(layout) {
     if (mapGroup) {scene.remove(mapGroup);root.ClassicVisuals.dispose(mapGroup);}
     mapGroup = new THREE.Group();
+    obstacleField=root.ClassicFeedback.createObstacleField(mapGroup,GRID*GRID);
     scene.add(mapGroup);
     decoded = R.decodeMap(layout);
     grid = decoded.tiles.map((row) => row.slice());
+    eagleShellCells = new Set(decoded.shell.map(([row, col]) => row * GRID + col));
+    eagleShellHealth.clear();
     tileMeshes = new Array(GRID * GRID);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(C.MAP_SIZE + 40, C.MAP_SIZE + 40), new THREE.MeshStandardMaterial({ color: 0x454c42,roughness:1 }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x383e38).convertSRGBToLinear(),roughness:1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; mapGroup.add(ground);
     ground.position.y=-.3;ground.receiveShadow=true;
     root.ClassicVisuals.dress(mapGroup,C);
@@ -172,12 +181,29 @@
     applyShell();
   }
 
-  function applyShell() {
+  function applyShell(repair=true) {
     decoded.shell.forEach(([row, col]) => {
       if (!R.inMap(col, row) || grid[row][col] === T.BASE) return;
+      const key=row*GRID+col;
+      if(!repair&&grid[row][col]===T.EMPTY){eagleShellHealth.delete(key);return;}
+      const maxHp=R.baseShellMaxHp(game.steelShell,game.owned.baseWall);
+      eagleShellHealth.set(key,repair?maxHp:Math.min(maxHp,eagleShellHealth.get(key)??maxHp));
       grid[row][col] = game.steelShell ? T.STEEL : T.BRICK;
       rebuildTile(col, row);
     });
+    for(const enemy of enemies)enemy.pathTimer=0;
+  }
+
+  function damageShell(col,row,damage) {
+    const key=row*GRID+col;
+    if(!eagleShellCells.has(key)||grid[row][col]!==T.STEEL)return false;
+    const maxHp=R.baseShellMaxHp(true,game.owned.baseWall);
+    const amount=Number.isFinite(damage)&&damage>0?damage:1;
+    const hp=Math.max(0,(eagleShellHealth.get(key)??maxHp)-amount);
+    if(hp>0){eagleShellHealth.set(key,hp);return false;}
+    eagleShellHealth.delete(key);grid[row][col]=T.EMPTY;rebuildTile(col,row);
+    for(const enemy of enemies)enemy.pathTimer=0;
+    return true;
   }
 
   function blockedAt(x, z, radius) {
@@ -209,8 +235,10 @@
     const p = origin.clone().addScaledVector(dir, 2.1);
     p.y = 1.55;
     mesh.position.copy(p);
+    effects.emit(p,'muzzle');
+    if(owner?.group?.userData.recoil)owner.group.userData.recoil.amount=.28;
     scene.add(mesh);
-    bullets.push({ mesh, vel: dir.clone().multiplyScalar(speed), dmg, owner: opts.player ? "player" : "enemy", life: 2.4, pierceLeft: opts.player ? game.stats.pierce : 0, blast: opts.player ? game.stats.blastRadius : 0, hitSet: new Set() });
+    bullets.push({ mesh, vel: dir.clone().multiplyScalar(speed), dmg, owner: opts.player ? "player" : "enemy", ignoreBaseShell: !!opts.ignoreBaseShell, life: 2.4, pierceLeft: opts.player ? game.stats.pierce : 0, blast: opts.player ? game.stats.blastRadius : 0, hitSet: new Set() });
   }
 
   function spawnEnemy(typeId) {
@@ -299,12 +327,18 @@
   }
 
   function hud() {
-    const set = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+    const set = (id, v) => { const n = document.getElementById(id); if (n&&n.textContent!==v) n.textContent = v; };
     set("classicWave", "WAVE " + game.wave);
     set("classicRemaining","敌军 "+(game.enemiesToSpawn+enemies.filter(e=>e.alive).length));
     set("classicLives", "命 " + game.lives);
     set("classicScore", "分 " + game.score);
     set("classicEagle", "老鹰 " + Math.max(0, eagle.hp) + " / " + eagle.maxHp);
+    const wallHp=R.baseShellMaxHp(game.steelShell,game.owned.baseWall);
+    let remainingWallHp=0;
+    for(const hp of eagleShellHealth.values())remainingWallHp+=hp;
+    const wallTime=game.buffs.shovelUntil>game.time&&!game.owned.baseWall
+      ?" · "+Math.ceil((game.buffs.shovelUntil-game.time)/1000)+"s":"";
+    set("classicWall",(game.steelShell?"钢壁":"砖墙")+" "+Math.ceil(remainingWallHp)+" / "+(wallHp*eagleShellCells.size)+wallTime);
     set("classicHp", player && player.alive ? ("装甲 " + Math.ceil(player.hp) + " / " + player.maxHp) : "装甲 —");
     const bar = document.getElementById("classicHpBar");
     if (bar && player) bar.style.width = Math.max(0, (player.hp / player.maxHp) * 100) + "%";
@@ -322,7 +356,7 @@
     U.pickThree(game.owned).forEach((card) => {
       const div = document.createElement("button");
       div.className = "classicCard";
-      div.innerHTML = "<div class='ci'>" + card.icon + "</div><div class='cn'>" + card.name + "</div><div class='cd'>" + card.desc + "</div>";
+      div.innerHTML = "<div class='ci'>" + UIIcons.svg(card.icon) + "</div><div class='cn'>" + card.name + "</div><div class='cd'>" + card.desc + "</div>";
       div.onclick = () => {
         game.player = player;
         U.applyCard(card.id, game.stats, game);
@@ -362,6 +396,7 @@
     const plane = aimPlane;
     const hit = aimPoint;
     if (ray.ray.intersectPlane(plane, hit)) player.aim = Math.atan2(hit.x - g.position.x, hit.z - g.position.z) + Math.PI;
+    if(root.MobileAim?.active) player.aim=Math.atan2(root.MobileAim.x,root.MobileAim.y)+Math.PI;
     const tur = g.userData.turret;
     if (tur) tur.rotation.y += shortAngle(player.aim - g.rotation.y - tur.rotation.y) * Math.min(1, dt * 18);
     player.cd -= dt;
@@ -394,7 +429,7 @@
       }
       const len = Math.hypot(tx, tz) || 1;
       e.pathTimer=(e.pathTimer||0)-dt;
-      if(e.pathTimer<=0){e.path=R.routeTo(grid,R.cellOf(g.position.x,g.position.z),decoded.eagle);e.pathTimer=.8;}
+      if(e.pathTimer<=0){e.path=R.routeTo(grid,R.cellOf(g.position.x,g.position.z),decoded.eagle,eagleShellCells);e.pathTimer=.8;}
       if(e.path&&e.path.length){
         let waypoint=R.cellCenter(e.path[0].col,e.path[0].row);
         if(Math.hypot(waypoint.x-g.position.x,waypoint.z-g.position.z)<.35){e.path.shift();if(e.path.length)waypoint=R.cellCenter(e.path[0].col,e.path[0].row);}
@@ -425,7 +460,7 @@
           game._turCd = 0.7 / game.stats.autoTurretLv;
           const p = R.cellCenter(decoded.eagle.col, decoded.eagle.row);
           const dir = new THREE.Vector3(alive.group.position.x - p.x, 0, alive.group.position.z - p.z).normalize();
-          shootFrom(null, new THREE.Vector3(p.x, 0, p.z), dir, 1.2, { player: true });
+          shootFrom(null, new THREE.Vector3(p.x, 0, p.z), dir, 1.2, { player: true, ignoreBaseShell: true });
         }
       }
     }
@@ -449,8 +484,13 @@
         const tile = grid[cell.row][cell.col];
         const hit = R.resolveShotTile(tile);
         if (hit.hitsEagle && b.owner === "enemy") { effects.emit(p);damageEagle(b.dmg); gone = true; }
-        else if (hit.destroy) { audio.play('brick');effects.emit(p,'destroy');grid[cell.row][cell.col] = T.EMPTY; rebuildTile(cell.col, cell.row); gone = true; }
-        else if (hit.stop && hit.kind === "steel") {audio.play('steel');effects.emit(p);gone = true;}
+        else if (!b.ignoreBaseShell || !eagleShellCells.has(cell.row * GRID + cell.col)) {
+          if (hit.destroy) { audio.play('brick');effects.emit(p,'destroy');grid[cell.row][cell.col] = T.EMPTY;eagleShellHealth.delete(cell.row*GRID+cell.col);rebuildTile(cell.col, cell.row); gone = true; }
+          else if (hit.stop && hit.kind === "steel") {
+            const broken=damageShell(cell.col,cell.row,b.dmg);
+            audio.play(broken?'brick':'steel');effects.emit(p,broken?'destroy':'hit');gone = true;
+          }
+        }
       }
       if (!gone && b.owner === "player") {
         for (const e of enemies) {
@@ -485,14 +525,16 @@
         applyPickup(p.key); scene.remove(p.mesh);root.ClassicVisuals.dispose(p.mesh); powerups.splice(i, 1);
       }
     }
-    if (game.buffs.shovelUntil && game.time > game.buffs.shovelUntil && !game.owned.baseWall) {
-      game.buffs.shovelUntil = 0; game.steelShell = false; applyShell();
+    if (game.buffs.shovelUntil && game.time >= game.buffs.shovelUntil) {
+      game.buffs.shovelUntil = 0;
+      game.steelShell = !!game.owned.baseWall;
+      applyShell(false);
     }
   }
 
   function step(dt, now) {
     if(!Number.isFinite(dt)||dt<0)return;
-    if(state!==STATE.PAUSED)effects.update(dt);
+    if(state!==STATE.PAUSED){effects.update(dt);for(const tank of [player,...enemies]){const recoil=tank?.group?.userData.recoil;if(!recoil)continue;recoil.amount*=Math.exp(-dt*18);recoil.barrel.position.z=-1.9+recoil.amount;recoil.muzzle.position.z=-2.72+recoil.amount;}}
     if (state === STATE.PAUSED || state === STATE.OVER || state === STATE.UPGRADE) return;
     game.time+=dt*1000;now=game.time;
     if(respawnIn>0){respawnIn-=dt;if(respawnIn<=0)spawnPlayer();}
@@ -598,6 +640,16 @@
     resolveShotTile: R.resolveShotTile, loseState: R.loseState,
   };
   if(new URLSearchParams(location.search).has('autotest')){
+    root.ClassicGame.testShellState=()=>({steelShell:game.steelShell,shovelUntil:game.buffs.shovelUntil,eagleHp:eagle.hp,
+      cells:decoded.shell.map(([row,col])=>({row,col,tile:grid[row][col],hp:eagleShellHealth.get(row*GRID+col)||0}))});
+    root.ClassicGame.testUpgrade=id=>{U.applyCard(id,game.stats,game);if(id==='baseWall'||id==='baseRepair')applyShell();};
+    root.ClassicGame.testPickup=applyPickup;
+    root.ClassicGame.testPickupsUpdate=()=>updatePickups(0);
+    root.ClassicGame.testShellShot=(col,row,dmg=1,ignoreBaseShell=false)=>{
+      const c=R.cellCenter(col,row);
+      shootFrom(null,new THREE.Vector3(c.x,0,c.z-TILE),new THREE.Vector3(0,0,1),dmg,{player:ignoreBaseShell,ignoreBaseShell});
+      updateBullets(.35);
+    };
     root.ClassicGame.testEffect=(kind)=>effects.emit(new THREE.Vector3(0,1,12),kind);
     root.ClassicGame.testEffectAdvance=(dt)=>effects.update(Math.max(0,Math.min(2,dt)));
     root.ClassicGame.testBasePosition=()=>eagle.group.position.toArray();

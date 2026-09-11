@@ -1,0 +1,10 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{const b=await chromium.launch({headless:true,args:['--use-angle=d3d11']});try{
+ const p=await b.newPage({viewport:{width:1440,height:900}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ const base='http://127.0.0.1:8001/play/niuniu-tank/';await p.goto(base+'index.html');await p.waitForFunction(()=>document.querySelectorAll('.modeCard').length===3);const cards=await p.locator('.mcName').allTextContents();assert.deepEqual(cards,['经典','生存','竞速']);
+ await p.locator('.modeCard').nth(2).click();await p.waitForURL('**/racing.html');await p.waitForFunction(()=>window.racingReady);assert.equal(await p.evaluate(()=>typeof window.RacingTest),'undefined');
+ await p.click('#start');await p.evaluate(()=>advanceTime(3300));assert.equal(JSON.parse(await p.evaluate(()=>render_game_to_text())).phase,'racing');await p.keyboard.press('Escape');await p.locator('#pause a').click();await p.waitForURL('**/index.html');
+ await p.waitForFunction(()=>document.querySelectorAll('.modeCard').length===3);await p.locator('.modeCard').first().click();await p.waitForURL('**/classic.html');await p.waitForFunction(()=>window.classicReady);
+ await p.goto(base+'index.html');await p.waitForFunction(()=>document.querySelectorAll('.modeCard').length===3);await p.locator('.modeCard').nth(1).click();await p.waitForSelector('#difficultySelect:not(.hidden)',{timeout:60000});await p.locator('[data-difficulty="normal"]').click();await p.waitForFunction(()=>typeof state!=='undefined'&&state!==STATE.MENU);await p.screenshot({path:'output/racing-v7.0.0/survival-entry.png'});
+ const result={gateway:base,cards,racingStarted:true,returnedToMenu:true,classicReady:true,survivalStarted:true,errors};fs.writeFileSync('output/racing-v7.0.0/integration.json',JSON.stringify(result,null,2));assert.deepEqual(errors,[]);console.log(JSON.stringify(result));
+}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

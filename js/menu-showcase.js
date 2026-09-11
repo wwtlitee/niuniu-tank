@@ -9,7 +9,7 @@
 
   function buildCard(host, kind) {
     if (kind === "td") {
-      host.innerHTML = '<div class="mcQuestion" aria-hidden="true">?</div>';
+      host.innerHTML = '<svg class="mcTrackLogo" viewBox="0 0 320 190" role="img" aria-label="竞速跑道" style="width:100%;height:100%;display:block"><defs><path id="menuTrackPath" d="M83 143 C25 139 26 68 72 48 L154 24 C188 16 211 39 198 63 C180 96 235 61 266 76 C306 95 290 145 254 151 L172 162 C137 167 120 138 83 143Z"/><pattern id="menuFinish" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#f3edce"/><path d="M0 0h6v6H0zM6 6h6v6H6z" fill="#192621"/></pattern></defs><use href="#menuTrackPath" transform="translate(0 8)" fill="none" stroke="#07100c" stroke-width="32" opacity=".6"/><use href="#menuTrackPath" fill="none" stroke="#d1c187" stroke-width="30"/><use href="#menuTrackPath" fill="none" stroke="#8c5c45" stroke-width="30" stroke-dasharray="8 12"/><use href="#menuTrackPath" fill="none" stroke="#283a32" stroke-width="23"/><use href="#menuTrackPath" fill="none" stroke="#d8d5b5" stroke-width="1.8" stroke-dasharray="7 8"/><path d="M219 141l5 27" stroke="url(#menuFinish)" stroke-width="13"/><path d="M70 45l13-5-3 12" fill="none" stroke="#e8d99c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       return;
     }
     const canvas = document.createElement("canvas"); host.appendChild(canvas);

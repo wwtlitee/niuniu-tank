@@ -125,14 +125,19 @@
     return list[Math.max(0, Math.min(list.length - 1, index))];
   }
 
-  function routeTo(grid,start,goal){
+  function baseShellMaxHp(reinforced,level=0){
+    return reinforced ? (Number(level)>=2?6:4) : 1;
+  }
+
+  function routeTo(grid,start,goal,breakableSteel=null){
     if(!inMap(start.col,start.row)||!inMap(goal.col,goal.row))return [];
     const key=p=>p.row*GRID+p.col,queue=[start],parents=new Map([[key(start),null]]);
     for(let i=0;i<queue.length;i++){
       const p=queue[i];if(key(p)===key(goal))break;
       for(const [dx,dz] of [[0,1],[1,0],[-1,0],[0,-1]]){
         const q={col:p.col+dx,row:p.row+dz};if(!inMap(q.col,q.row)||parents.has(key(q)))continue;
-        if([T.STEEL,T.WATER].includes(grid[q.row][q.col]))continue;
+        const tile=grid[q.row][q.col];
+        if(tile===T.WATER||(tile===T.STEEL&&!breakableSteel?.has(key(q))))continue;
         parents.set(key(q),p);queue.push(q);
       }
     }
@@ -146,6 +151,7 @@
     return Math.max(1,Math.ceil(speed*dt/.5));
   }
   const ClassicRules = {
+    baseShellMaxHp,
     shotSteps,
     routeTo,
     decodeMap, cellCenter, cellOf, inMap, resolveShotTile, blocksTank, loseState,

@@ -16,16 +16,18 @@ const MODE_CARDS = [
   {
     key: "survival",
     ...GAME_MODES.survival,
-    desc: "高台生存：单点咽喉 + 金矿每秒产金 + 科技树投资。30 秒发育期布局，撑过 30 波并击杀最终 Boss，可选择【胜利】收官或【无尽】继续滚雪球。",
-    features: ["47 格高台 + 单坡口", "金矿每秒产金 · 6 级升级", "7 分支科技树 · 即时生效", "30 波胜利 · 每 5 波 Boss"],
+    desc: "在山崖高地建设防线，指挥坦克守住峡谷。利用准备期布局经济与火力，抵挡十波尸潮和最终首领，胜利后可继续挑战无尽。",
+    features: ["峡谷防线 · 工程师施工", "金矿发展 · 科技突破", "专精炮塔 · 坦克协同", "十波战役 · 无尽挑战"],
     state: "ready",
   },
   {
     key: "td",
     ...GAME_MODES.td,
+    name: "装甲竞速",
+    tagline: "第一人称 · 六车三圈 · 战术道具",
     desc: "高速赛道上的装甲竞逐：抢道具、打干扰、在弯道和火力中争夺第一。",
-    features: ["非卡通军事赛道", "随机战斗道具", "坦克互相攻击", "竞速与生存并行"],
-    state: "soon",
+    features: ["峡谷试验场与捷径", "四种战术道具", "第一人称坦克炮击", "六车三圈争夺排名"],
+    state: "ready",
   },
 ];
 
@@ -61,6 +63,7 @@ function buildHome() {
         return;
       }
       if (m.key === "classic") { location.href = "classic.html"; return; }
+      if (m.key === "td") { location.href = "racing.html"; return; }
       enterMode(m.key);
     });
     wrap.appendChild(card);
@@ -73,6 +76,16 @@ function refreshSaveButton(){
   const hint=document.getElementById("saveHint");if(hint)hint.textContent=has?"已有生存进度":"暂无生存存档";
 }
 
+const SURVIVAL_DIFFICULTIES=Object.freeze({easy:{label:"简单",multiplier:.5},normal:{label:"普通",multiplier:.75},hard:{label:"困难",multiplier:1},hell:{label:"地狱",multiplier:1.5}});
+function chooseSurvivalDifficulty(continueGame,onDone){
+  const panel=document.getElementById("difficultySelect"),options=document.querySelectorAll("#difficultyOptions [data-difficulty]");
+  if(!panel||!options.length){onDone("normal");return;}
+  panel.classList.remove("hidden");
+  const finish=(key)=>{panel.classList.add("hidden");options.forEach(button=>button.removeEventListener("click",button._difficultyHandler));onDone(key);};
+  options.forEach(button=>{const handler=()=>finish(button.dataset.difficulty);button._difficultyHandler=handler;button.addEventListener("click",handler);});
+  if(new URLSearchParams(location.search).get("autotest")==="1")setTimeout(()=>finish("normal"),0);
+}
+
 function enterMode(key, continueGame = false) {
   const m = setActiveMode(key);
   applyModeConfig(m);
@@ -82,6 +95,19 @@ function enterMode(key, continueGame = false) {
   audio();
   playIntro();
   document.getElementById("menu").classList.add("hidden");
+  const launch=()=>{
+    if(key==="survival"&&!continueGame&&!window.__autoTestDifficulty){
+      chooseSurvivalDifficulty(false,(difficulty)=>{game.difficultyMultiplier=SURVIVAL_DIFFICULTIES[difficulty].multiplier;game.difficultyId=difficulty;resetGame();});
+      return;
+    }
+    if(key==="survival"&&continueGame){game.difficultyMultiplier=1;game.difficultyId="normal";}
+    resetGame();
+    if(continueGame&&key==="survival"){
+      const snapshot=readSurvivalSnapshot();
+      if(snapshot?.game?.difficultyMultiplier){game.difficultyMultiplier=snapshot.game.difficultyMultiplier;game.difficultyId=snapshot.game.difficultyId||"normal";}
+      if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
+    }
+  };
   /* 模型未就绪时先等加载完成再开局，避免整局灰盒 */
   if (!assetsReady()) {
     const el = document.createElement("div");
@@ -94,23 +120,15 @@ function enterMode(key, continueGame = false) {
       if (assetsReady()) {
         clearInterval(tick);
         el.remove();
-        resetGame();
-        if (continueGame && key === "survival") {
-          const snapshot = readSurvivalSnapshot();
-          if (!restoreSurvivalSnapshot(snapshot)) toast("没有可继续的生存存档");
-        }
+        launch();
         return;
       }
       const [d, t] = assetsProgress();
-      el.textContent = `⚔️ 战场素材加载中… ${d}/${t}`;
+      el.textContent = ` 战场素材加载中… ${d}/${t}`;
     }, 100);
     return;
   }
-  resetGame();
-  if(continueGame&&key==="survival"){
-    const snapshot=readSurvivalSnapshot();
-    if(!restoreSurvivalSnapshot(snapshot))toast("没有可继续的生存存档");
-  }
+  launch();
 }
 
 /* 返回主菜单（游戏结束/暂停时） */
@@ -134,14 +152,16 @@ function backToMenu() {
   genMap(1);
   camera.position.set(0, 52, 38);
   camera.lookAt(0, 0, 0);
+  /*  v6.35.0：返回主菜单时立即切回 menu 主题，不必等 state tick */
+  if (window.BGMBridge) window.BGMBridge.forceMenu();
 }
+/* 把 backToMenu 暴露给 settings-ui.js 用做二次确认后的真正跳转 */
+if (typeof window !== "undefined") window.backToMenu = backToMenu;
 
 /* 绑定游戏内按钮（engine 只绑了 restart/resume，这里补返回菜单） */
 function bindHome() {
-  const menuBtn = document.getElementById("menuBtn");
-  if (menuBtn) menuBtn.addEventListener("click", backToMenu);
-  const pauseMenuBtn = document.getElementById("pauseMenuBtn");
-  if (pauseMenuBtn) pauseMenuBtn.addEventListener("click", backToMenu);
+  //  v6.35.0：menuBtn / pauseMenuBtn 已改由 settings-ui.js 接管（带二次确认），
+  // 这里只保留存档相关入口。
   const newGameBtn=document.getElementById("newGameBtn");
   if(newGameBtn)newGameBtn.addEventListener("click",()=>{clearSurvivalSnapshot();enterMode("survival",false);});
   const continueBtn=document.getElementById("continueBtn");
