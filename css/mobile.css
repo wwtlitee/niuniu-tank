@@ -1,0 +1,51 @@
+/* Basic mobile layout v8.2.0 */
+#touchControls[hidden]{display:none!important}
+#touchControls{display:none}
+.mobile #touchControls{position:fixed;inset:0;pointer-events:none;z-index:85;display:flex;align-items:flex-end;justify-content:center;gap:6px;padding:0 max(150px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom));}
+#touchControls button{pointer-events:auto;touch-action:none;min-width:44px;min-height:44px;padding:8px;border:1px solid #e1e9d766;background:#14201bd9;color:#fff;border-radius:9px;font:12px sans-serif;user-select:none}
+#touchControls button[aria-pressed=true]{background:#796c32}
+#touchControls .touchPause{position:absolute;right:max(12px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top))}
+.touchStick{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));width:112px;height:112px;border:1px solid #ffffff60;border-radius:50%;background:#14201b66;pointer-events:auto;touch-action:none;display:grid;place-items:center}
+.touchStick.drive{left:max(16px,env(safe-area-inset-left))}.touchStick.aim{right:max(16px,env(safe-area-inset-right))}.touchStick i{width:44px;height:44px;border-radius:50%;background:#dce5d87a;border:1px solid #fff8}.touchStick span{position:absolute;bottom:5px;font:10px sans-serif;color:#fff9}
+#rotateHint{display:none}.mobile canvas{touch-action:none}.mobile button,.mobile .cmdBtn,.mobile .modeCard,.mobile .classicCard{touch-action:manipulation}.mobile input,.mobile select{font-size:16px!important}
+@media(pointer:coarse){
+ html,body{overscroll-behavior:none}
+ .mobile .overlay{overflow:auto;max-height:100dvh;padding:16px;justify-content:flex-start!important}
+ .mobile #menu{overflow:auto;display:flex;justify-content:flex-start!important;padding:24px 16px}
+ .mobile #modeCards{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;width:100%;margin:12px 0}
+ .mobile .modeCard{width:min(250px,100%);min-width:0;min-height:180px}
+ .mobile #menu h1{font-size:32px}.mobile #menu footer{position:static}.mobile #menuCorner{position:static}
+ .mobile #classicCards{flex-wrap:wrap;justify-content:center}.mobile .classicCard{width:190px}
+ .mobile #classicTop{top:8px;left:8px;min-width:150px;padding:8px;font-size:11px}.mobile #classicTop .row{font-size:11px}.mobile #classicHint{display:none}
+ .mobile #topLeft{left:8px;top:8px;width:170px;transform:scale(.8);transform-origin:top left}.mobile #resDock{left:155px;top:8px;transform:scale(.8);transform-origin:top left}
+ .mobile #hint,.mobile #hintWC3,.mobile #commandStatus,.mobile #selectionIdle,.mobile #spPortraitFrame{display:none!important}
+ .mobile #wc3dock{position:fixed;left:8px!important;right:8px!important;bottom:64px!important;width:auto!important;transform:none!important;display:flex;gap:6px;max-height:145px}
+ .mobile #mmDock{width:90px!important;height:90px!important;flex:0 0 90px}.mobile #minimap{width:100%!important;height:100%!important}
+ .mobile #cmdWrap{display:flex!important;flex:1;min-width:0;gap:6px}.mobile #selPanel{width:140px!important;min-width:0;padding:6px!important;overflow:auto;max-height:140px}.mobile #cmdcard{display:flex!important;flex-wrap:wrap;align-content:flex-start;flex:1;min-width:0;overflow:auto;max-height:140px;padding:4px!important}.mobile .cmdBtn{min-width:44px!important;min-height:44px!important;width:60px!important;height:58px!important;font-size:10px}
+ .mobile #factoryQueueDock{max-width:90px;overflow:auto}.mobile #questPanel{max-width:240px;max-height:90px;overflow:auto}.mobile #waveInfo{right:65px;font-size:14px}
+ .mobile-racing .screen{overflow:auto;justify-content:flex-start;gap:14px;min-height:0;padding:18px}.mobile-racing .intro{max-width:100%;width:460px}.mobile-racing .intro h1{font-size:38px;margin:12px 0}.mobile-racing .trackFacts{margin:12px 0}.mobile-racing .previewBadge{display:none}.mobile-racing .roomLayout{display:flex;flex-wrap:wrap;min-height:0;gap:20px;padding:10px 0}.mobile-racing .roomRoster{width:min(460px,100%)}.mobile-racing .roomCustomization{margin-top:10px}.mobile-racing .roomLoadout>h2{display:none}
+ .mobile-racing .bottomHud{bottom:140px;left:16px;right:16px;align-items:flex-end}.mobile-racing .itemPanel{min-width:150px;width:180px;padding:0}.mobile-racing .itemSlots{gap:8px;margin:0}.mobile-racing .itemSlots>span,.mobile-racing .itemSlots>span.selected{width:76px;height:80px;flex-basis:76px;padding:0}.mobile-racing .itemSlots .itemModel,.mobile-racing .itemSlots .selected .itemModel{width:70px;height:65px}.mobile-racing .itemSlots .slotHint{font-size:10px;bottom:3px}.mobile-racing .itemCaption,.mobile-racing #itemTip{display:none}.mobile-racing .mapPanel{width:80px}.mobile-racing .mapPanel svg{height:65px}.mobile-racing .speedPanel strong{font-size:32px}.mobile-racing .speedPanel small{display:none}.mobile-racing .topbar{top:10px;right:70px}.mobile-racing .position strong{font-size:32px}.mobile-racing #pauseButton{display:none}.mobile-racing #spectacleCaption{top:75px;font-size:9px}
+}
+@media(pointer:coarse) and (orientation:portrait){.mobile #rotateHint{display:block;position:fixed;top:0;left:0;right:0;text-align:center;background:#17231ee6;color:#e6dec0;font:11px sans-serif;padding:5px;z-index:90;pointer-events:none}.mobile #menu{padding-top:32px}.mobile #touchControls{padding-left:8px;padding-right:8px;flex-wrap:wrap;align-content:flex-end;padding-bottom:135px}.mobile-survival #touchControls{padding-bottom:12px}.mobile #wc3dock{bottom:110px!important}.mobile #selPanel{display:none!important}.mobile-racing .bottomHud{bottom:205px}.mobile-racing .speedPanel{min-width:60px}.mobile-racing .screen{padding-top:32px}}
+
+@media(pointer:coarse){
+.mobile #hud.survival #wc3dock{display:flex!important;height:128px;align-items:flex-end}
+.mobile #mmDock,.mobile #cmdWrap,.mobile #selPanel,.mobile #factoryQueueDock{position:relative!important;inset:auto!important;transform:none!important}
+.mobile #cmdWrap{width:auto!important;height:128px!important;align-items:flex-end}
+.mobile #cmdcard{height:128px!important;width:auto!important}.mobile #cmdcard:empty{display:none!important}
+.mobile #mmDock::before,.mobile #mmDock::after,.mobile .cmdSlot{display:none!important}
+.mobile #questPanel{top:80px;right:12px;left:auto;bottom:auto;font-size:10px;max-width:180px;max-height:68px}
+.mobile #classicTop{width:170px;transform:scale(.8);transform-origin:top left}
+.mobile #difficultyOptions{display:flex;flex-wrap:wrap}.mobile .difficultyShell{width:100%;max-height:none}.mobile .difficultyCard{min-width:170px;flex:1}
+.mobile .settingsShell{max-height:90dvh;overflow:auto}.mobile #prepBar{top:70px;font-size:10px;padding:6px}
+}
+
+@media(pointer:coarse) and (orientation:portrait){
+.mobile #topLeft,.mobile #classicTop{top:30px}
+.mobile #resDock{top:30px;left:150px;gap:8px;transform:scale(.7)}
+.mobile #waveInfo{left:auto!important;right:12px!important;top:80px!important;width:185px!important;height:auto;min-height:36px;white-space:normal;transform:none!important;padding:8px;font-size:11px}
+.mobile #prepBar{top:130px;left:auto;right:12px;transform:none;max-width:180px}
+.mobile #questPanel{top:175px;right:12px;max-width:180px}
+}
+
+@media (any-pointer:fine), (any-hover:hover){#touchControls,#rotateHint{display:none!important}}

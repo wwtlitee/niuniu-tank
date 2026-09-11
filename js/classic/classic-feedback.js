@@ -2,11 +2,12 @@
 "use strict";
 (function(root){
   const blockGeometry=new THREE.BoxGeometry(1,1,1);
-  const brickMaterials=[0xb94923,0xcf582b,0xda6938,0xa63d20].map(color=>new THREE.MeshStandardMaterial({color,roughness:.95}));
+  const brickMaterials=[0x805046,0x995b48,0xac6850,0x724039].map(color=>new THREE.MeshStandardMaterial({color,roughness:.95}));
   const mortar=new THREE.MeshStandardMaterial({color:0x493a2e,roughness:1});
   const armour=new THREE.MeshStandardMaterial({color:0x929fa0,metalness:.65,roughness:.45});
   const rim=new THREE.MeshStandardMaterial({color:0xc8d1c9,metalness:.7,roughness:.34});
   const blockShared=new Set([blockGeometry,...brickMaterials,mortar,armour,rim]);
+  for(const material of [brickMaterials[0],...brickMaterials.slice(1),mortar,armour,rim])material.color.convertSRGBToLinear();
   function obstacle(steel,seed=0){
     const root=new THREE.Group();root.userData.classicObstacle=steel?'steel':'brick';
     function block(w,h,d,x,y,z,material){const m=new THREE.Mesh(blockGeometry,material);m.scale.set(w,h,d);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;root.add(m);}
@@ -32,6 +33,34 @@
     root.clear();for(const [material,matrices] of batches){const batch=new THREE.InstancedMesh(blockGeometry,material,matrices.length);matrices.forEach((matrix,i)=>batch.setMatrixAt(i,matrix));batch.castShadow=true;batch.receiveShadow=true;root.add(batch);}
     return root;
   }
+  // One persistent batch per material for the entire destructible map. Removal swaps
+  // the last instance into the freed slot and repairs its owner's handle.
+  function createObstacleField(parent,capacity){
+    const batches=new Map(),cells=new Map(),templates=new Map(),matrix=new THREE.Matrix4();
+    function template(steel,seed){
+      const key=`${steel}:${seed%4}`;if(templates.has(key))return templates.get(key);
+      const group=obstacle(steel,seed),parts=[];
+      for(const child of group.children){for(let i=0;i<child.count;i++){const local=new THREE.Matrix4();child.getMatrixAt(i,local);parts.push({material:child.material,local});}child.dispose?.();}
+      templates.set(key,parts);return parts;
+    }
+    function clear(index){
+      const handles=cells.get(index);if(!handles)return;
+      for(const handle of handles){const batch=handle.batch,last=batch.handles.pop(),slot=handle.slot;
+        if(slot<batch.handles.length){batch.mesh.getMatrixAt(batch.handles.length,matrix);batch.mesh.setMatrixAt(slot,matrix);last.slot=slot;batch.handles[slot]=last;}
+        batch.mesh.count=batch.handles.length;batch.mesh.visible=batch.mesh.count>0;batch.mesh.instanceMatrix.needsUpdate=true;
+      }cells.delete(index);
+    }
+    function set(index,steel,seed,position){
+      clear(index);const handles=[];
+      for(const part of template(steel,seed)){
+        let batch=batches.get(part.material);
+        if(!batch){const mesh=new THREE.InstancedMesh(blockGeometry,part.material,capacity*24);mesh.count=0;mesh.castShadow=true;mesh.receiveShadow=true;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);parent.add(mesh);batch={mesh,handles:[]};batches.set(part.material,batch);}
+        const slot=batch.handles.length,handle={batch,slot};matrix.copy(part.local);matrix.elements[12]+=position.x;matrix.elements[14]+=position.z;
+        batch.mesh.setMatrixAt(slot,matrix);batch.handles.push(handle);handles.push(handle);batch.mesh.count=batch.handles.length;batch.mesh.visible=true;batch.mesh.instanceMatrix.needsUpdate=true;
+      }cells.set(index,handles);
+    }
+    return {set,clear,get count(){return cells.size;}};
+  }
   function eagleBase(){
     const group=new THREE.Group();group.userData.classicEagle=true;
     const steel=new THREE.MeshStandardMaterial({color:0x39494c,roughness:.6,metalness:.5});
@@ -52,29 +81,28 @@
   }
   function createEffects(scene){
     const limit=160,pool=[],active=[];
-    const stamp=document.createElement('canvas');stamp.width=stamp.height=64;const ctx=stamp.getContext('2d');
-    const gradient=ctx.createRadialGradient(32,32,2,32,32,32);gradient.addColorStop(0,'rgba(255,255,255,1)');gradient.addColorStop(.45,'rgba(255,255,255,.55)');gradient.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=gradient;ctx.fillRect(0,0,64,64);
-    const texture=new THREE.CanvasTexture(stamp);
+    const fire=root.BattleEffects.createBatch(limit,true),dust=root.BattleEffects.createBatch(limit);scene.add(dust.mesh,fire.mesh);
     function take(){if(pool.length)return pool.pop();if(active.length>=limit)return null;
-      const mesh=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));return {mesh,velocity:new THREE.Vector3()};}
+      return {position:new THREE.Vector3(),color:new THREE.Color(),velocity:new THREE.Vector3()};}
     function emit(position,kind='hit'){
-      const explosion=kind==='destroy',smokeCount=explosion?9:2,count=explosion?28:10;
+      const explosion=kind==='destroy',muzzle=kind==='muzzle',smokeCount=explosion?9:muzzle?1:2,count=explosion?28:muzzle?5:10;
       for(let i=0;i<count;i++){const p=take();if(!p)break;const smoke=i<smokeCount;
         p.life=p.total=smoke?(explosion?1.8:.5):(.16+Math.random()*.36);p.smoke=smoke;p.size=smoke?(explosion?1.6:.35):(.12+Math.random()*(explosion?.55:.16));
-        p.mesh.material.color.setHex(smoke?0x55524c:i%3?0xffb53f:0xfff4c4);p.mesh.material.blending=smoke?THREE.NormalBlending:THREE.AdditiveBlending;
-        p.mesh.material.opacity=1;p.mesh.position.copy(position);p.mesh.position.y=Math.max(.35,position.y);
+        p.color.setHex(smoke?0x55524c:i%3?0xffb53f:0xfff4c4);
+        p.position.copy(position);p.position.y=Math.max(.35,position.y);
         p.velocity.set((Math.random()-.5)*(explosion?10:4),smoke?1.8:Math.random()*5,(Math.random()-.5)*(explosion?10:4));
-        if(explosion&&i===smokeCount){p.size=4.2;p.life=p.total=.24;p.velocity.set(0,.5,0);p.mesh.material.color.setHex(0xff7518);}
-        p.mesh.scale.setScalar(p.size);scene.add(p.mesh);active.push(p);
+        if((explosion||muzzle)&&i===smokeCount){p.size=explosion?3:1.2;p.life=p.total=muzzle?.085:.16;p.velocity.set(0,.5,0);p.color.setHex(0xffad43);}
+        active.push(p);
       }
+      sync();
     }
+    function sync(){let f=0,d=0;for(const p of active){const age=1-p.life/p.total,size=p.size*(p.smoke?1+2*age:1);const alpha=Math.min(1,p.life/p.total*(p.smoke?.65:2));(p.smoke?dust:fire).set(p.smoke?d++:f++,p.position,p.color,size,alpha);}dust.commit(d);fire.commit(f);}
     function update(dt){for(let i=active.length-1;i>=0;i--){const p=active[i];p.life-=dt;
-      if(p.life<=0){scene.remove(p.mesh);pool.push(p);active.splice(i,1);continue;}
-      p.mesh.position.addScaledVector(p.velocity,dt);if(!p.smoke)p.velocity.y-=dt*8;
-      p.mesh.material.opacity=Math.min(1,p.life/p.total*(p.smoke?.65:2));p.mesh.scale.setScalar(p.size*(p.smoke?1+2*(1-p.life/p.total):1));
-    }}
-    function clear(){for(const p of active){scene.remove(p.mesh);pool.push(p);}active.length=0;}
+      if(p.life<=0){pool.push(p);active[i]=active[active.length-1];active.pop();continue;}
+      p.position.addScaledVector(p.velocity,dt);if(!p.smoke)p.velocity.y-=dt*8;
+    }sync();}
+    function clear(){pool.push(...active);active.length=0;sync();}
     return {emit,update,clear,get count(){return active.length;},limit};
   }
-  root.ClassicFeedback={eagleBase,createEffects,obstacle,blockShared};
+  root.ClassicFeedback={eagleBase,createEffects,obstacle,createObstacleField,blockShared};
 })(window);

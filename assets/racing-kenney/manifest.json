@@ -1,0 +1,69 @@
+{
+  "author": "Kenney",
+  "license": "CC0",
+  "source": {
+    "pets": "https://kenney.nl/assets/cube-pets",
+    "space": "https://kenney.nl/assets/space-kit",
+    "food": "https://kenney.nl/assets/food-kit"
+  },
+  "models": [
+    {
+      "file": "pets/animal-cow.glb",
+      "pack": "pets",
+      "bytes": 128084,
+      "sha256": "57213ad1b06c1b6959c334215b4473039a7cd47c8500b65977df923e2e3e7929",
+      "animations": [
+        "static",
+        "idle",
+        "walk",
+        "run",
+        "eat",
+        "dance",
+        "gesture-positive",
+        "gesture-negative"
+      ]
+    },
+    {
+      "file": "space/craft_cargoB.glb",
+      "pack": "space",
+      "bytes": 26308,
+      "sha256": "8da33a720ed3b208938a969864d6b0a64a51b7715f71d102ecad0a5f71412b8c",
+      "animations": []
+    },
+    {
+      "file": "space/craft_speederD.glb",
+      "pack": "space",
+      "bytes": 22876,
+      "sha256": "a5780b9f6cc40d6f348f4211bb43c9501fa199729197361be6bfb522a42c56ad",
+      "animations": []
+    },
+    {
+      "file": "space/satelliteDish_detailed.glb",
+      "pack": "space",
+      "bytes": 26044,
+      "sha256": "143dd36b2c427e3201110967a18fd836bc7aa8002dbf3e44efa42c75fbb44ae5",
+      "animations": []
+    },
+    {
+      "file": "space/astronautB.glb",
+      "pack": "space",
+      "bytes": 27824,
+      "sha256": "6fa5b3e11cb3d117b28a0794b261ad9107f16ca6ce886b288493e22493d74d2d",
+      "animations": []
+    },
+    {
+      "file": "food/burger-cheese-double.glb",
+      "pack": "food",
+      "bytes": 44420,
+      "sha256": "d82a5ac064d8c4afa696aea945c94ab6f74b419f589703f902b01c1cc0fdd757",
+      "animations": []
+    },
+    {
+      "file": "food/donut-sprinkles.glb",
+      "pack": "food",
+      "bytes": 20008,
+      "sha256": "f45946b7e81221e9d45fdfab45ee89eeb095ff0d7fb6a3ad9988919cf587d3b7",
+      "animations": []
+    }
+  ]
+}

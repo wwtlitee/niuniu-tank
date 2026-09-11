@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+<defs><linearGradient id="m" x2=".3" y2="1"><stop stop-color="#8c9384"/><stop offset=".16" stop-color="#535c53"/><stop offset=".48" stop-color="#293331"/><stop offset="1" stop-color="#151f20"/></linearGradient></defs>
+<path d="M11 1H85L95 11V85L85 95H11L1 85V11Z" fill="#101719" stroke="#111819" stroke-width="2"/>
+<path d="M12 2H84L94 12V84L84 94H12L2 84V12Z M14 9L9 14V82L14 87H82L87 82V14L82 9Z" fill="url(#m)" fill-rule="evenodd" stroke="#707a6d" stroke-width=".7"/>
+<path d="M15 10H80M10 15V38M86 48V80M81 86H50" fill="none" stroke="#a8ad93" opacity=".5"/>
+<path d="M4 17V12L12 4H29M67 4H84L92 12V27M92 69V84L84 92H72M27 92H12L4 84V70" fill="none" stroke="#7b8577" stroke-width="2"/>
+<g fill="#26322f" stroke="#899181" stroke-width=".7"><circle cx="13" cy="13" r="2.7"/><circle cx="83" cy="13" r="2.7"/><circle cx="13" cy="83" r="2.7"/><circle cx="83" cy="83" r="2.7"/></g>
+<path d="M11 14L15 12M81 14L85 12M11 84L15 82M81 84L85 82" stroke="#0c1415"/>
+<path d="M32 4H38M40 4H42M47 92H55M60 92H63M92 39V43M4 48V53" stroke="#bdaa68" stroke-width="1.3"/>
+</svg>

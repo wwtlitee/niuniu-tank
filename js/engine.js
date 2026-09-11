@@ -18,30 +18,21 @@ window.addEventListener("error",e=>{
   if(!d){d=document.createElement("div");d.id="errbox";
     d.style.cssText="position:absolute;bottom:40px;left:10px;color:#ff5d5d;font-size:14px;z-index:99;white-space:pre-wrap;max-width:80vw;";
     document.body.appendChild(d);}
-  if(_shownRuntimeErrors.size<=5)d.textContent+="⚠ "+e.message+"\n";
+  if(_shownRuntimeErrors.size<=5)d.textContent+=" "+e.message+"\n";
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="6.22.0";
+const GAME_VERSION="8.2.0";
+const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
 let HALF = GRID*TILE/2;
 const PH = 2.2;                       // 高地高度（v4.3：坡道 3 格每格 0.733）
 
 function makeSurvivalGroundMaterial(){
-  const canvas=document.createElement("canvas");canvas.width=canvas.height=64;
-  const context=canvas.getContext("2d");
-  context.fillStyle="#45443b";context.fillRect(0,0,64,64);
-  for(let z=0;z<64;z+=4)for(let x=0;x<64;x+=4){
-    const hash=((x*73856093)^(z*19349663))>>>0;
-    const light=56+(hash%12);
-    context.fillStyle=`rgb(${light+5},${light+3},${Math.max(42,light-5)})`;
-    context.fillRect(x,z,4,4);
-  }
-  const texture=new THREE.CanvasTexture(canvas);
-  texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(24,24);
-  texture.colorSpace=THREE.SRGBColorSpace;
-  return new THREE.MeshStandardMaterial({color:0xffffff,map:texture,roughness:1});
+  const texture=makeSurvivalPlateauTexture();
+  texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(12,12);
+  return new THREE.MeshStandardMaterial({color:0x959387,map:texture,roughness:1});
 }
 
 function makeSurvivalPlateauTexture(){
@@ -91,7 +82,7 @@ function applyModeConfig(m){
   HALF = GRID*TILE/2;
   configureModeAtmosphere(m);
   // 重建地面与网格以匹配当前模式地图尺寸
-  scene.remove(ground); ground.geometry.dispose();
+  scene.remove(ground); ground.geometry.dispose();ground.material.map?.dispose();ground.material.dispose();
   if(m.mapType==="survival"){
     ground=new THREE.Mesh(
       new THREE.BoxGeometry(GRID*TILE+24,2.4,GRID*TILE+24),
@@ -121,7 +112,7 @@ const T_EMPTY=0,T_BRICK=1,T_STEEL=2,T_WATER=3,T_TREE=4,T_BASE=5,
 
 const STATE={MENU:0,PLAYING:1,UPGRADE:2,PAUSED:3,OVER:4,BUILD:5,TECH:6,PREP:7,SETTLE:8,GATE:9};
 
-/* ★ 生存模式墙升级链（5 级）—— 对应 DESIGN_生存模式重做_v4 §5.1
+/*  生存模式墙升级链（5 级）—— 对应 DESIGN_生存模式重做_v4 §5.1
    - model     : Kenney 城堡资源名
    - hp        : 钢墙耐久（流场视为可破，敌军会啃）
    - price     : 建造价（升级价 = next.price - current.price，差额模式）
@@ -179,10 +170,10 @@ function wallMaxHp(lv){
 function wallFullDesc(lv){
   const w=wallDefinition(lv);if(!w)return "";
   const next=lv<wallUnlockedMaxLevel()?`→ Lv${lv+1} 价 ${wallPriceNext(lv)}`:`当前突破上限`;
-  return `${w.tag}·Lv${lv} · ❤${wallMaxHp(lv)}${w.thorns>0?` · ⚔${Math.round(w.thorns*100)}%`:""} · ${next}`;
+  return `${w.tag}·Lv${lv} · ${wallMaxHp(lv)}${w.thorns>0?` · ${Math.round(w.thorns*100)}%`:""} · ${next}`;
 }
 
-/* ★ 任务（新手指引）：三步走——金库→墙→塔，仅生存模式开局触发 */
+/*  任务（新手指引）：三步走——金库→墙→塔，仅生存模式开局触发 */
 const QUEST_STEPS=[
   {id:"mine",label:"1/3 按 B 键打开商店，选【金矿】放到高地上",check:()=>goldMines.length>=1},
   {id:"wall",label:"2/3 选【墙】堵住坡道口（重要：先堵门）",check:()=>steelHP.size>=1},
@@ -196,7 +187,7 @@ function questShow(){
   const el=$("questPanel");
   if(el){
     el.style.display="block";
-    el.innerHTML=`<div class="qpTitle">📜 新手引导</div><div class="qpStep">${step.label}</div><div class="qpHint">ESC 跳过</div>`;
+    el.innerHTML=`<div class="qpTitle"> 新手引导</div><div class="qpStep">${step.label}</div><div class="qpHint">ESC 跳过</div>`;
   }
 }
 function questTick(){
@@ -210,7 +201,7 @@ function questTick(){
     questIdx++;
     if(questIdx>=QUEST_STEPS.length){
       questActive=false;hideQuestPanel();
-      toast("✅ 三步引导完成！自由发展吧");
+      toast(" 三步引导完成！自由发展吧");
       return;
     }
     questShow();
@@ -220,7 +211,7 @@ function hideQuestPanel(){const el=$("questPanel");if(el)el.style.display="none"
 function questSkip(){
   if(!questActive)return;
   questActive=false;hideQuestPanel();
-  toast("⏭ 已跳过新手引导");
+  toast(" 已跳过新手引导");
 }
 let state=STATE.MENU;
 
@@ -270,7 +261,7 @@ function ensureAshWind(){
   ashWindGroup=new THREE.Points(geometry,material);ashWindGroup.name="ash-wind-single-batch";ashWindGroup.frustumCulled=false;
   scene.add(ashWindGroup);
   atmosphereOverlay=document.createElement("div");atmosphereOverlay.id="ashAtmosphereOverlay";
-  atmosphereOverlay.style.cssText="position:absolute;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 48% 42%,rgba(77,97,124,.03) 0%,transparent 42%,rgba(3,7,13,.38) 100%),linear-gradient(118deg,rgba(61,76,94,.08),rgba(6,9,14,.16));mix-blend-mode:multiply";
+  atmosphereOverlay.style.cssText="position:absolute;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 48% 42%,transparent 38%,rgba(5,12,20,.34) 100%),linear-gradient(125deg,rgba(61,100,124,.08),transparent 45%,rgba(167,91,35,.075));";
   document.getElementById("game").appendChild(atmosphereOverlay);
   return ashWindGroup;
 }
@@ -280,11 +271,12 @@ function configureModeAtmosphere(mode){
     const night=SurvivalSystem.NIGHT_VISUALS;
     const a=(window.SURVIVAL_ASSETS&&SURVIVAL_ASSETS.atmosphere)||{background:night.background,fog:night.fog,fogNear:night.fogNear,fogFar:night.fogFar,exposure:night.exposure};
     scene.background.setHex(a.background);scene.fog=null;
-    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=a.exposure;renderer.outputColorSpace=THREE.SRGBColorSpace;
+    // This material palette was authored for linear output in the bundled Three.js.
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=a.exposure;renderer.outputEncoding=THREE.LinearEncoding;
     hemi.color.setHex(night.hemisphereSky);hemi.groundColor.setHex(night.hemisphereGround);hemi.intensity=night.hemisphereIntensity;
     ambient.color.setHex(night.ambientColor);ambient.intensity=night.ambientIntensity;
     sun.color.setHex(night.moonColor);sun.intensity=night.moonIntensity;sun.position.set(-42,58,-30);
-    ensureAshWind().visible=true;if(atmosphereOverlay)atmosphereOverlay.style.display="block";
+    ensureAshWind().visible=!window.Settings||Settings.isParticles();if(atmosphereOverlay)atmosphereOverlay.style.display="block";
   }else{
     if(!scene.fog)scene.fog=new THREE.Fog(0x0a1018,90,mode.fogFar||200);
     scene.background.setHex(0x0a1018);scene.fog.color.setHex(0x0a1018);scene.fog.near=90;scene.fog.far=mode.fogFar||200;
@@ -313,7 +305,19 @@ gridHelper.position.y=.01; scene.add(gridHelper);
 addEventListener("resize",()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(window.Settings)applyPresentationSettings();
 });
+function applyPresentationSettings(){
+  if(!window.Settings)return;
+  const quality=Settings.getQuality(),cap=quality==='low'?.85:quality==='high'?2:1.5;
+  const ratio=Math.min(devicePixelRatio||1,cap);
+  if(renderer.getPixelRatio()!==ratio)renderer.setPixelRatio(ratio);
+  renderer.shadowMap.enabled=Settings.isShadows()&&quality!=='low';
+  renderer.shadowMap.needsUpdate=true;
+  if(ashWindGroup)ashWindGroup.visible=ACTIVE_MODE.key==='survival'&&Settings.isParticles();
+  if(!Settings.isParticles()){particlePool.push(...particles);particles.length=0;particleFx.commit(0);}
+  if(!Settings.isShake())camShake=0;
+}
 
 /* WebGL context 恢复后强制全量纹理重传（共享材质纹理 version 不变不会自动重传） */
 renderer.domElement.addEventListener("webglcontextrestored",()=>{
@@ -330,94 +334,38 @@ let AC=null;
 const AUDIO_DISABLED=new URLSearchParams(location.search).has("autotest")&&navigator.webdriver;
 function audio(){
   if(AUDIO_DISABLED)return null;
-  if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC;
+  if(!AC){const Constructor=window.AudioContext||window.webkitAudioContext;if(!Constructor)return null;try{AC=new Constructor();}catch(_){return null;}}
+  //  v6.35.0：把 AC 注入 AudioMixer，初始化 master/sfx/music 三总线与 limiter。
+  if(window.AudioMixer&&!window.AudioMixer.bus("master"))window.AudioMixer.init(AC);
+  if(window.BGMSystem&&window.AudioMixer&&window.AudioMixer.bus("master"))window.BGMSystem.bind(AC);
+  if(window.SurvivalSoundBank)SurvivalSoundBank.bind(AC,combatOutput(AC));
+  return AC;
 }
-let combatBus=null,combatLimiter=null;
+/* 旧 combatOutput(ac) 入口：直接返回 AudioMixer 的 sfx 总线。
+   limiter 已内置到 mixer 内部（sfx → limiter → master → destination）。 */
 const combatSfxLast=new Map();
 function combatOutput(ac){
-  if(combatBus)return combatBus;
-  combatBus=ac.createGain();combatBus.gain.value=.72;
-  combatLimiter=ac.createDynamicsCompressor();
-  combatLimiter.threshold.value=-12;combatLimiter.knee.value=16;combatLimiter.ratio.value=8;
-  combatLimiter.attack.value=.003;combatLimiter.release.value=.22;
-  combatBus.connect(combatLimiter);combatLimiter.connect(ac.destination);return combatBus;
+  return (window.AudioMixer&&window.AudioMixer.sfxOutput(ac))||(ac&&ac.destination);
 }
 function combatNoiseBurst(ac,{when=ac.currentTime,duration=.12,volume=.12,highpass=120,lowpass=6500}={}){
-  const length=Math.max(1,Math.floor(ac.sampleRate*duration)),buffer=ac.createBuffer(1,length,ac.sampleRate),data=buffer.getChannelData(0);
-  let seed=(length*2654435761)>>>0;
-  for(let index=0;index<length;index++){
-    seed=(seed*1664525+1013904223)>>>0;
-    const envelope=Math.pow(1-index/length,1.7);
-    data[index]=((seed/4294967296)*2-1)*envelope;
-  }
+  const buffer=AudioMixer.noiseBuffer(ac,duration);
   const source=ac.createBufferSource(),hp=ac.createBiquadFilter(),lp=ac.createBiquadFilter(),gain=ac.createGain();
   hp.type="highpass";hp.frequency.value=highpass;lp.type="lowpass";lp.frequency.value=lowpass;
   gain.gain.setValueAtTime(Math.max(.0001,volume),when);gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
   source.buffer=buffer;source.connect(hp);hp.connect(lp);lp.connect(gain);gain.connect(combatOutput(ac));source.start(when);
+  source.onended=()=>{source.disconnect();hp.disconnect();lp.disconnect();gain.disconnect();};
 }
-function playCannonReport(caliber="medium"){
-  try{
-    const profile={small:{sub:92,dur:.22,vol:.10,crack:.12,tail:.18,cooldown:28},medium:{sub:72,dur:.34,vol:.14,crack:.16,tail:.24,cooldown:42},
-      large:{sub:54,dur:.48,vol:.19,crack:.20,tail:.34,cooldown:58},huge:{sub:38,dur:.72,vol:.24,crack:.24,tail:.48,cooldown:85}}[caliber]||null;
-    if(!profile)return;
-    const stamp=performance.now(),last=combatSfxLast.get(caliber)||-Infinity;
-    if(stamp-last<profile.cooldown)return;combatSfxLast.set(caliber,stamp);
-    const ac=audio();if(!ac)return;
-    const when=ac.currentTime+.002,out=combatOutput(ac),sub=ac.createOscillator(),subGain=ac.createGain();
-    sub.type="sine";sub.frequency.setValueAtTime(profile.sub*1.65,when);sub.frequency.exponentialRampToValueAtTime(profile.sub*.62,when+profile.dur);
-    subGain.gain.setValueAtTime(profile.vol,when);subGain.gain.exponentialRampToValueAtTime(.0001,when+profile.dur);
-    sub.connect(subGain);subGain.connect(out);sub.start(when);sub.stop(when+profile.dur+.02);
-    combatNoiseBurst(ac,{when,duration:.045+(profile.crack*.2),volume:profile.crack,highpass:850,lowpass:7600});
-    combatNoiseBurst(ac,{when:when+.045,duration:profile.dur*1.7,volume:profile.tail,highpass:70,lowpass:950});
-  }catch(_){}
+function playCannonReport(caliber='medium'){return SurvivalSoundBank.play(caliber);}
+function playArmorImpact(weight='medium'){return SurvivalSoundBank.play(weight==='heavy'?'gate':'impact');}
+function playZombieGroan(enemy){
+  if(!enemy?.group||!isPositionVisible(enemy.group.position)||Math.random()>.12)return false;
+  const p=enemy.group.position,distance=Math.hypot(p.x-camFocus.x,p.z-camFocus.z);
+  return distance<50&&SurvivalSoundBank.play('zombie',{distance,pan:(p.x-camFocus.x)/45});
 }
-function playArmorImpact(weight="medium"){
-  try{
-    const ac=audio();if(!ac)return;
-    const when=ac.currentTime+.002,heavy=weight==="heavy";
-    combatNoiseBurst(ac,{when,duration:heavy?.28:.14,volume:heavy?.16:.09,highpass:heavy?80:220,lowpass:heavy?1800:3600});
-    const osc=ac.createOscillator(),gain=ac.createGain();osc.type="triangle";osc.frequency.setValueAtTime(heavy?118:210,when);osc.frequency.exponentialRampToValueAtTime(heavy?54:95,when+(heavy?.3:.16));
-    gain.gain.setValueAtTime(heavy?.11:.065,when);gain.gain.exponentialRampToValueAtTime(.0001,when+(heavy?.3:.16));osc.connect(gain);gain.connect(combatOutput(ac));osc.start(when);osc.stop(when+(heavy?.32:.18));
-  }catch(_){}
-}
-function beep(freq,dur,type="square",vol=.15,slide=0,when=0){
-  try{
-    const ac=audio();if(!ac)return;
-    const o=ac.createOscillator(),g=ac.createGain();
-    o.type=type;o.frequency.value=freq;
-    const t0=ac.currentTime+when;
-    if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide),t0+dur);
-    g.gain.setValueAtTime(vol,t0);
-    g.gain.exponentialRampToValueAtTime(.001,t0+dur);
-    o.connect(g);g.connect(ac.destination);
-    o.start(t0);o.stop(t0+dur+.02);
-  }catch(e){}
-}
-const sfx={
-  profile:Object.freeze({calibers:["small","medium","large","huge"],layers:["pressure","crack","tail"],source:"local-procedural"}),
-  shoot : (caliber="medium")=>playCannonReport(caliber),
-  eshoot: ()=>playCannonReport("small"),
-  boom  : ()=>{playCannonReport("large");playArmorImpact("heavy");},
-  bigboom:()=>{playCannonReport("huge");playArmorImpact("heavy");},
-  hit   : ()=>playArmorImpact("medium"),
-  pickup: ()=>{beep(660,.09,"sine",.14);setTimeout(()=>beep(990,.12,"sine",.14),90);},
-  levelup:()=>{[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.14,"sine",.14),i*90));},
-  hurt  : ()=>playArmorImpact("heavy"),
-};
-/* 经典开场号角（致敬 Battle City 开局曲，8-bit 合成） */
-function playIntro(){
-  const seq=[ // [频率, 起拍, 时长]
-    [98.0,0.00,.22],[98.0,.30,.22],[98.0,.60,.32],
-    [130.8,1.04,.15],[146.8,1.21,.15],[164.8,1.38,.15],[196.0,1.55,.16],
-    [164.8,1.82,.15],[146.8,1.99,.15],[130.8,2.16,.15],[123.5,2.33,.30],
-    [98.0,2.72,.22],[130.8,2.96,.22],[164.8,3.20,.22],[196.0,3.44,.55],
-  ];
-  seq.forEach(([f,t,d])=>{
-    beep(f,d,"square",.12,0,t);
-    beep(f*.5,d,"triangle",.10,0,t);       // 低八度和声
-    beep(f*1.005,d,"square",.04,0,t);      // 微失谐厚度
-  });
-}
+function playGateBash(){return SurvivalSoundBank.play('gate');}
+function beep(){return SurvivalSoundBank.play('select');}
+const sfx={profile:Object.freeze({calibers:['small','medium','large','huge'],layers:['recording','impact','tail'],source:'recorded'}),shoot:playCannonReport,eshoot:()=>playCannonReport('small'),boom:()=>SurvivalSoundBank.play('explosion'),bigboom:()=>SurvivalSoundBank.play('bigboom'),hit:()=>playArmorImpact(),zombie:playZombieGroan,gate:playGateBash,pickup:()=>SurvivalSoundBank.play('pickup'),levelup:()=>SurvivalSoundBank.play('upgrade'),hurt:()=>playArmorImpact('heavy'),build:()=>SurvivalSoundBank.play('build'),complete:()=>SurvivalSoundBank.play('complete'),cancel:()=>SurvivalSoundBank.play('cancel')};
+function playIntro(){SurvivalSoundBank.play('select');}
 
 /* ---------------- Kenney 素材系统（GLTF + 失败回退）---------------- */
 const ASSETS={}, ASSET_BOX={}, ASSET_ANIMS={},ASSET_TEXTURES={};
@@ -452,18 +400,18 @@ const ASSET_FILES=[
   /* 三套 Kenney 原生骨骼尸潮：Survivors / Retro 的模型与动作分离。 */
   ["survivors/","survivor-zombie"],["survivors/","survivor-idle"],["survivors/","survivor-run"],
   ["retro/","retro-zombie"],["retro/","retro-idle"],["retro/","retro-run"],
-  /* ★ P5 怪物包（graveyard-kit）：丧尸/骷髅/吸血鬼/幽灵/守墓人 —— 尸潮敌方主力 */
+  /*  P5 怪物包（graveyard-kit）：丧尸/骷髅/吸血鬼/幽灵/守墓人 —— 尸潮敌方主力 */
   ["monsters/","character-zombie"],["monsters/","character-skeleton"],
   ["monsters/","character-vampire"],["monsters/","character-ghost"],["monsters/","character-keeper"],
-  /* ★ P5 地板铺装（3d-road-tiles 方砖转制）：一层草地/石板地，消除"纯色空地"粗糙感 */
+  /*  P5 地板铺装（3d-road-tiles 方砖转制）：一层草地/石板地，消除"纯色空地"粗糙感 */
   ["floors/","floor-grass"],["floors/","floor-grassB"],["floors/","floor-grassC"],
   ["floors/","floor-stone"],["floors/","floor-stoneB"],
-  /* ★ P5b tower-defense-kit：带 colormap 质感的草皮方砖（一层地面主力） */
+  /*  P5b tower-defense-kit：带 colormap 质感的草皮方砖（一层地面主力） */
   ["tdkit/","tile"],["tdkit/","tile-bump"],["tdkit/","tile-dirt"],["tdkit/","tile-rock"],
   ["tdkit/","tile-hill"],["tdkit/","tile-tree"],["tdkit/","tile-straight"],["tdkit/","tile-crossing"],
   ["tdkit/","tile-corner-inner"],["tdkit/","tile-corner-outer"],["tdkit/","tile-end"],["tdkit/","tile-split"],
   ["tdkit/","tile-wide-straight"],["tdkit/","tile-wide-corner"],["tdkit/","tile-straight-slope"],["tdkit/","spawn-square"],
-  /* ★ P5b platformer-kit：圆角草块地形系（台面/坡道/边缘）+ 装饰 */
+  /*  P5b platformer-kit：圆角草块地形系（台面/坡道/边缘）+ 装饰 */
   ["platformer/","block-grass"],["platformer/","block-grass-edge"],["platformer/","block-grass-corner"],
   ["platformer/","block-grass-corner-low"],["platformer/","block-grass-curve"],["platformer/","block-grass-curve-half"],
   ["platformer/","block-grass-curve-low"],["platformer/","block-grass-large"],["platformer/","block-grass-large-slope"],
@@ -557,18 +505,18 @@ const _tmpBox=new THREE.Box3(),_tmpSize=new THREE.Vector3();
 function placeModel(parent,name,x,z,w,rotY,y0,color,hint_h,maxH){
   const src=ASSETS[name];
   const obj=new THREE.Group();
-  obj.userData.assetName=name;   /* ★诊断：独立放置组携带资产名，便于运行时违和点定位 */
+  obj.userData.assetName=name;   /* 诊断：独立放置组携带资产名，便于运行时违和点定位 */
   if(src){
     const inst=src.clone(true);
     _tmpBox.setFromObject(inst); _tmpBox.getSize(_tmpSize);
     let s=w/Math.max(.001,Math.max(_tmpSize.x,_tmpSize.z));   // 按最大水平维度缩放
     if(maxH&&_tmpSize.y*s>maxH)s=maxH/_tmpSize.y;             // 细高模型限高
     inst.scale.setScalar(s);
-    /* ★ P5c-R7：block-grass 系直接放置路径也去红（placeModel 绕过批次系统） */
+    /*  P5c-R7：block-grass 系直接放置路径也去红（placeModel 绕过批次系统） */
     if(name.startsWith("block-grass")){
       inst.traverse(o=>{if(o.isMesh&&o.material){o.material=o.material.clone();o.material.color=new THREE.Color(0.58,0.68,0.52);o.material.roughness=.96;}});
     }
-    /* ★P5c-R8：color 参数对 GLB 模型也生效——作为乘数染色（树干去红等） */
+    /* P5c-R8：color 参数对 GLB 模型也生效——作为乘数染色（树干去红等） */
     if(color&&color!==0xffffff){
       const tint=new THREE.Color(color);
       inst.traverse(o=>{if(o.isMesh&&o.material){o.material=o.material.clone();o.material.color.multiply(tint);}});
@@ -672,7 +620,7 @@ function attachWorldHealthBar(owner,y,width=2.6){
 function syncWorldHealthBar(bar,hp,maxHp){
   if(!bar||!Number.isFinite(hp)||!Number.isFinite(maxHp)||maxHp<=0)return;
   const ratio=Math.max(0,Math.min(1,hp/maxHp)),visible=ratio>0&&ratio<.9999;
-  bar.visible=visible;if(!visible)return;
+  bar.visible=visible&&!bar.userData.panelOnly;if(!bar.visible)return;
   const fill=bar.userData&&bar.userData.fill;if(fill){
     const width=bar.userData.fillWidth||1;
     fill.scale.x=Math.max(.001,ratio);fill.position.x=-(1-ratio)*width*.5;
@@ -682,8 +630,8 @@ function syncWorldHealthBar(bar,hp,maxHp){
 }
 
 /* Kenney 城堡墙地块：按邻接自动转向拼成连续城墙；lv=1~5（生存墙升级链）
-   ★ 经典模式调用：buildWallTile(p,x,z,steelFlag) → 回退为 2 档（钢墙/石墙），保证兼容
-   ★ 生存模式调用：buildWallTile(p,x,z,lv)  → 使用 WALL_LEVELS[lv-1] 全部参数
+    经典模式调用：buildWallTile(p,x,z,steelFlag) → 回退为 2 档（钢墙/石墙），保证兼容
+    生存模式调用：buildWallTile(p,x,z,lv)  → 使用 WALL_LEVELS[lv-1] 全部参数
 */
 function buildWallTile(parent,cx,cz,steelOrLv){
   const c=cellCenter(cx,cz);
@@ -711,26 +659,8 @@ function buildWallTile(parent,cx,cz,steelOrLv){
   const center=isSurvivalWall?footprintCenter({x:cx,z:cz},{footprint}):c;
   let g;
   if(isSurvivalWall){
-    /* 截图里门脸朝南北，峡谷东西向进攻；相对上一版再转 90°，门洞朝东。 */
-    g=placeModel(parent,"gate",center.x,center.z,TILE*1.02*scale*visualScale,0,heightAt(center.x,center.z),0xffffff,5.2,6.2);
-    g.userData.assetName="castle-gate-wall";
-    g.userData.wallVisual="gate";
-    g.userData.reinforcementLevel=lv;
+    g=makeFortificationWall(cx,cz,lv);parent.add(g);
     g.userData.materialTier=SurvivalSystem.wallProgress(lv).tier;
-    g.userData.wallCell={x:cx,z:cz};
-    replaceModelMaterial(g,tint,{roughness,metalness});
-    const want=TILE*1.02,box=new THREE.Box3(),size=new THREE.Vector3();
-    g.updateMatrixWorld(true);
-    box.setFromObject(g).getSize(size);
-    const span=Math.max(size.x,size.z);
-    if(span>0.01){
-      const fit=want/span;
-      g.scale.x*=fit;
-      g.scale.z*=fit;
-    }
-    g.updateMatrixWorld(true);
-    box.setFromObject(g).getSize(size);
-    if(size.y<3.2)g.scale.y*=3.6/Math.max(.001,size.y);
   }else{
     g=placeModel(parent,name,c.x,c.z,TILE*.94*scale,rot,heightAt(c.x,c.z),0xffffff,scale*3.4);
     g.traverse(o=>{
@@ -744,11 +674,11 @@ function buildWallTile(parent,cx,cz,steelOrLv){
     });
   }
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-  if(isSurvivalWall)attachWorldHealthBar(g,Math.max(4.4,4.6*scale*visualScale),2.9);
+  if(isSurvivalWall)attachWorldHealthBar(g,g.userData.wallTop-g.position.y+.35,2.9);
   return g;
 }
 
-/* ★ P2-2：程序化资源深度释放。
+/*  P2-2：程序化资源深度释放。
    遍历一棵子树，dispose 掉所有「非共享」geometry 与「非共享材质池」里的 material。
    - geometry：clone(true) 与 ASSETS 源共享（_sharedGeoms 登记），严禁 dispose；
      仅 dispose 程序化新建的（台面基座 BoxGeometry、水面 PlaneGeometry、回退盒子等）。
@@ -779,7 +709,7 @@ function _disposeDeep(root){
     }
   });
 }
-/* ★ P2-1：静态装饰实例化批处理。
+/*  P2-1：静态装饰实例化批处理。
    原实现每格 clone 一个完整 GLB 子树（台面铺板 ~212 个 Group、崖壁岩块 ~70 个），
    主 pass + 阴影 pass 合计 ~560 draw call，软件渲染/集显掉帧主因。
    改为「收集变换 → 统一实例化」：同源模型每子 mesh 只建 1 个 InstancedMesh，
@@ -802,7 +732,7 @@ function _batchFlush(parent){
   for(const [name,b] of _instBatch){
     for(let si=0;si<b.subs.length;si++){
       const s=b.subs[si];
-      /* ★ P5：地板砖压暗染色（夜景草地），克隆材质避免污染共享源 */
+      /*  P5：地板砖压暗染色（夜景草地），克隆材质避免污染共享源 */
       let mat=s.mat;
       if(name.startsWith("floor-")){
         mat=s.mat.clone();
@@ -810,7 +740,7 @@ function _batchFlush(parent){
         if(name.includes("stone"))mat.color.set(0x6f7a6e);
         mat.roughness=.95;
       }
-      /* ★ P5c-R7：block-grass 系侧壁去红——colormap 侧面像素是高饱和红棕(R≈0.85,G≈0.35,B≈0.20)，
+      /*  P5c-R7：block-grass 系侧壁去红——colormap 侧面像素是高饱和红棕(R≈0.85,G≈0.35,B≈0.20)，
          旧 R6 用(0.78,0.92,0.80)太亮太淡，乘积后仍是暖橙。
          R7 改用橄榄灰乘数：R 压到 0.58（砍掉 42% 红），G/B 拉到 0.66/0.52（冷绿偏移），
          红棕纹理 × 橄榄灰 ≈ 暗橄榄土，在纯绿世界读作"草块间隙的暗土缝"而非"红圈描边" */
@@ -819,7 +749,7 @@ function _batchFlush(parent){
         mat.map=null;mat.color=new THREE.Color(0x4b4b40);
         mat.roughness=1;
       }
-      /* ★P5c-R10：tdkit tile-straight-slope（生存坡道唯一活体橙红源）colormap 实测 avg rgb(135,101,50)，
+      /* P5c-R10：tdkit tile-straight-slope（生存坡道唯一活体橙红源）colormap 实测 avg rgb(135,101,50)，
          几何是完美 1×1 楔形（与地面 tile 同族），故保留几何、仅换色。
          乘数 (0.36,1.45,0.62) 离屏渲染实测 avg rgb(51,144,32)、R 峰值仅 103，
          与平台草地 tile rgb(30,169,78) 同色系，无任何可读作"红条"的残留 */
@@ -828,7 +758,7 @@ function _batchFlush(parent){
         mat.color=new THREE.Color(0.36,1.45,0.62);
         mat.roughness=.95;
       }
-      /* ★P5c-R11：tile-rock（生存空地 3% 点缀）colormap 实测 avg rgb(89,131,62) 但 redFrac=0.32，
+      /* P5c-R11：tile-rock（生存空地 3% 点缀）colormap 实测 avg rgb(89,131,62) 但 redFrac=0.32，
          即 32% 像素为红花瓣/花环细节，离屏采样仍可见红花簇违和。
          与 tile-straight-slope 同款乘数 (0.36,1.45,0.62)：
          红瓣 (0.85,0.35,0.20) → (0.31,0.51,0.12) 暗橄榄；绿底 (0.20,0.51,0.24) → (0.07,0.74,0.15) 鲜草，
@@ -839,7 +769,7 @@ function _batchFlush(parent){
         mat.roughness=.95;
       }
       const im=new THREE.InstancedMesh(s.geo,mat,b.records.length);
-      im.name=name; im.userData.assetName=name;   /* ★诊断：批处理实例携带资产名，便于运行时违和点定位 */
+      im.name=name; im.userData.assetName=name;   /* 诊断：批处理实例携带资产名，便于运行时违和点定位 */
       const m=new THREE.Matrix4();
       for(let r=0;r<b.records.length;r++){
         m.copy(b.records[r]).multiply(s.mw);
@@ -865,7 +795,7 @@ function clearMap(){
     _disposeDeep(object);scene.remove(object);
   });
   if(mapGroup){
-    _disposeDeep(mapGroup);            /* ★ P2-2：先深度释放再 remove，防反复重开泄漏显存 */
+    _disposeDeep(mapGroup);            /*  P2-2：先深度释放再 remove，防反复重开泄漏显存 */
     scene.remove(mapGroup);
   }
   mapGroup=new THREE.Group(); scene.add(mapGroup);
@@ -873,7 +803,7 @@ function clearMap(){
   tileMeshes.forEach(m=>{if(m)m.traverse(o=>{if(o.isMesh&&o.geometry&&!_sharedGeoms.has(o.geometry))o.geometry.dispose();});});
   tileMeshes.length=0;
   baseGroup=null;autoTurretObj=null;baseAlive=true;
-  wallMeta.clear();   // ★ 清空墙等级元数据（生存模式重开一局）
+  wallMeta.clear();   //  清空墙等级元数据（生存模式重开一局）
 }
 
 function inSurvivalCanyon(x,z){
@@ -890,9 +820,8 @@ function placeFixedNightLighting(){
   if(canyon){
     const mouthX=canyon.x1+1,roadZ=canyon.z0;
     anchors.push(
-      {x:mouthX,z:canyon.z0-1,roadX:mouthX,roadZ,label:"mouth-n"},
-      {x:mouthX,z:canyon.z0+1,roadX:mouthX,roadZ,label:"mouth-s"},
-      {x:mouthX+1,z:canyon.z0-1,roadX:mouthX+1,roadZ,label:"approach-n"},
+      {x:mouthX+2,z:canyon.z0-2,roadX:mouthX,roadZ,label:"mouth-n"},
+      {x:mouthX+2,z:canyon.z0+2,roadX:mouthX,roadZ,label:"mouth-s"},
     );
   }else{
     anchors.push(
@@ -926,11 +855,11 @@ function placeFixedNightLighting(){
 /* ---------------- 城市地图生成 ---------------- */
 function genMap(wave){
   clearMap();
-  steelHP.clear(); /* ★ 重开一局时清空钢墙耐久表 */
+  steelHP.clear(); /*  重开一局时清空钢墙耐久表 */
   grid=Array.from({length:GRID},()=>Array(GRID).fill(T_EMPTY));
   rampDir=new Array(GRID*GRID).fill(null);
   terrainSurface=new TerrainSurface({width:GRID,gridSize:TILE,originX:-HALF,originZ:-HALF});
-  genMap.applyShell=applyShell;   /* ★ 提前绑定，确保经典/生存提前 return 也可调用 */
+  genMap.applyShell=applyShell;   /*  提前绑定，确保经典/生存提前 return 也可调用 */
 
   // 边框钢墙
   for(let i=0;i<GRID;i++){grid[0][i]=grid[GRID-1][i]=T_STEEL;grid[i][0]=grid[i][GRID-1]=T_STEEL;}
@@ -938,7 +867,7 @@ function genMap(wave){
   // ---- survival 专用地图：左下高台要塞 + 四周不可破岩壁 + 单坡道 + 顶门 ----
   if(ACTIVE_MODE.mapType==="survival"){
     const B=ACTIVE_MODE.base, E=ACTIVE_MODE.enclosure;
-    /* ★ 高台要塞（魔兽 RPG 高地防守）：
+    /*  高台要塞（魔兽 RPG 高地防守）：
        内部=T_PLATEAU 台面(高 PH)；四周=T_STEEL 不可破岩壁(阻断流场+高度差攀爬)；
        仅东缘坡口行开 1 格 T_RAMP 陡坡连回地面；台面深处 2×2 T_BASE 大门(可破，朝东)。
        v5.0.1 台面使用稳定削角轮廓，避免逐格噪声制造梳齿、断口和孤立凸柱。 */
@@ -986,7 +915,8 @@ function genMap(wave){
     }
     baseShellCells=[]; baseOuterCells=[];
     // 3.5 Kenney 地形装饰（纯视觉）：先铺树（写 grid，走既有渲染），再铺道路/岩石/遗迹（网格保持 T_EMPTY）
-    ground.material.color.set(0xffffff);
+    ground.material.color.set(0x959387);
+    installNaturalTerrain();
     decorateSurvivalGrid();
     buildMapMeshes();
     buildBase(B.gateCol,B.gateRow);     // 大门模型（survival 走 gate 分支）
@@ -1039,6 +969,10 @@ function genMap(wave){
         if(inMap(x,z))avoid.add(idx(x,z));
       }
       survivalCorridor().forEach(k=>avoid.add(k));
+      if(survivalRestoreEnvironment){
+        for(const ci of survivalRestoreEnvironment.occupied)avoid.add(ci);
+        if(survivalRestoreEnvironment.trees){for(const ci of survivalRestoreEnvironment.trees){const x=ci%GRID,z=Math.floor(ci/GRID);if(inMap(x,z)&&grid[z][x]===T_EMPTY&&!avoid.has(ci))grid[z][x]=T_TREE;}return;}
+      }
       const want=Math.round(GRID*.28);
       let placed=0,guard=0;
       while(placed<want&&guard<want*10){
@@ -1057,9 +991,10 @@ function genMap(wave){
       });
       if(pathCells.length){
         const roadCanvas=document.createElement("canvas");roadCanvas.width=roadCanvas.height=64;
-        const rc=roadCanvas.getContext("2d"),roadFade=rc.createRadialGradient(32,32,15,32,32,44);
+        const rc=roadCanvas.getContext("2d"),roadFade=rc.createRadialGradient(32,32,4,32,32,32);
         roadFade.addColorStop(0,"rgba(78,70,58,.96)");roadFade.addColorStop(.72,"rgba(66,59,50,.78)");roadFade.addColorStop(1,"rgba(54,50,44,0)");
         rc.fillStyle=roadFade;rc.fillRect(0,0,64,64);
+        rc.globalCompositeOperation='source-atop';
         for(let i=0;i<70;i++){
           const h=((i+7)*2654435761)>>>0,x=h&63,y=(h>>>8)&63,r=1+((h>>>16)&3);
           rc.fillStyle=`rgba(70,61,50,${.08+((h>>>20)&7)*.015})`;rc.fillRect(x,y,r,r);
@@ -1069,11 +1004,18 @@ function genMap(wave){
         const material=new THREE.MeshStandardMaterial({color:0xffffff,map:roadTexture,transparent:true,depthWrite:false,roughness:1});
         const pathMesh=new THREE.InstancedMesh(geometry,material,pathCells.length);
         const matrix=new THREE.Matrix4();
-        pathCells.forEach((point,index)=>{matrix.makeRotationX(-Math.PI/2);matrix.setPosition(point.x,.035,point.z);pathMesh.setMatrixAt(index,matrix);});
+        pathCells.forEach((point,index)=>{
+          const rampPoint=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row),travel=(point.x-rampPoint.x+TILE*.5)/TILE;
+          if(inSurvivalCanyon(cellOf(point.x,point.z).x,cellOf(point.x,point.z).z)){
+            const t=Math.max(0,Math.min(1,(travel-1)/1.6)),opening=t*t*(3-2*t);
+            point.z+=TILE*(.28*Math.sin(travel*1.3)+.13*Math.sin(travel*2.4))*opening;
+          }
+          matrix.makeRotationX(-Math.PI/2);matrix.setPosition(point.x,.035,point.z);pathMesh.setMatrixAt(index,matrix);
+        });
         pathMesh.userData.assetName="survival-path";
         pathMesh.receiveShadow=true;mapGroup.add(pathMesh);
       }
-      /* ★ P5c：道路砖。证件照审查发现 TD kit 的 tile-straight/crossing 实为「橙红凹坑」
+      /*  P5c：道路砖。证件照审查发现 TD kit 的 tile-straight/crossing 实为「橙红凹坑」
          （塔防修塔坑位），铺在路上就是满地红坑的违和源——全部弃用。
          改用 platformer 的 block-grass-long（2.08×1.08×0.5 长条实心草砖）沿走向铺路，
          与台面/崖壁同族同色，横段竖铺、竖段横铺形成砖缝节奏。y=0.02 微凸区分路面。
@@ -1081,7 +1023,7 @@ function genMap(wave){
       if(!window._roadCells)window._roadCells=new Set();
       window._roadCells.clear();
       const has=(x,z)=>inMap(x,z)&&corridor.has(idx(x,z));
-      /* ★ P5c-R8：走廊路砖视觉移除——block-grass-long 在纯绿世界里形成"绿墙/围栏"感，
+      /*  P5c-R8：走廊路砖视觉移除——block-grass-long 在纯绿世界里形成"绿墙/围栏"感，
          且走廊沿地图边缘走时特别刺眼。保留 _roadCells 数据标记（防 z-fight），不再渲染路砖。
          荒野 TD 不需要人造道路；敌人寻路自有 BFS 流场。 */
       /*
@@ -1097,20 +1039,20 @@ function genMap(wave){
         else placeModel(mapGroup,"block-grass-long",c.x,c.z,TILE*1.02,0,0.0,0xffffff,.3);
       });
       */
-      // 荒野点缀：★P5c-R8 全部移除——stones=紫灰尚可但 flowers=红花在纯绿世界刺眼，
+      // 荒野点缀：P5c-R8 全部移除——stones=紫灰尚可但 flowers=红花在纯绿世界刺眼，
       // plant/grass 与地面草砖重复。荒野 TD 地面保持干净统一，不做零散点缀。
       // 如需日后恢复，只保留 stones 并压暗颜色。
     }
     /* 高台边缘天然化：台面外圈长出大岩石，外侧贴墙堆碎石，坡道口留白
        —— 纯装饰：不写 grid、不改流场、不影响任何玩法
-       ★ P3-1：台面不规则后改为「贴实际轮廓」检测——相邻格是台面/坡道/大门即视为边缘 */
+        P3-1：台面不规则后改为「贴实际轮廓」检测——相邻格是台面/坡道/大门即视为边缘 */
     function decorateSurvivalCliff(){
-      /* ★P5c-R6：rocks 数组已弃用（detail-rocks/rocks-small 为橙红岩，红簇违和源） */
+      /* P5c-R6：rocks 数组已弃用（detail-rocks/rocks-small 为橙红岩，红簇违和源） */
       const isPlat=(x,z)=>inMap(x,z)&&(grid[z][x]===T_PLATEAU||grid[z][x]===T_BASE||grid[z][x]===T_RAMP);
-      /* ★ P5b：台面装饰 platformer-kit 同族。★P5c-R7 点名照认脸：rocks/crate/barrel/sign
+      /*  P5b：台面装饰 platformer-kit 同族。P5c-R7 点名照认脸：rocks/crate/barrel/sign
          均为橙红系全部剔除；台面只留 stones（紫灰石）/flowers（蓝花）/plant/grass */
-      const platProps=[];                                   /* ★R8-final：stones 纹理含红斑，全去掉 */
-      const platBig=[];                                      /* ★R8：去 chest（橙红箱） */
+      const platProps=[];                                   /* R8-final：stones 纹理含红斑，全去掉 */
+      const platBig=[];                                      /* R8：去 chest（橙红箱） */
       /* v5.2.0：大型岩堆承担轮廓，断栅栏承担废墟叙事；固定锚点保证每局视觉语义稳定。 */
       const heroDecor=[
         {name:"rocks-large",x:E.x0+2,z:E.z0+2,w:TILE*1.08,color:0x51514d,y:PH},
@@ -1134,7 +1076,7 @@ function genMap(wave){
         if(!onSide)continue;
         if(Math.random()<.55){
           const c=cellCenter(x,z);
-          /* ★P5c-R9：platProps 为空时跳过（R8 清空了数组但未加守卫，
+          /* P5c-R9：platProps 为空时跳过（R8 清空了数组但未加守卫，
              导致 platProps[undefined] → placeModel(undefined) → 白色方块） */
           if(!platProps.length)continue;
           const name=platProps[(Math.random()*platProps.length)|0];
@@ -1154,12 +1096,12 @@ function genMap(wave){
         if(r>.45)continue;
         const c=cellCenter(x,z);
         if(r<.18){
-          /* ★P5c-R9：platBig 为空时跳过 */
+          /* P5c-R9：platBig 为空时跳过 */
           if(!platBig.length)continue;
           placeModel(mapGroup,platBig[(Math.random()*platBig.length)|0],
             c.x,c.z,TILE*.72,Math.random()*6.28,PH,0xffffff,1.3,1.7);
         }else{
-          /* ★P5c-R9：platProps 为空时跳过 */
+          /* P5c-R9：platProps 为空时跳过 */
           if(!platProps.length)continue;
           const w=TILE*(.4+Math.random()*.3);
           placeModel(mapGroup,platProps[(Math.random()*platProps.length)|0],
@@ -1191,14 +1133,14 @@ function genMap(wave){
       }
     }
     grid[ez][ex]=T_BASE;
-    /* ★ 防御性兜底：不管地图字符串如何，鹰旗四周恒为可破砖墙（保证可战败） */
+    /*  防御性兜底：不管地图字符串如何，鹰旗四周恒为可破砖墙（保证可战败） */
     [[ez,ex-1],[ez,ex+1],[ez-1,ex-1],[ez-1,ex],[ez-1,ex+1]].forEach(([z,x])=>{
       if(inMap(x,z)&&grid[z][x]!==T_BASE)grid[z][x]=T_BRICK;
     });
     const bx=ex,bz=ez;
     baseShellCells=[[bz,bx-1],[bz,bx+1],[bz-1,bx-1],[bz-1,bx],[bz-1,bx+1]];
     baseOuterCells=[];
-    /* ★ 强制清空玩家出生格（与 spawnPlayer 公式对齐）：避免出生即嵌墙 */
+    /*  强制清空玩家出生格（与 spawnPlayer 公式对齐）：避免出生即嵌墙 */
     const psx=Math.floor(GRID/2)-2, psz=GRID-2;
     if(inMap(psx,psz)&&grid[psz][psx]!==T_BASE&&!baseShellCells.some(([a,b])=>a===psz&&b===psx))
       grid[psz][psx]=T_EMPTY;
@@ -1354,12 +1296,12 @@ function genMap(wave){
       _batchCollect("block-grass",M);
     }
     /* 台面基座：整块箱体从地面垫到铺面下方，防止薄板下方穿帮
-       ★ P3-1：拆成逐格基座箱（每格一个 2×2×PH 的方墩，跨格连续成台），
+        P3-1：拆成逐格基座箱（每格一个 2×2×PH 的方墩，跨格连续成台），
        不规则轮廓下外缘格自然缺块，基座贴合轮廓。基座方块以网格合并去重绘制代价可控：
        用 InstancedMesh 批渲染。 */
     function addPlateauFoundation(){
       const E=ACTIVE_MODE.enclosure;if(!E)return;
-      /* ★P5c-R4：顶面 PH-0.5→PH-0.08（凹缝不再黑洞），但 R5 复盘：土棕 0x8a6b4f 太亮
+      /* P5c-R4：顶面 PH-0.5→PH-0.08（凹缝不再黑洞），但 R5 复盘：土棕 0x8a6b4f 太亮
          成米色网纹更违和——改深土棕（草块柱身同系压暗），缝隙读作"阴影"而非"亮线" */
       const h=PH-.08;
       const cells=[];
@@ -1401,7 +1343,7 @@ function genMap(wave){
       const M=_mT(c.x,originY,c.z).multiply(_mR(rot)).multiply(_mS(s,s,s));
       _batchCollect(name,M);
     }
-    if(ACTIVE_MODE.mapType==="survival"){addPlateauFoundation();addCanyonWallVisuals();}
+    if(ACTIVE_MODE.mapType==="survival")mapGroup.add(makeNaturalPlateauMesh());
     function addCanyonWallVisuals(){
       const C=ACTIVE_MODE.canyon;if(!C)return;
       const cells=[];
@@ -1438,7 +1380,7 @@ function genMap(wave){
           mapGroup.add(m);break;}
         case T_TREE:{
           const names=["tree-pine-small","tree-pine","tree"];
-          /* ★P5c-R9：树去红去黑——Kenney nature 包树材质底色为 #e18357（橙棕），
+          /* P5c-R9：树去红去黑——Kenney nature 包树材质底色为 #e18357（橙棕），
              在纯绿世界显红。旧方案 0x2e5d2e 深绿乘法→纯黑；0xffffff 不染→橙红。
              新方案：placeModel 先不放色，返回后遍历覆盖材质为森林绿系。 */
           const inst=placeModel(mapGroup,names[(Math.random()*names.length)|0],
@@ -1497,54 +1439,7 @@ function genMap(wave){
           const base=sl.base||0,step=(sl.step!==undefined)?sl.step:PH;
           /* v5.0.1：生存坡道严格占一个逻辑格，使用原生比例接近 1×1 的 steep 变体。 */
           if(ACTIVE_MODE.mapType==="survival"){
-            const rampCell=ACTIVE_MODE.ramp;
-            if(x!==rampCell.col||z!==rampCell.row)break;
-            const source=ASSETS["block-grass-large-slope-steep"];
-            if(!source)break;
-            const instance=source.clone(true);
-            _tmpBox.setFromObject(instance);_tmpBox.getSize(_tmpSize);
-            instance.scale.set(
-              TILE/Math.max(.01,_tmpSize.x),
-              PH/Math.max(.01,_tmpSize.y),
-              TILE*1.02/Math.max(.01,_tmpSize.z)
-            );
-            instance.traverse(o=>{
-              if(!o.isMesh||!o.material)return;
-              o.material=o.material.clone();
-              o.material.map=null;o.material.color.setHex(0x4a4b40);
-              o.material.roughness=.96;
-            });
-            _tmpBox.setFromObject(instance);
-            const center=_tmpBox.getCenter(new THREE.Vector3());
-            instance.position.set(-center.x,-_tmpBox.min.y,-center.z);
-            /* 单坡素材只承担可见表面；土石楔体封闭其下方体积，避免坡口出现黑色空腔。
-               顶面比逻辑坡面低 0.04，既不会与素材争深度，也不引入第二块可见坡道素材。 */
-            const hw=TILE*.5,low=.02,high=PH-.04,bottom=-.16;
-            const backingGeometry=new THREE.BufferGeometry();
-            backingGeometry.setAttribute("position",new THREE.Float32BufferAttribute([
-              -hw,bottom,-hw, hw,bottom,-hw, hw,bottom,hw, -hw,bottom,hw,
-              -hw,high,-hw,   hw,low,-hw,    hw,low,hw,    -hw,high,hw,
-            ],3));
-            backingGeometry.setIndex([
-              0,2,1,0,3,2, 4,6,5,4,7,6,
-              0,1,5,0,5,4, 1,2,6,1,6,5,
-              2,3,7,2,7,6, 3,0,4,3,4,7,
-            ]);
-            backingGeometry.computeVertexNormals();
-            const backing=new THREE.Mesh(backingGeometry,
-              new THREE.MeshStandardMaterial({color:0x4a4b40,roughness:1,flatShading:true,side:THREE.DoubleSide,
-                polygonOffset:true,polygonOffsetFactor:1}));
-            backing.position.set(c.x,0,c.z);
-            backing.receiveShadow=true;
-            backing.userData.sceneRole="ramp-volume-backing";
-            mapGroup.add(backing);
-            const rampGroup=new THREE.Group();
-            rampGroup.userData.assetName="block-grass-large-slope-steep";
-            rampGroup.add(instance);
-            rampGroup.rotation.y=Math.PI/2;                  // 原生北高南低 → 旋转为西高东低
-            rampGroup.position.set(c.x,0,c.z);
-            mapGroup.add(rampGroup);
-            break;
+            break; // 生存坡面已包含在连续高程网格内。
           }
           const name=ACTIVE_MODE.mapType==="survival"?"tile-slant":"cliff_blockSlope_rock";
           /* 上坡方向→旋转：tile-slant 默认西低东高(+X)；cliff 斜坡默认北低南高(+Z) */
@@ -1582,7 +1477,7 @@ function genMap(wave){
     function isStreetRow(z){return streets.includes(z);}
 
     // ---- 街边小道具（纯装饰不阻挡；经典 13×13 小图少放，避免杂乱）----
-    // ★P5c-R8：survival 模式不放城市工业道具（dumpster/traffic-light 等 colormap 含橙红，
+    // P5c-R8：survival 模式不放城市工业道具（dumpster/traffic-light 等 colormap 含橙红，
     //   在纯绿荒野世界严重违和）。只对 classic/city 模式生效。
     if(ACTIVE_MODE.mapType==="city"||ACTIVE_MODE.key==="classic"){
     const props=["construction-cone","dumpster","light-square","traffic-light","electricity-pole-single"];
@@ -1596,7 +1491,7 @@ function genMap(wave){
     }
     } // end if city/classic only
 
-    _batchFlush(mapGroup);   /* ★ P2-1：批量实例化收尾（铺板/崖壁 → 个位数 draw call） */
+    _batchFlush(mapGroup);   /*  P2-1：批量实例化收尾（铺板/崖壁 → 个位数 draw call） */
   }
 
   function applyShell(){
@@ -1635,7 +1530,7 @@ function repairBaseShell(){
       fixed++;
     }
   });
-  if(fixed){toast("🔧 工程班修复了基地围墙 ×"+fixed);sfx.pickup();}
+  if(fixed){toast(" 工程班修复了基地围墙 ×"+fixed);sfx.pickup();}
 }
 
 /* ---------------- 基地 ---------------- */
@@ -1643,18 +1538,14 @@ function buildBase(cx,cz){
   const c=cellCenter(cx,cz);
   baseGroup=new THREE.Group();
   baseGroup.userData.sceneRole="base";
-  /* ★ 生存模式：2×2 台地大门（门脸朝东侧坡道，可破，破即输） */
+  /* 生存模式：2×2 指挥基地，正门朝默认镜头下方（+Z）。 */
   if(ACTIVE_MODE.key==="survival"){
     const c2=cellCenter(cx+.5,cz+.5);                     // 2×2 基地几何中心
-    const core=placeModel(baseGroup,"industrial-building-d",-1.05,-.85,4.8,-Math.PI/2,0,0xffffff,4.8,5.35);
-    const wing=placeModel(baseGroup,"industrial-building-t",1.55,.9,4.1,Math.PI/2,0,0xffffff,3.5,3.8);
-    const utility=placeModel(baseGroup,"industrial-building-c",-1.7,1.75,3.25,0,0,0xffffff,2.5,2.8);
-    const chimney=placeModel(baseGroup,"industrial-chimney-basic",2.5,-1.35,.62,0,0,0xffffff,4.8,4.8);
-    [core,wing,utility,chimney].forEach((part,index)=>{if(part){part.position.y=0;part.userData.sceneRole=`industrial-command-part-${index+1}`;}});
-    /* ★ 兼容附件（护盾隐藏 / 星旋转 / autoturret 占位不发射） */
+    const core=makeBuildingModel("base");baseGroup.add(core);
+    /*  兼容附件（护盾隐藏 / 星旋转 / autoturret 占位不发射） */
     const star=new THREE.Mesh(new THREE.OctahedronGeometry(.5),
       new THREE.MeshStandardMaterial({color:0x83b8dc,emissive:0x183f62,emissiveIntensity:.85}));
-    star.position.set(0,6.15,0);baseGroup.add(star);
+    star.position.set(0,6.15,0);star.visible=false;baseGroup.add(star);
     const shield=new THREE.Mesh(new THREE.SphereGeometry(4.6,20,14),
       new THREE.MeshBasicMaterial({color:0x4da3ff,transparent:true,opacity:.16,
         blending:THREE.AdditiveBlending,side:THREE.DoubleSide}));
@@ -1662,7 +1553,10 @@ function buildBase(cx,cz){
     const tur=new THREE.Group();tur.name="autoturret";tur.visible=false;baseGroup.add(tur);
     autoTurretObj=tur;
     baseGroup.traverse(o=>{if(o.isMesh)o.castShadow=true;});
+    baseGroup.userData.workerEntrance=core.userData.workerEntrance;
+    const doorLocalPoint=new THREE.Vector3(0,0,2.7);
     baseGroup.position.set(c2.x,heightAt(c2.x,c2.z),c2.z); // 贴台面顶
+    baseGroup.userData.gateCollider={localPoint:doorLocalPoint,radius:GATE_MODEL_COLLISION_RADIUS};
     scene.add(baseGroup);
     baseGroup.userData.star=star;baseGroup.userData.shield=shield;
     return;
@@ -1742,7 +1636,7 @@ function mergeDirectMeshesByMaterial(root){
     const mesh=new THREE.Mesh(geometry,group.material);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.mergedTankPart=true;root.add(mesh);
   }
 }
-function makeTank(bodyColor,turretColor,scale=1){
+function makeTank(bodyColor,turretColor,scale=1,weapon='tank'){
   const g=new THREE.Group();
   const M=(c,r,m)=>new THREE.MeshStandardMaterial({color:c,roughness:r??.6,metalness:m??.3});
   const trackMat=M(0x1b2126,.95,.05),wheelMat=M(0x2c333a,.8),
@@ -1788,9 +1682,35 @@ function makeTank(bodyColor,turretColor,scale=1){
   hatch.position.set(-.25,.6,.3);turret.add(hatch);
   const antenna=new THREE.Mesh(new THREE.CylinderGeometry(.015,.008,1.15,4),trackMat);
   antenna.position.set(.55,1.14,.45);antenna.rotation.z=.16;turret.add(antenna);
+  if(ACTIVE_MODE.key==="survival"){
+    const trim=M(0xc9c3a3,.8,.12);
+    for(const side of [-1,1]){
+      const marking=new THREE.Mesh(new THREE.BoxGeometry(.09,.025,.72),trim);
+      marking.position.set(side*.58,.57,-.35);turret.add(marking);
+      const headlamp=new THREE.Mesh(new THREE.BoxGeometry(.22,.14,.06),darkMat);
+      headlamp.position.set(side*.58,1.28,-1.57);g.add(headlamp);
+      for(let i=0;i<12;i++){
+        const tread=new THREE.Mesh(new THREE.BoxGeometry(.69,.06,.12),wheelMat);tread.position.set(side*1.06,.83,-1.57+i*.285);g.add(tread);
+      }
+      for(let i=0;i<3;i++){
+        const panel=new THREE.Mesh(chamferedBox(.12,.42,.82),bodyMat);panel.position.set(side*1.46,.69,-.95+i*.94);g.add(panel);
+      }
+    }
+    for(let i=0;i<7;i++){
+      const vent=new THREE.Mesh(new THREE.BoxGeometry(.9,.045,.05),trackMat);vent.position.set(0,1.44,.82+i*.095);g.add(vent);
+    }
+    if(weapon==='light'){
+      barrel.scale.set(1.8,.68,1.8);barrel.position.z=-1.58;muzzle.position.z=-2.22;muzzle.scale.set(1.9,1,1.9);
+    }else if(weapon==='medium'){
+      for(const side of [-1,1]){const fuel=new THREE.Mesh(new THREE.CylinderGeometry(.23,.23,1.02,12),darkMat);fuel.rotation.x=Math.PI/2;fuel.position.set(side*.84,1.42,1.05);g.add(fuel);}
+    }else if(weapon==='heavy'){
+      barrel.scale.set(2.3,.75,2.3);barrel.position.z=-1.65;muzzle.position.z=-2.43;muzzle.scale.set(2.5,1.2,2.5);
+    }
+  }
   turret.position.y=1.5;g.add(turret);
   mergeDirectMeshesByMaterial(turret);
   mergeDirectMeshesByMaterial(g);
+  const muzzleMarker=new THREE.Object3D();muzzleMarker.position.set(0,.3,weapon==='light'?-2.45:weapon==='heavy'?-2.7:-3.1);turret.add(muzzleMarker);turret.userData.muzzleMarker=muzzleMarker;
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
   g.scale.setScalar(scale);
   g.userData.turret=turret;
@@ -1821,8 +1741,8 @@ function makeRtsTank(bodyColor,turretColor,scale=1){
 let player=null;
 const enemies=[],bullets=[],particles=[],powerups=[],lightningBeams=[],corpseDecals=[];
 let _enemySerial=0,_friendlySerial=0;
-/* ★ 玩家构筑物：波间商店布置的炮台与地雷（跨波次持续存在） */
-const builtTurrets=[],builtMines=[],goldMines=[],researchInstitutes=[],heavyFactories=[],friendlyUnits=[],builtHouses=[],visionBeacons=[];
+/*  玩家构筑物：波间商店布置的炮台与地雷（跨波次持续存在） */
+const builtTurrets=[],builtMines=[],goldMines=[],researchInstitutes=[],heroHubs=[],heavyFactories=[],friendlyUnits=[],builtHouses=[],visionBeacons=[];
 /* 兼容旧存档字段；v6.16.0 起重工厂按人口生产多辆坦克。 */
 let heroTank=null;
 let navigationStamp=0,friendlyRouteComputeCount=0,friendlyFlowCache={key:"",field:null},_animFrame=0;
@@ -1834,7 +1754,7 @@ let _visionFogTimer=0;
 let _visionSourceCache=[];
 const structCells=new Set();   // 生存：所有已放置构筑物（墙/炮塔/住房/科技塔/金矿）占用的格子 idx
 let camShake=0;
-/* ★ 生存 RTS 自由镜头：焦点（lookAt 中心）+ 高度/后撤距离，WASD/方向键平移、滚轮缩放 */
+/*  生存 RTS 自由镜头：焦点（lookAt 中心）+ 高度/后撤距离，WASD/方向键平移、滚轮缩放 */
 const camFocus=new THREE.Vector3(0,0,0);
 let camHeight=66,camBack=54;
 
@@ -1853,14 +1773,28 @@ function addWarmWindow(parent,x,y,z,sx=.5,sy=.45,sz=.08,color=0xd98b38){
   const windowMesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),warmEmissiveMaterial(color,.82));
   windowMesh.position.set(x,y,z);windowMesh.userData.nightGlow=true;parent.add(windowMesh);return windowMesh;
 }
+// Keep the shader's point-light count fixed. Adding/removing a lamp used to
+// recompile every lit material mid-battle, causing a 0.5 s completion stall.
+const survivalLightPool=[];
+function ensureSurvivalLightPool(){
+  if(survivalLightPool.length)return;
+  for(let i=0;i<SurvivalSystem.NIGHT_VISUALS.maxDynamicLights;i++){
+    const light=new THREE.PointLight(SurvivalSystem.NIGHT_VISUALS.lampColor,0,24,2);
+    light.castShadow=false;light.userData.survivalLight=true;light.userData.allocated=false;
+    scene.add(light);survivalLightPool.push(light);
+  }
+}
 function registerSurvivalPointLight(x,y,z,intensity=1.15,distance=24){
   if(ACTIVE_MODE.key!=="survival"||survivalDynamicLights.length>=SurvivalSystem.NIGHT_VISUALS.maxDynamicLights)return null;
-  const light=new THREE.PointLight(SurvivalSystem.NIGHT_VISUALS.lampColor,intensity,distance,2);
-  light.position.set(x,y,z);light.castShadow=false;light.userData.survivalLight=true;
-  scene.add(light);survivalDynamicLights.push(light);return light;
+  ensureSurvivalLightPool();
+  const light=survivalLightPool.find(item=>!item.userData.allocated);if(!light)return null;
+  light.userData.allocated=true;light.intensity=intensity;light.distance=distance;light.position.set(x,y,z);
+  survivalDynamicLights.push(light);return light;
 }
 function removeSurvivalPointLight(light){
-  if(!light)return;scene.remove(light);const index=survivalDynamicLights.indexOf(light);if(index>=0)survivalDynamicLights.splice(index,1);
+  if(!light)return;
+  light.intensity=0;light.userData.allocated=false;delete light.userData.beaconLight;delete light.userData.fixedLight;
+  const index=survivalDynamicLights.indexOf(light);if(index>=0)survivalDynamicLights.splice(index,1);
 }
 function clearFixedNightLighting(){
   fixedVisionLights.length=0;
@@ -1894,8 +1828,10 @@ function createBloodMistSurface({width,depth,x=0,z=0,y=.16,seed=1}){
   texture.repeat.set(Math.max(1,width/64),Math.max(1,depth/64));texture.colorSpace=THREE.SRGBColorSpace;
   const material=new THREE.MeshBasicMaterial({map:texture,color:0x6b1016,transparent:true,opacity:0,
     depthWrite:false,depthTest:true,toneMapped:false,blending:THREE.NormalBlending});
-  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width,depth),material);mesh.rotation.x=-Math.PI/2;
-  mesh.position.set(x,y,z);mesh.renderOrder=3;mesh.userData.bloodMist=true;scene.add(mesh);
+  const conform=y>PH&&terrainSurface?.natural;
+  const mesh=new THREE.Mesh(conform?naturalOverlayGeometry(.13):new THREE.PlaneGeometry(width,depth),material);
+  if(!conform){mesh.rotation.x=-Math.PI/2;mesh.position.set(x,y,z);}
+  mesh.userData.conformsTerrain=!!conform;mesh.renderOrder=3;mesh.userData.bloodMist=true;scene.add(mesh);
   const surface={mesh,material,texture,targetOpacity:0,drift:(seed%7+2)*.0007};bloodMistSurfaces.push(surface);return surface;
 }
 function ensureBloodMist(){
@@ -1905,7 +1841,7 @@ function ensureBloodMist(){
   if(enclosure){
     const width=(enclosure.x1-enclosure.x0+1)*TILE,depth=(enclosure.z1-enclosure.z0+1)*TILE;
     const a=cellCenter(enclosure.x0,enclosure.z0),b=cellCenter(enclosure.x1,enclosure.z1);
-    createBloodMistSurface({width,depth,x:(a.x+b.x)/2,z:(a.z+b.z)/2,y:PH+.13,seed:431});
+    createBloodMistSurface({width:GRID*TILE,depth:GRID*TILE,y:PH+.13,seed:431});
   }
 }
 function updateBloodMist(dt){
@@ -1925,7 +1861,10 @@ function createVisionFogSurface({id,width,depth,x=0,z=0,y=.09}){
   canvas.width=canvas.height=size;canvas.id=id;canvas.style.display="none";document.body.appendChild(canvas);
   const texture=new THREE.CanvasTexture(canvas);texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.LinearFilter;
   const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,depthTest:true,toneMapped:false});
-  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width,depth),material);mesh.rotation.x=-Math.PI/2;mesh.position.set(x,y,z);
+  const conform=y>PH&&terrainSurface?.natural;
+  const mesh=new THREE.Mesh(conform?naturalOverlayGeometry(.085):new THREE.PlaneGeometry(width,depth),material);
+  if(!conform){mesh.rotation.x=-Math.PI/2;mesh.position.set(x,y,z);}
+  mesh.userData.conformsTerrain=!!conform;
   mesh.renderOrder=4;mesh.userData.visionFog=true;scene.add(mesh);
   const surface={canvas,context:canvas.getContext("2d"),texture,material,mesh,width,depth,x,z};visionFogSurfaces.push(surface);return surface;
 }
@@ -1936,7 +1875,7 @@ function ensureVisionFog(){
   if(enclosure){
     const width=(enclosure.x1-enclosure.x0+1)*TILE,depth=(enclosure.z1-enclosure.z0+1)*TILE;
     const a=cellCenter(enclosure.x0,enclosure.z0),b=cellCenter(enclosure.x1,enclosure.z1);
-    createVisionFogSurface({id:"survivalFogPlateauCanvas",width,depth,x:(a.x+b.x)/2,z:(a.z+b.z)/2,y:PH+.085});
+    createVisionFogSurface({id:"survivalFogPlateauCanvas",width:GRID*TILE,depth:GRID*TILE,y:PH+.085});
   }
 }
 function currentVisionSources(){
@@ -1947,7 +1886,7 @@ function currentVisionSources(){
   fixedVisionLights.forEach((source)=>sources.push({x:source.x,z:source.z,radius:source.radius}));
   visionBeacons.forEach((beacon)=>add(beacon.group,medicalBeaconVisionRadius(beacon)));
   builtTurrets.forEach((turret)=>add(turret.group,rules.turretRadius));
-  researchInstitutes.forEach((building)=>add(building.group,22));heavyFactories.forEach((building)=>add(building.group,24));
+  heroHubs.forEach((building)=>add(building.group,22));researchInstitutes.forEach((building)=>add(building.group,22));heavyFactories.forEach((building)=>add(building.group,24));
   goldMines.forEach((building)=>add(building.group,14));builtHouses.forEach((building)=>add(building.group,14));
   friendlyUnits.forEach((unit)=>{
     const key=unit.type==="light"?"lightTankRadius":unit.type==="medium"?"mediumTankRadius":unit.type==="heavy"?"heavyTankRadius":"repairRadius";
@@ -1978,46 +1917,58 @@ function applyMedicalBeaconVisual(beacon){
 }
 function upgradeMedicalBeacon(beacon){
   if(!beacon||!visionBeacons.includes(beacon))return false;
-  const cost=medicalBeaconUpgradeCost(beacon);
-  if(cost==null){toast("🟢 医疗灯塔已达 Lv5");return false;}
-  if(game.gold<cost){toast(`💰 升级需要 ${cost} 金币`);return false;}
+  const cost=paidUpgradeCost(medicalBeaconUpgradeCost(beacon));
+  if(cost==null){toast(" 医疗灯塔已达 Lv5");return false;}
+  if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
+  if(deferUpgrade('beacon','',upgradeOwner('beacon',beacon),cost,medicalBeaconLevel(beacon)))return true;
   game.gold-=cost;beacon.level=medicalBeaconLevel(beacon)+1;
-  applyMedicalBeaconVisual(beacon);updateGoldUI();redrawVisionFog();sfx.levelup();
-  toast(`🟢 医疗灯塔升至 Lv${beacon.level}`);wc3RenderSel();renderCmdCard();return true;
+  applyMedicalBeaconVisual(beacon);updateGoldUI();queueVisionFogRedraw();sfx.levelup();
+  toast(` 医疗灯塔升至 Lv${beacon.level}`);wc3RenderSel();renderCmdCard();return true;
+}
+function hideMedicalHealingLinks(kind){
+  for(const link of medicalHealingLinks)if(link.userData.healerKind===kind)link.visible=false;
+}
+/* 灯塔与医疗车共用有界射线池，顶点缓冲只创建一次。 */
+function showMedicalHealingLink(source,target,kind){
+  let link=medicalHealingLinks.find(item=>!item.visible);
+  if(!link){
+    if(medicalHealingLinks.length>=64)return;
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(9,3));
+    link=new THREE.Line(geometry,new THREE.LineBasicMaterial({
+      color:0xf2e7cf,transparent:true,opacity:.58,depthWrite:false,blending:THREE.AdditiveBlending,
+    }));
+    link.userData.medicalHealingLink=true;link.renderOrder=8;link.frustumCulled=false;
+    scene.add(link);medicalHealingLinks.push(link);
+  }
+  const start=source.group.position,end=target.group?.position||target;
+  const startY=start.y+(kind==='beacon'?4.3:1.55);
+  const endY=(Number.isFinite(end.y)?end.y:heightAt(end.x,end.z))+(target.type?1.1:2.35);
+  const phase=performance.now()*.006+source.group.id;
+  const positions=link.geometry.attributes.position;
+  positions.setXYZ(0,start.x,startY,start.z);
+  positions.setXYZ(1,(start.x+end.x)/2,(startY+endY)/2+.35+Math.sin(phase)*.12,(start.z+end.z)/2);
+  positions.setXYZ(2,end.x,endY,end.z);positions.needsUpdate=true;
+  link.userData.healerKind=kind;link.material.opacity=.48+.12*Math.sin(phase);link.visible=true;
 }
 function updateMedicalBeacons(dt){
-  medicalHealingLinks.forEach((link)=>{link.visible=false;});
+  hideMedicalHealingLinks('beacon');
   if(ACTIVE_MODE.key!=="survival"||!visionBeacons.length||dt<=0)return;
   const cap=SurvivalSystem.MEDICAL_BEACON_RULES.maxStackedRepairPercentPerSecond;
-  let linkIndex=0;
-  const showLink=(beacon,center)=>{
-    if(linkIndex>=64)return;
-    let link=medicalHealingLinks[linkIndex++];
-    if(!link){
-      link=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({
-        color:0xf2e7cf,transparent:true,opacity:.58,depthWrite:false,blending:THREE.AdditiveBlending,
-      }));
-      link.userData.medicalHealingLink=true;link.renderOrder=8;scene.add(link);medicalHealingLinks.push(link);
-    }
-    const start=beacon.group.position.clone();start.y+=4.3;
-    const end=new THREE.Vector3(center.x,heightAt(center.x,center.z)+2.35,center.z);
-    const mid=start.clone().lerp(end,.5);mid.y+=.35+Math.sin(performance.now()*.006+linkIndex)*.12;
-    link.geometry.setFromPoints([start,mid,end]);
-    link.material.opacity=.48+.12*Math.sin(performance.now()*.008+linkIndex);link.visible=true;
-  };
-  for(const [cellIndex,meta] of wallMeta){
-    const x=cellIndex%GRID,z=Math.floor(cellIndex/GRID);
-    if(!meta||grid[z]?.[x]!==T_STEEL)continue;
-    const current=steelHP.get(cellIndex)||0,max=wallMaxHp(meta.lv||1);if(current<=0||current>=max)continue;
-    const center=cellCenter(x,z);let repairPercent=0;
-    for(const beacon of visionBeacons){
-      if(!beacon.group||beacon.hp<=0)continue;
-      const radius=medicalBeaconRepairRadius(beacon),dx=beacon.group.position.x-center.x,dz=beacon.group.position.z-center.z;
-      if(dx*dx+dz*dz<=radius*radius){repairPercent+=medicalBeaconRepairPercentPerSecond(beacon);showLink(beacon,center);}
-    }
-    if(repairPercent>0){const hp=Math.min(max,current+max*Math.min(cap,repairPercent)*dt);steelHP.set(cellIndex,hp);meta.hp=hp;}
+  function heal(target,current,max,set){
+    if(!(current>0&&max>current))return;
+    const position=target.group?.position||target;let rate=0;
+    for(const beacon of visionBeacons){if(beacon.hp<=0||!beacon.group?.parent)continue;const radius=medicalBeaconRepairRadius(beacon);if(Math.hypot(position.x-beacon.group.position.x,position.z-beacon.group.position.z)>radius)continue;rate+=medicalBeaconRepairPercentPerSecond(beacon);showMedicalHealingLink(beacon,target,'beacon');}
+    if(rate)set(Math.min(max,current+max*Math.min(cap,rate)*dt));
   }
+  for(const [ci,meta] of wallMeta){const x=ci%GRID,z=Math.floor(ci/GRID);if(grid[z]?.[x]===T_STEEL)heal(cellCenter(x,z),steelHP.get(ci)||0,wallMaxHp(meta.lv),hp=>{steelHP.set(ci,hp);meta.hp=hp;});}
+  for(const target of new Set([...friendlyUnits,...builtTurrets,...goldMines,...builtHouses,...heroHubs,...heavyFactories,...researchInstitutes,...visionBeacons])){
+    if(target.alive===false||!target.group?.parent)continue;heal(target,target.hp,target.maxHp,hp=>target.hp=hp);
+  }
+  for(const job of constructionJobs){if(job.phase==='returning'||!job.site)continue;heal({group:job.site},job.hp,job.maxHp,hp=>job.hp=hp);}
+  if(baseAlive&&baseGroup)heal({group:baseGroup},game.gateHp,game.gateMaxHp,hp=>{game.gateHp=hp;updateHpUI();});
 }
+
 function isPositionVisible(position){
   if(ACTIVE_MODE.key!=="survival")return true;
   return SurvivalSystem.isPointVisible(position,_visionSourceCache.length?_visionSourceCache:currentVisionSources());
@@ -2042,6 +1993,13 @@ function redrawVisionFog(){
     context.globalCompositeOperation="source-over";surface.texture.needsUpdate=true;
   });
   enemies.forEach((enemy)=>{if(enemy.alive)enemy.group.visible=isPositionVisible(enemy.group.position);});
+}
+let _visionFogRedrawQueued=false;
+function queueVisionFogRedraw(){
+  if(_visionFogRedrawQueued)return;
+  _visionFogRedrawQueued=true;
+  const run=()=>{_visionFogRedrawQueued=false;redrawVisionFog();};
+  if(typeof requestIdleCallback==='function')requestIdleCallback(run,{timeout:180});else setTimeout(run,0);
 }
 function updateVisionSystem(dt){
   if(ACTIVE_MODE.key!=="survival")return;
@@ -2069,12 +2027,13 @@ function saveSurvivalSnapshot(){
       mines:goldMines.map((m)=>({x:m.x,z:m.z,level:m.level,hp:m.hp,maxHp:m.maxHp})),
       turrets:builtTurrets.map((t)=>({x:t.cx,z:t.cz,turretKey:t.turretKey,level:t.level,hp:t.hp,maxHp:t.maxHp})),
       houses:builtHouses.map((h)=>({x:h.x,z:h.z,level:h.level,popProvided:h.popProvided,hp:h.hp,maxHp:h.maxHp})),
+      heroHubs:heroHubs.map(h=>({x:h.x,z:h.z,hp:h.hp})),
       research:researchInstitutes.map((r)=>({x:r.x,z:r.z,hp:r.hp,maxHp:r.maxHp})),
-      factories:heavyFactories.map((f)=>({x:f.x,z:f.z,hp:f.hp,maxHp:f.maxHp,rally:f.rally,progress:f.progress,autoType:f.autoType||null,queue:(f.queue||[]).map((q)=>({typeId:q.typeId,remaining:q.remaining,total:q.total}))})),
+      factories:heavyFactories.map((f)=>({x:f.x,z:f.z,hp:f.hp,maxHp:f.maxHp,rally:f.rally,progress:f.progress,autoType:f.autoType||null,queue:(f.queue||[]).map((q)=>({typeId:q.typeId,remaining:q.remaining,total:q.total,paidCost:q.paidCost,deployment:q.deployment||null}))})),
       beacons:visionBeacons.map((b)=>({x:b.x,z:b.z,level:b.level,hp:b.hp,maxHp:b.maxHp})),
-      units:friendlyUnits.filter((u)=>u.alive).map((u)=>({type:u.type,heroTank:!!u.heroTank,x:u.group.position.x,z:u.group.position.z,hp:u.hp,maxHp:u.maxHp,moveTarget:u.moveTarget,command:u.command})),
+      units:friendlyUnits.filter((u)=>u.alive).map((u)=>({type:u.type,repairBranch:u.repairBranch||null,heroTank:!!u.heroTank,x:u.group.position.x,z:u.group.position.z,hp:u.hp,maxHp:u.maxHp,moveTarget:u.moveTarget,command:u.command})),
     };
-    const snapshot={version:GAME_VERSION,savedAt:Date.now(),mode:"survival",structures,game:{wave:game.wave,gold:game.gold,score:game.score,popUsed:game.popUsed,popMax:game.popMax,
+    const snapshot={terrainTrees:grid.flatMap((row,z)=>row.flatMap((t,x)=>t===T_TREE?[idx(x,z)]:[])),upgradeJobs:game.upgradeJobs||[],hero:heroArchive(),doctrine:game.doctrine||null,doctrineTech:game.doctrineTech||{},endless:!!game.endless,overflowPressure:game.overflowPressure||0,version:GAME_VERSION,naturalTerrainVersion:2,terrainPads:terrainSurface.natural?.supportPads||[],savedAt:Date.now(),mode:"survival",structures,construction:serializeConstruction(),baseLayout:{...ACTIVE_MODE.base},game:{survivalElapsed:game.survivalElapsed||0,wave:game.wave,gold:game.gold,score:game.score,popUsed:game.popUsed,popMax:game.popMax,difficultyMultiplier:game.difficultyMultiplier||1,difficultyId:game.difficultyId||"normal",
       gateHp:game.gateHp,gateMaxHp:game.gateMaxHp,gateHpLv:game.gateHpLv,gateArmorLv:game.gateArmorLv,gateThornsLv:game.gateThornsLv,
       gateRegenLv:game.gateRegenLv,gateDodgeLv:game.gateDodgeLv,tech:{...game.tech},breakthroughs:{...game.breakthroughs}}};
     localStorage.setItem(SURVIVAL_SAVE_KEY,JSON.stringify(snapshot));
@@ -2085,34 +2044,44 @@ function readSurvivalSnapshot(){
   try{const raw=localStorage.getItem(SURVIVAL_SAVE_KEY);return raw?JSON.parse(raw):null;}catch(_){return null;}
 }
 function clearSurvivalSnapshot(){try{localStorage.removeItem(SURVIVAL_SAVE_KEY);}catch(_){} }
-function restoreSurvivalStructures(data){
+function restoreSurvivalStructures(data,legacyRepair=false){
   if(!data||ACTIVE_MODE.key!=="survival")return;
+  const retired=HeroSystem.retireMedical(data,legacyRepair);data=retired.data;let legacyRefund=retired.refund;
   const savedGold=game.gold,savedPopMax=game.popMax,savedPopUsed=game.popUsed;game.gold=Number.MAX_SAFE_INTEGER;game.popMax=Number.MAX_SAFE_INTEGER;
-  const place=(id,x,z)=>{const index=shopList().findIndex((build)=>build.id===id);if(index<0)return null;selectBuild(index);ghostCell={x,z};if(ghost)ghost.visible=true;tryPlace();selectBuild(null);return true;};
-  for(const wall of data.walls||[]){place("wall",wall.x,wall.z);const ci=idx(wall.x,wall.z),meta=wallMeta.get(ci);if(meta){while(meta.lv<wall.lv&&upgradeWallAt(wall.x,wall.z)){}steelHP.set(ci,Math.max(1,wall.hp||wallMaxHp(meta.lv)));meta.hp=steelHP.get(ci);}}
+  const place=(id,x,z)=>{const index=shopList().findIndex((build)=>build.id===id);if(index<0)return null;selectBuild(index);ghostCell={x,z};if(ghost)ghost.visible=true;placeBuildingImmediately(null,null,null,true);selectBuild(null);return true;};
+  for(const wall of data.walls||[]){
+    place("wall",wall.x,wall.z);const ci=idx(wall.x,wall.z);
+    if(!wallMeta.has(ci))continue;
+    while(wallMeta.get(ci).lv<wall.lv&&upgradeWallAt(wall.x,wall.z)){}
+    const meta=wallMeta.get(ci);steelHP.set(ci,Math.max(1,Math.min(wallMaxHp(meta.lv),wall.hp||wallMaxHp(meta.lv))));meta.hp=steelHP.get(ci);
+  }
   for(const mine of data.mines||[]){place("goldmine",mine.x,mine.z);const ref=goldMines.find((m)=>m.x===mine.x&&m.z===mine.z);if(ref){while(ref.level<(mine.level||1)&&upgradeGoldMine(ref)){}ref.hp=Math.min(ref.maxHp,mine.hp||ref.maxHp);}}
   for(const turret of data.turrets||[]){
     const id=Object.prototype.hasOwnProperty.call(TURRET_TYPES,turret.turretKey)?turret.turretKey:null;
     if(!id)continue;
-    place(id,turret.x,turret.z);
+    place("turret",turret.x,turret.z);
     const ref=builtTurrets.find((t)=>t.cx===turret.x&&t.cz===turret.z);
-    if(ref){while(ref.level<(turret.level||0)&&upgradeTurretAt(turret.x,turret.z)){}ref.hp=Math.min(ref.maxHp,turret.hp||ref.maxHp);}
+    if(ref){if(id!=="turret")chooseTurretBranch(ref,id);while(ref.level<(turret.level||0)&&upgradeTurretAt(turret.x,turret.z)){}ref.hp=Math.min(ref.maxHp,turret.hp||ref.maxHp);}
   }
   for(const house of data.houses||[]){place("house",house.x,house.z);const ref=builtHouses.find((h)=>h.x===house.x&&h.z===house.z);if(ref){while(ref.level<(house.level||1)&&upgradeHouse(ref)){}ref.hp=Math.min(ref.maxHp,house.hp||ref.maxHp);}}
+  for(const h of data.heroHubs||[]){place("heroHub",h.x,h.z);const ref=heroHubs.find(r=>r.x===h.x&&r.z===h.z);if(ref)ref.hp=Math.max(1,Math.min(ref.maxHp,h.hp));}
   for(const research of data.research||[])place("research",research.x,research.z);
-  for(const factory of data.factories||[]){place("factory",factory.x,factory.z);const ref=heavyFactories.find((f)=>f.x===factory.x&&f.z===factory.z);if(ref){if(factory.rally)ref.rally={...factory.rally};ref.autoType=factory.autoType||null;for(const item of factory.queue||[]){if(queueFactoryUnit(ref,item.typeId)){const q=ref.queue[ref.queue.length-1];q.remaining=item.remaining;q.total=item.total;}}ref.progress=factory.progress||0;ref.hp=Math.min(ref.maxHp,factory.hp||ref.maxHp);}}
+  for(const factory of data.factories||[]){place("factory",factory.x,factory.z);const ref=heavyFactories.find((f)=>f.x===factory.x&&f.z===factory.z);if(ref){if(factory.rally)ref.rally={...factory.rally};ref.autoType=["light","medium","heavy"].includes(factory.autoType)?factory.autoType:null;for(const item of factory.queue||[]){if(item.typeId==='repair'){legacyRefund+=item.paidCost??(legacyRepair?115:2400);continue;}if(queueFactoryUnit(ref,item.typeId,true)){const q=ref.queue[ref.queue.length-1];q.remaining=Math.max(0,Number(item.remaining)||0);q.total=Math.max(.1,Number(item.total)||1);q.remaining=Math.min(q.total,q.remaining);if(item.deployment&&Number.isFinite(item.deployment.x)&&Number.isFinite(item.deployment.z)&&Math.hypot(item.deployment.x-ref.group.position.x,item.deployment.z-ref.group.position.z)<=TILE*3)q.deployment={x:item.deployment.x,z:item.deployment.z,heading:Number.isFinite(item.deployment.heading)?item.deployment.heading:Math.PI};q.paidCost=item.paidCost??(legacyRepair&&item.typeId==='repair'?115:SurvivalSystem.FRIENDLY_UNIT_TYPES[item.typeId].cost);}}ref.progress=factory.progress||0;ref.hp=Math.min(ref.maxHp,factory.hp||ref.maxHp);}}
   for(const beacon of data.beacons||[]){place("beacon",beacon.x,beacon.z);const ref=visionBeacons.find((b)=>b.x===beacon.x&&b.z===beacon.z);if(ref){while(ref.level<(beacon.level||1)&&upgradeMedicalBeacon(ref)){}ref.hp=Math.min(ref.maxHp,beacon.hp||ref.maxHp);}}
   for(const unit of data.units||[]){
+    if(unit.type==='repair'){legacyRefund+=unit.paidCost??(legacyRepair?115:2400);if(unit.repairBranch)legacyRefund+=unit.repairBranch==='speed'?120:150;continue;}
+    if(unit.type==='hero'&&friendlyUnits.some(u=>u.type==='hero'))continue;
     if(!SurvivalSystem.FRIENDLY_UNIT_TYPES[unit.type])continue;
     const ref=createFriendlyUnit(unit.type,{x:Number(unit.x)||0,z:Number(unit.z)||0});
-    if(unit.heroTank){ref.heroTank=true;heroTank=ref;}
+    if(unit.repairBranch)upgradeRepairUnit(ref,unit.repairBranch,true);
+    if(unit.type==='hero'){ref.heroTank=true;heroTank=ref;heroArchive().status='alive';rebuildHeroModules(ref);}
     ref.hp=Math.min(ref.maxHp,Number(unit.hp)||ref.maxHp);
     if(unit.moveTarget)setFriendlyMoveTarget(ref,unit.moveTarget,true);
     ref.command=unit.command||"stop";
   }
   /* 存档中的人口字段只作旧版本兼容输入，最终人口必须由已恢复实体重算。
      这样升级住房、取消队列、拆除建筑不会留下“幽灵人口”。 */
-  game.gold=savedGold;
+  game.gold=savedGold+legacyRefund;
   game.popMax=Math.max(1,((ACTIVE_MODE.economy&&ACTIVE_MODE.economy.startPop)||12)+
     builtHouses.reduce((sum,house)=>sum+Math.max(0,Number(house.popProvided)||0),0));
   game.popUsed=builtTurrets.reduce((sum,t)=>sum+Math.max(0,Number(t.popUsed)||0),0)
@@ -2125,17 +2094,30 @@ function restoreSurvivalStructures(data){
 }
 function restoreSurvivalSnapshot(snapshot){
   if(!snapshot||snapshot.mode!=="survival"||!snapshot.game)return false;
+  snapshot=migrateStairWalls(snapshot);
   const saved=snapshot.game;
+  const layout=snapshot.baseLayout||{col:3,row:13,gateCol:3,gateRow:13};
+  const enclosure=ACTIVE_MODE.enclosure;
+  const validLayout=Number.isInteger(layout.col)&&Number.isInteger(layout.row)&&layout.col>=enclosure.x0&&layout.col+1<=enclosure.x1&&layout.row>=enclosure.z0&&layout.row+1<=enclosure.z1;
+  const targetLayout=validLayout?{col:layout.col,row:layout.row,gateCol:layout.col,gateRow:layout.row}:DEFAULT_SURVIVAL_BASE;
+  survivalRestoreEnvironment=savedSurvivalEnvironment(snapshot);
+  try{resetGame(targetLayout,naturalPadsFromSnapshot(snapshot));}finally{survivalRestoreEnvironment=null;}
+  game.survivalElapsed=Number.isFinite(saved.survivalElapsed)?Math.max(0,saved.survivalElapsed):Math.max(0,(Number(saved.wave)||1)-1)*120;
   game.wave=Math.max(0,Number(saved.wave)||0);game.gold=Math.max(0,Number(saved.gold)||0);game.score=Math.max(0,Number(saved.score)||0);
+  game.difficultyMultiplier=Math.max(.1,Number(saved.difficultyMultiplier)||1);game.difficultyId=saved.difficultyId||"normal";
   if(Number.isFinite(Number(saved.popUsed)))game.popUsed=Math.max(0,Number(saved.popUsed));
   if(Number.isFinite(Number(saved.popMax)))game.popMax=Math.max(1,Number(saved.popMax));
   ["gateHp","gateMaxHp","gateHpLv","gateArmorLv","gateThornsLv","gateRegenLv","gateDodgeLv"].forEach((key)=>{
     if(Number.isFinite(Number(saved[key])))game[key]=Number(saved[key]);
   });
   game.tech={...(saved.tech||{})};game.breakthroughs={...(saved.breakthroughs||{})};
-  restoreSurvivalStructures(snapshot.structures);
+  const savedVersion=String(snapshot.version||'0.0.0').split('.').map(Number);
+  game.hero=HeroSystem.archive(snapshot.hero);game.doctrine=['tower','tank','hero'].includes(snapshot.doctrine)?snapshot.doctrine:null;game.doctrineTech=Object.fromEntries(Object.keys(HeroSystem.TECH).map(k=>[k,HeroSystem.level(snapshot.doctrineTech?.[k],5)]));game.endless=!!snapshot.endless;game.overflowPressure=Math.max(0,Number(snapshot.overflowPressure)||0);game._restoring=true;
+  restoreSurvivalStructures(snapshot.structures,savedVersion[0]<6||(savedVersion[0]===6&&savedVersion[1]<44));
+  game._restoring=false;if(heroArchive().status==='alive'&&!heroTank)heroArchive().status='dead';if(heroArchive().status==='producing')game.popUsed+=6;
+  restoreConstruction(snapshot.construction);restoreUpgradeJobs(snapshot.upgradeJobs);updateBaseDoctrineVisual();
   updateGoldUI();updateResUI();updateHpUI();
-  if(game.wave>0){game._resumeWave=game.wave;state=STATE.PREP;game.prepTime=ACTIVE_MODE.prepTime||30;const el=$("prepBar");if(el){el.style.display="block";el.textContent=`⏱ 继续第 ${game.wave} 波 · B 键打开商店`;}}
+  if(game.wave>0){game._resumeWave=game.wave;state=STATE.PREP;game.prepTime=ACTIVE_MODE.prepTime||30;const el=$("prepBar");if(el){el.style.display="block";el.textContent=` 继续第 ${game.wave} 波 · B 键打开商店`;}}
   return true;
 }
 const keys={};
@@ -2156,9 +2138,11 @@ function createFriendlyUnit(typeId,position){
     light:[0xb58a45,0xe0c478],       // 沙黄：高速侦察
     medium:[0x496343,0x82906a],     // 军绿：通用主战
     heavy:[0x713c36,0x343b40],      // 暗红 + 炮钢：重装火力
+    hero:[0x394b55,0xc7ae72],
     repair:[0xc99b31,0xe3d7ad],     // 工程黄 + 象牙白：后勤维修
   };
-  const colors=palette[typeId],group=makeTank(colors[0],colors[1],spec.scale);
+  if(typeId==='hero'&&friendlyUnits.some(u=>u.type==='hero'))throw new Error('只能拥有一个英雄');
+  const colors=palette[typeId],group=typeId==='hero'?makeHeroTankModel():makeTank(colors[0],colors[1],spec.scale,typeId);
   if(typeId==="repair"&&group.userData.turret){
     group.userData.turret.scale.z=.55;
     const crane=new THREE.Mesh(new THREE.BoxGeometry(.16,.16,2.2),
@@ -2175,29 +2159,34 @@ function createFriendlyUnit(typeId,position){
     alive:true,cd:0,moveTarget:null,routeWaypoints:[],routeGoal:null,routeAvailable:false,routeReplan:0,stuckTime:0,
     attackTarget:null,repairTarget:null,command:"stop",patrolPoints:[],patrolIndex:0};
   const x=position.x,z=position.z;
-  group.position.set(x,heightAt(x,z),z);group.userData.friendlyUnit=unit;scene.add(group);friendlyUnits.push(unit);
+  group.position.set(x,heightAt(x,z),z);group.userData.friendlyUnit=unit;scene.add(group);friendlyUnits.push(unit);applyDoctrineStats(unit);
   return unit;
 }
 
-function queueFactoryUnit(factory,typeId){
+function queueFactoryUnit(factory,typeId,restoring=false){
   const spec=SurvivalSystem.FRIENDLY_UNIT_TYPES[typeId];
+  if(typeId==='repair'||typeId==='hero')return false;
   if(!factory||heavyFactories.indexOf(factory)<0||!spec||factory.queue.length>=5)return false;
-  if(game.gold<spec.cost||game.popUsed+spec.population>game.popMax)return false;
-  game.gold-=spec.cost;game.popUsed+=spec.population;
-  factory.queue.push({typeId,heroTank:false,remaining:spec.buildTime,total:spec.buildTime});
+  if(!restoring&&typeId==='repair'&&!repairProductionStatus().allowed)return false;
+  const cost=Math.ceil(spec.cost*(1-.03*doctrineLevel('supply'))),time=spec.buildTime*(1-.04*doctrineLevel('supply'));
+  if(game.gold<cost||game.popUsed+spec.population>game.popMax)return false;
+  game.gold-=cost;game.popUsed+=spec.population;
+  factory.queue.push({typeId,heroTank:false,remaining:time,total:time,paidCost:cost});
   updateGoldUI();updateResUI();return true;
 }
 function toggleFactoryAuto(factory,typeId){
+  if(!["light","medium","heavy"].includes(typeId))return false;
+  if(typeId==='repair'&&factory?.autoType!==typeId&&!repairProductionStatus().allowed){toast(repairProductionStatus().reason);return false;}
   if(!factory||heavyFactories.indexOf(factory)<0)return false;
   factory.autoType=factory.autoType===typeId?null:typeId;
-  toast(factory.autoType?`🏭 已开启${SurvivalSystem.FRIENDLY_UNIT_TYPES[typeId].name}自动生产`:`🏭 已关闭自动生产`);
+  toast(factory.autoType?` 已开启${SurvivalSystem.FRIENDLY_UNIT_TYPES[typeId].name}自动生产`:` 已关闭自动生产`);
   renderCmdCard();return true;
 }
 
 function cancelFactoryQueue(factory,index=(factory&&factory.queue?factory.queue.length:0)-1){
   if(!factory||heavyFactories.indexOf(factory)<0||!Number.isInteger(index)||index<0||index>=factory.queue.length)return false;
   const [cancelled]=factory.queue.splice(index,1),spec=SurvivalSystem.FRIENDLY_UNIT_TYPES[cancelled.typeId];
-  if(spec){game.gold+=Math.round(spec.cost*.75);game.popUsed=Math.max(0,game.popUsed-spec.population);}
+  if(spec){game.gold+=Math.round((cancelled.paidCost??spec.cost)*.75);game.popUsed=Math.max(0,game.popUsed-spec.population);}
   if(index===0)factory.progress=0;
   updateGoldUI();updateResUI();wc3RenderSel();return true;
 }
@@ -2212,65 +2201,56 @@ function setFactoryRallyPoint(factory,target){
 }
 
 function updateFactories(dt){
+  updateUpgradeJobs(dt);updateHeroProduction(dt);
+  for(const f of [...factoryWorkshops.keys()])if(!heavyFactories.includes(f)||!f.queue.length)clearFactoryWorkshop(f);
   for(const factory of heavyFactories){
     if(factory.autoType&&factory.queue.length<5)queueFactoryUnit(factory,factory.autoType);
     const item=factory.queue[0];if(!item)continue;
-    item.remaining-=dt;factory.progress=1-Math.max(0,item.remaining)/item.total;
-    if(item.remaining>0)continue;
-    factory.queue.shift();factory.progress=0;
-    const rally=factory.rally||factory.group.position;
-    const spawnRadius=1.35*(SurvivalSystem.FRIENDLY_UNIT_TYPES[item.typeId].scale||1);
-    const origin=findFriendlySpawnPoint({x:factory.group.position.x+TILE*1.25,z:factory.group.position.z},spawnRadius);
-    const unit=createFriendlyUnit(item.typeId,origin);
-    if(item.heroTank){unit.heroTank=true;heroTank=unit;} /* 旧存档兼容，新生产不再占用英雄槽 */
-    setFriendlyMoveTarget(unit,rally,true);unit.command="move";
-    spawnParticles(unit.group.position.clone().setY(1.2),0xc69a45,10,6,.8);
+    tickFactoryProduction(factory,item,dt);
   }
-  renderFactoryQueueDock();
+  renderFactoryQueueDock();renderUpgradeDock();
 }
 
 function renderFactoryQueueDock(){
   const dock=$("factoryQueueDock");if(!dock)return;
   if(!heavyFactories.length){dock.hidden=true;dock.innerHTML="";return;}
   dock.hidden=false;
-  dock.innerHTML=`<div class="globalQueueTitle">🏭 生产队列</div>`+heavyFactories.map((factory,index)=>{
+  dock.innerHTML=`<div class="globalQueueTitle"> 生产队列</div>`+heavyFactories.map((factory,index)=>{
     const queue=factory.queue||[],current=queue[0],pct=Math.round((factory.progress||0)*100);
-    const labels=queue.map((item,itemIndex)=>`<span class="${itemIndex===0?"current":""}">${itemIndex===0?"▶ ":""}${SurvivalSystem.FRIENDLY_UNIT_TYPES[item.typeId]?.name||item.typeId}</span>`).join("")||"<span>空闲</span>";
-    return `<div class="globalQueueFactory"><div class="globalQueueName">重工厂 ${index+1} · ${queue.length}/5</div><div class="globalQueueItems">${labels}</div>${current?`<div class="globalQueueBar"><i style="width:${pct}%"></i></div>`:""}</div>`;
+    const labels=queue.map((item,itemIndex)=>`<span class="${itemIndex===0?"current":""}">${itemIndex===0?" ":""}${SurvivalSystem.FRIENDLY_UNIT_TYPES[item.typeId]?.name||item.typeId}</span>`).join("")||"<span>空闲</span>";
+    return `<div class="globalQueueFactory"><div class="globalQueueName">重工厂 ${index+1} · ${queue.length}/5 · ${factory.exitBlocked?"出口受阻":current?.remaining===0?"正在驶出":"装配生产"}</div><div class="globalQueueItems">${labels}</div>${current?`<div class="globalQueueBar"><i style="width:${pct}%"></i></div>`:""}</div>`;
   }).join("");
 }
 
 function validRepairTarget(target){
-  if(!target)return false;
-  if(target===player)return player.alive&&player.hp<player.maxHp;
-  if(target.alive===false)return false;
-  return Number.isFinite(target.hp)&&Number.isFinite(target.maxHp)&&target.hp<target.maxHp;
+  if(!target?.group?.parent||target.alive===false||target.dying)return false;
+  return Number.isFinite(target.hp)&&Number.isFinite(target.maxHp)&&target.hp>0&&target.hp<target.maxHp;
 }
 
 function gateRepairTarget(){
   if(!baseAlive||!baseGroup)return null;
-  return {kind:"gate",group:baseGroup,get hp(){return game.gateHp;},set hp(value){game.gateHp=value;updateHpUI();},get maxHp(){return game.gateMaxHp;}};
+  return {kind:"gate",group:baseGroup,repairBudgetOwner:baseGroup,get hp(){return game.gateHp;},set hp(value){game.gateHp=value;updateHpUI();},get maxHp(){return game.gateMaxHp;}};
 }
 
 function wallRepairTarget(ref){
   if(!ref||ref.x==null||ref.z==null)return null;
   const ci=idx(ref.x,ref.z),meta=wallMeta.get(ci),group=tileMeshes[ci];
   if(!meta||!group)return null;
-  return {kind:"wall",group,get hp(){return steelHP.get(ci)||0;},set hp(value){steelHP.set(ci,value);meta.hp=value;},get maxHp(){return wallMaxHp(meta.lv);}};
+  return {kind:"wall",group,repairBudgetOwner:meta,get hp(){return steelHP.get(ci)||0;},set hp(value){steelHP.set(ci,value);meta.hp=value;},get maxHp(){return wallMaxHp(meta.lv);}};
 }
 
 function normalizeRepairTarget(entry){
   if(!entry)return null;
   if(entry.kind==="wall")return wallRepairTarget(entry.ref);
-  if(entry.kind==="gate")return gateRepairTarget();
-  if(["player","unit","turret","research","factory"].includes(entry.kind))return entry.ref;
+  if(entry.kind==="gate"||entry.kind==="base")return gateRepairTarget();
+  if(["player","unit","turret","research","heroHub","factory","goldmine","house","beacon"].includes(entry.kind))return entry.ref;
   return null;
 }
 
 function nearestRepairTarget(unit){
-  const targets=[player,...friendlyUnits,...builtTurrets,...researchInstitutes,...heavyFactories,gateRepairTarget()];
+  const targets=[player,...friendlyUnits,...builtTurrets,...researchInstitutes,...heroHubs,...heavyFactories,...goldMines,...builtHouses,...visionBeacons,gateRepairTarget()];
   for(const [ci] of wallMeta){const ref={x:ci%GRID,z:Math.floor(ci/GRID)},target=wallRepairTarget(ref);if(target)targets.push(target);}
-  let best=null,bestD=9*9;
+  let best=null,bestD=unit.range*unit.range;
   for(const target of targets){
     if(target===unit||!validRepairTarget(target)||!target.group)continue;
     const d=unit.group.position.distanceToSquared(target.group.position);
@@ -2282,27 +2262,38 @@ function nearestRepairTarget(unit){
 function friendlyCellPassable(cx,cz){
   if(!inMap(cx,cz))return false;
   const t=grid[cz][cx];
-  return t===T_BASE||(t!==T_WATER&&!solidForTank(t,false));
-}
-function nearestFriendlyGoalCell(target){
-  const origin=cellOf(target.x,target.z);
-  if(inMap(origin.x,origin.z)&&friendlyCellPassable(origin.x,origin.z))return origin;
-  for(let radius=1;radius<=6;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
-    if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
-    const x=origin.x+dx,z=origin.z+dz;
-    if(inMap(x,z)&&friendlyCellPassable(x,z))return {x,z};
+  if(t===T_BASE||t===T_WATER||structCells.has(idx(cx,cz)))return false;
+  if(isNaturalBoundaryCell(cx,cz)){
+    const p=cellCenter(cx,cz);return naturalGroundClear(p.x,p.z,.4);
   }
-  return null;
+  return !solidForTank(t,false);
+}
+function nearestFriendlyGoalCell(target,radius=0,from=null){
+  const origin=cellOf(target.x,target.z);
+  const clear=(x,z)=>friendlyCellPassable(x,z)&&(!radius||navigationPositionClear(cellCenter(x,z),radius));
+  if(inMap(origin.x,origin.z)&&clear(origin.x,origin.z))return origin;
+  let best=null,bestScore=Infinity;
+  for(let ring=1;ring<=6;ring++)for(let dz=-ring;dz<=ring;dz++)for(let dx=-ring;dx<=ring;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dz))!==ring)continue;
+    const x=origin.x+dx,z=origin.z+dz;
+    if(!inMap(x,z)||!clear(x,z))continue;
+    const p=cellCenter(x,z),score=Math.hypot(p.x-target.x,p.z-target.z)+(from?Math.hypot(p.x-from.x,p.z-from.z)*.15:0);
+    if(score<bestScore){bestScore=score;best={x,z};}
+  }
+  return best;
 }
 function planFriendlyRoute(unit,target){
   if(!unit||!target)return false;
-  const start=cellOf(unit.group.position.x,unit.group.position.z),goal=nearestFriendlyGoalCell(target);
+  const radius=Math.min(unit.radius,TILE*.38);
+  const start=cellOf(unit.group.position.x,unit.group.position.z),goal=nearestFriendlyGoalCell(target,radius,unit.group.position);
   unit.routeWaypoints=[];unit.routeGoal={x:target.x,z:target.z};unit.routeGoalCell=goal;unit.routeAvailable=false;unit.routeReplan=.65;unit.stuckTime=0;
+  unit.routeRevision=navigationStamp;
   if(!goal||!inMap(start.x,start.z))return false;
-  const key=`${goal.x},${goal.z}:${navigationStamp}:${GRID}`;
+  const passable=(x,z)=>friendlyCellPassable(x,z)&&navigationPositionClear(cellCenter(x,z),radius);
+  const key=`${goal.x},${goal.z}:${radius}:${navigationStamp}:${GRID}`;
   if(friendlyFlowCache.key!==key||!friendlyFlowCache.field||friendlyFlowCache.field.width!==GRID){
     if(!friendlyFlowCache.field||friendlyFlowCache.field.width!==GRID)friendlyFlowCache.field=new FlowField(GRID,GRID);
-    friendlyFlowCache.field.compute([goal],{passable:friendlyCellPassable,canStep:flowCanStep});
+    friendlyFlowCache.field.compute([goal],{passable,canStep:flowCanStep});
     friendlyFlowCache.key=key;
     friendlyRouteComputeCount++;
   }
@@ -2318,33 +2309,40 @@ function planFriendlyRoute(unit,target){
     unit.routeWaypoints.push({x:point.x,z:point.z});
   }
   const goalCenter=cellCenter(goal.x,goal.z);
-  if(Math.hypot(target.x-goalCenter.x,target.z-goalCenter.z)<TILE*.7)unit.routeWaypoints.push({x:target.x,z:target.z});
+  if(Math.hypot(target.x-goalCenter.x,target.z-goalCenter.z)<TILE*.7&&navigationSegmentClear(goalCenter,target,radius))
+    unit.routeWaypoints.push({x:target.x,z:target.z});
+  unit.routeWaypoints=smoothNavigationRoute([{x:unit.group.position.x,z:unit.group.position.z},...unit.routeWaypoints],radius).slice(1);
+  unit.routeDestination=unit.routeWaypoints.at(-1)||goalCenter;
+  unit.routeRevision=navigationStamp;
   return unit.routeWaypoints.length>0||(start.x===goal.x&&start.z===goal.z);
 }
 function clearFriendlyRoute(unit){unit.moveTarget=null;unit.routeWaypoints=[];unit.routeGoal=null;unit.routeGoalCell=null;unit.routeAvailable=false;unit.stuckTime=0;}
 function setFriendlyMoveTarget(unit,target,force=false,fieldTarget=null){
   if(!unit||!target)return false;
-  const goal=nearestFriendlyGoalCell(fieldTarget||target);
+  const radius=Math.min(unit.radius,TILE*.38),goal=nearestFriendlyGoalCell(fieldTarget||target,radius,unit.group.position);
   const cellChanged=!unit.routeGoalCell||!goal||unit.routeGoalCell.x!==goal.x||unit.routeGoalCell.z!==goal.z;
   unit.moveTarget={x:target.x,z:target.z};
   if(force||cellChanged||!unit.routeWaypoints.length){
     planFriendlyRoute(unit,fieldTarget||unit.moveTarget);
-    if(unit.routeWaypoints.length&&(target.x!==(fieldTarget||target).x||target.z!==(fieldTarget||target).z)){
+    if(unit.routeWaypoints.length&&(target.x!==(fieldTarget||target).x||target.z!==(fieldTarget||target).z)
+      &&navigationSegmentClear(unit.routeWaypoints.at(-1),target,radius)){
       unit.routeWaypoints.push({x:target.x,z:target.z});
+      unit.routeDestination=unit.routeWaypoints.at(-1);
     }
     unit.moveTarget={x:target.x,z:target.z};
   }else if(unit.routeWaypoints.length){
     const last=unit.routeWaypoints[unit.routeWaypoints.length-1];
-    last.x=target.x;last.z=target.z;
+    const previous=unit.routeWaypoints.at(-2)||unit.group.position;
+    if(navigationSegmentClear(previous,target,radius)){last.x=target.x;last.z=target.z;unit.routeDestination=last;}
   }
   return true;
 }
 function moveFriendlyUnit(unit,dt){
   if(!unit.moveTarget)return;
   unit.routeReplan=Math.max(0,(unit.routeReplan||0)-dt);
-  if(!unit.routeWaypoints.length&&unit.routeReplan<=0)planFriendlyRoute(unit,unit.moveTarget);
+  if(unit.routeRevision!==navigationStamp||(!unit.routeWaypoints.length&&unit.routeReplan<=0))planFriendlyRoute(unit,unit.moveTarget);
   if(!unit.routeAvailable)return;
-  const waypoint=unit.routeWaypoints[0]||unit.moveTarget;
+  const waypoint=unit.routeWaypoints[0]||unit.routeDestination||unit.moveTarget;
   const g=unit.group,oldX=g.position.x,oldZ=g.position.z;
   const dx=waypoint.x-g.position.x,dz=waypoint.z-g.position.z,d=Math.hypot(dx,dz);
   if(d<.7){
@@ -2355,8 +2353,9 @@ function moveFriendlyUnit(unit,dt){
     return;
   }
   const step=Math.min(d,unit.speed*dt),nx=g.position.x+dx/d*step,nz=g.position.z+dz/d*step;
-  if(!blockedForTank(nx,g.position.z,unit.radius,heightAt(g.position.x,g.position.z),false,true))g.position.x=nx;
-  if(!blockedForTank(g.position.x,nz,unit.radius,heightAt(g.position.x,g.position.z),false,true))g.position.z=nz;
+  const radius=Math.min(unit.radius,TILE*.38);
+  if(!blockedForTank(nx,g.position.z,radius,heightAt(g.position.x,g.position.z),false,true))g.position.x=nx;
+  if(!blockedForTank(g.position.x,nz,radius,heightAt(g.position.x,g.position.z),false,true))g.position.z=nz;
   const want=Math.atan2(dx,dz)+Math.PI;g.rotation.y+=shortAngle(want-g.rotation.y)*Math.min(1,dt*9);
   g.position.y=heightAt(g.position.x,g.position.z);
   const moved=Math.hypot(g.position.x-oldX,g.position.z-oldZ);
@@ -2370,7 +2369,8 @@ function blockedByFixedCollider(px,pz,radius,exclude=null){
   for(const collider of fixedVisionLights){
     if(collider===exclude||!Number.isFinite(collider.x)||!Number.isFinite(collider.z))continue;
     const desired=radius+(collider.collisionRadius||.7);
-    if(Math.hypot(px-collider.x,pz-collider.z)<desired)return true;
+    const dx=px-collider.x,dz=pz-collider.z;
+    if(Math.abs(dx)<desired&&Math.abs(dz)<desired&&dx*dx+dz*dz<desired*desired)return true;
   }
   return false;
 }
@@ -2411,6 +2411,7 @@ function damageFriendlyFromContact(enemy,target,dt){
     spawnParticles(target.group.position.clone().setY(1.2),0xff8a6a,4,4,.45);
   }
   enemy.bodyAttackCd=enemy.boss?.55:.9;enemy._attackedNow=true;
+  sfx.zombie(enemy);
 }
 
 function applyGameplayCollisions(dt){
@@ -2455,47 +2456,59 @@ function applyGameplayCollisions(dt){
   gameplayCollisionStats.blockedFrames=overlaps?gameplayCollisionStats.blockedFrames+1:0;
 }
 
+function updateRepairUnit(unit,dt){
+  let target=unit.repairTarget;
+  if(target===unit){unit.repairTarget=null;unit.autoRepairBlocked=true;return;}
+  if(target)unit.autoRepairBlocked=false;
+  if(unit.autoRepairBlocked||dt<=0)return;
+  const manual=unit.command==='repair';
+  const inRange=t=>unit.group.position.distanceToSquared(t.group.position)<=unit.range*unit.range;
+  if(!validRepairTarget(target)||(!manual&&!inRange(target))){
+    if(manual){clearFriendlyRoute(unit);unit.command='stop';}
+    target=nearestRepairTarget(unit);
+  }
+  unit.repairTarget=target;
+  if(!target)return;
+  if(!inRange(target)){
+    // Only an explicit repair order chases a target outside the support radius.
+    if(unit.command==='repair')setFriendlyMoveTarget(unit,target.group.position);
+    return;
+  }
+  if(unit.command==='repair')clearFriendlyRoute(unit);
+  const repairedHp=allocateMobileHealing(target,Math.min(unit.repairPerSecond*dt,game.gold*10),dt);
+  if(repairedHp<=0)return;
+  target.hp=Math.min(target.maxHp,target.hp+repairedHp);game.gold=Math.max(0,game.gold-repairedHp/10);
+  showMedicalHealingLink(unit,target,'tank');
+}
 function updateFriendlyUnits(dt){
+  beginMobileHealingTick();
+  hideMedicalHealingLinks('tank');
   const now=performance.now();
   for(let index=friendlyUnits.length-1;index>=0;index--){
     const unit=friendlyUnits[index];
     if(!unit.alive||unit.hp<=0){
-      scene.remove(unit.group);friendlyUnits.splice(index,1);game.popUsed=Math.max(0,game.popUsed-unit.population);if(heroTank===unit)heroTank=null;continue;
+      heroDied(unit);scene.remove(unit.group);disposeTransientObject3D(unit.group);friendlyUnits.splice(index,1);game.popUsed=Math.max(0,game.popUsed-unit.population);if(heroTank===unit)heroTank=null;continue;
     }
+    if(unit.type==='hero'){updateHeroCombat(unit,dt);continue;}
     if(unit.type==="repair"){
-      let target=unit.repairTarget;
-      if(target===unit){unit.repairTarget=null;unit.autoRepairBlocked=true;moveFriendlyUnit(unit,dt);continue;}
-      if(target&&target!==unit)unit.autoRepairBlocked=false;
-      if(unit.autoRepairBlocked){moveFriendlyUnit(unit,dt);continue;}
-      if(!validRepairTarget(target))target=nearestRepairTarget(unit);
-      unit.repairTarget=target;
-      if(target&&target.group){
-        const distance=unit.group.position.distanceTo(target.group.position);
-        if(distance>3.8){setFriendlyMoveTarget(unit,target.group.position);unit.command="repair";}
-        else if(game.gold>0){
-          clearFriendlyRoute(unit);
-          /* 维修按 10 HP / 金币连续结算。禁止逐帧 Math.ceil，否则 60 FPS 会把 36 HP/s 错算成约 60 金/s。 */
-          const repairedHp=Math.min(target.maxHp-target.hp,unit.repairPerSecond*dt,game.gold*10);
-          target.hp=Math.min(target.maxHp,target.hp+repairedHp);game.gold=Math.max(0,game.gold-repairedHp/10);
-        }
-      }
+      updateRepairUnit(unit,dt);
       moveFriendlyUnit(unit,dt);continue;
     }
     const mayAutoAcquire=!unit.moveTarget||unit.command==="attackMove";
-    if(mayAutoAcquire&&(!unit.attackTarget||!unit.attackTarget.alive)){
+    if(mayAutoAcquire&&!isEnemyCombatTarget(unit.attackTarget)){
       let best=null,bestD=unit.range*unit.range;
-      for(const enemy of enemies){if(!enemy.alive||!isPositionVisible(enemy.group.position))continue;const d=unit.group.position.distanceToSquared(enemy.group.position);if(d<bestD){bestD=d;best=enemy;}}
+      for(const enemy of enemies){if(!isEnemyCombatTarget(enemy)||!isPositionVisible(enemy.group.position))continue;const d=unit.group.position.distanceToSquared(enemy.group.position);if(d<bestD){bestD=d;best=enemy;}}
       unit.attackTarget=best;
     }
-    if(unit.attackTarget&&(!unit.attackTarget.alive||!isPositionVisible(unit.attackTarget.group.position)))unit.attackTarget=null;
+    if(unit.attackTarget&&(!isEnemyCombatTarget(unit.attackTarget)||!isPositionVisible(unit.attackTarget.group.position)))unit.attackTarget=null;
     if(unit.attackTarget&&unit.attackTarget.alive){
-      const target=unit.attackTarget.group.position,d=unit.group.position.distanceTo(target);
+        const target=enemyAimPoint(unit.attackTarget),d=unit.group.position.distanceTo(target);
       if(d>unit.range){setFriendlyMoveTarget(unit,target);}
       else{
         clearFriendlyRoute(unit);unit.cd-=dt;
         const turret=unit.group.userData.turret,dx=target.x-unit.group.position.x,dz=target.z-unit.group.position.z;
         if(turret){const want=Math.atan2(dx,dz)+Math.PI-unit.group.rotation.y;turret.rotation.y+=shortAngle(want-turret.rotation.y)*Math.min(1,dt*10);}
-        if(unit.cd<=0){unit.cd=1/Math.max(.01,unit.fireRate);shoot(unit,new THREE.Vector3(dx,0,dz).normalize(),true,{thruWall:true,projectileType:"tank"});}
+        if(unit.cd<=0){unit.cd=1/Math.max(.01,unit.fireRate*(unit._speedAura||1));fireFriendlyWeapon(unit,unit.attackTarget);}
       }
     }
     moveFriendlyUnit(unit,dt);
@@ -2506,57 +2519,57 @@ function updateFriendlyUnits(dt){
 /* ---------------- 升级卡池（自身系 + 基地系，带稀有度）---------------- */
 /* rar: 1=普通 2=稀有 3=史诗 —— 稀有度越高越强、抽中权重越低 */
 const UPGRADES=[
-  // 🛞 自身系
-  {id:"dmg",type:"tank",rar:1,icon:"🔥",name:"钨芯穿甲弹",desc:"炮弹伤害 +40%",max:6,apply:s=>s.dmg*=1.4},
-  {id:"rate",type:"tank",rar:1,icon:"⚡",name:"自动装填机",desc:"射速 +25%",max:6,apply:s=>s.fireRate*=1.25},
-  {id:"speed",type:"tank",rar:1,icon:"🛞",name:"涡轮增压引擎",desc:"移动速度 +18%",max:5,apply:s=>s.moveSpeed*=1.18},
-  {id:"bspd",type:"tank",rar:1,icon:"💨",name:"电磁加速轨道",desc:"炮弹飞行速度 +30%",max:4,apply:s=>s.bulletSpeed*=1.3},
-  {id:"lucky",type:"tank",rar:1,icon:"🍀",name:"幸运星",desc:"道具掉落率 +25%，掉落更多",max:3,apply:s=>s.luckyLv+=1},
-  {id:"regen",type:"tank",rar:1,icon:"🧰",name:"战地维修",desc:"每波开始修复 2×Lv 点装甲",max:2,
+  //  自身系
+  {id:"dmg",type:"tank",rar:1,icon:"flame",name:"钨芯穿甲弹",desc:"炮弹伤害 +40%",max:6,apply:s=>s.dmg*=1.4},
+  {id:"rate",type:"tank",rar:1,icon:"speed",name:"自动装填机",desc:"射速 +25%",max:6,apply:s=>s.fireRate*=1.25},
+  {id:"speed",type:"tank",rar:1,icon:"tank",name:"涡轮增压引擎",desc:"移动速度 +18%",max:5,apply:s=>s.moveSpeed*=1.18},
+  {id:"bspd",type:"tank",rar:1,icon:"speed",name:"电磁加速轨道",desc:"炮弹飞行速度 +30%",max:4,apply:s=>s.bulletSpeed*=1.3},
+  {id:"lucky",type:"tank",rar:1,icon:"star",name:"幸运星",desc:"道具掉落率 +25%，掉落更多",max:3,apply:s=>s.luckyLv+=1},
+  {id:"regen",type:"tank",rar:1,icon:"repair",name:"战地维修",desc:"每波开始修复 2×Lv 点装甲",max:2,
     apply:s=>{s.regenLv++;if(player){player.hp=Math.min(s.armorMax,player.hp+2);updateHpUI();}}},
-  {id:"spare",type:"tank",rar:1,icon:"🛠",name:"备用履带",desc:"额外 +1 条生命",max:2,
+  {id:"spare",type:"tank",rar:1,icon:"repair",name:"备用履带",desc:"额外 +1 条生命",max:2,
     apply:s=>{game.lives++;updateHpUI();}},
-  {id:"magnet",type:"tank",rar:1,icon:"🧲",name:"补给磁铁",desc:"自动吸取附近道具",max:1,apply:s=>s.magnet=true},
-  {id:"pierce",type:"tank",rar:2,icon:"🎯",name:"超空化弹芯",desc:"炮弹穿透 +1 个目标",max:3,apply:s=>s.pierce+=1},
-  {id:"armor",type:"tank",rar:2,icon:"🛡",name:"复合装甲",desc:"最大装甲 +2 并完全修复",max:4,
+  {id:"magnet",type:"tank",rar:1,icon:"coin",name:"补给磁铁",desc:"自动吸取附近道具",max:1,apply:s=>s.magnet=true},
+  {id:"pierce",type:"tank",rar:2,icon:"attack",name:"超空化弹芯",desc:"炮弹穿透 +1 个目标",max:3,apply:s=>s.pierce+=1},
+  {id:"armor",type:"tank",rar:2,icon:"shield",name:"复合装甲",desc:"最大装甲 +2 并完全修复",max:4,
     apply:s=>{s.armorMax+=2;if(player){player.hp=s.armorMax;player.maxHp=s.armorMax;}}},
-  {id:"blast",type:"tank",rar:2,icon:"💥",name:"高爆弹头",desc:"炮弹命中产生范围爆炸",max:3,apply:s=>s.blastRadius+=1.6},
-  {id:"crit",type:"tank",rar:2,icon:"🔍",name:"弱点分析",desc:"18% 几率造成双倍伤害（可叠加）",max:3,
+  {id:"blast",type:"tank",rar:2,icon:"blast",name:"高爆弹头",desc:"炮弹命中产生范围爆炸",max:3,apply:s=>s.blastRadius+=1.6},
+  {id:"crit",type:"tank",rar:2,icon:"research",name:"弱点分析",desc:"18% 几率造成双倍伤害（可叠加）",max:3,
     apply:s=>{s.critChance=Math.min(.9,s.critChance+.18);}},
-  {id:"multi",type:"tank",rar:3,icon:"🔱",name:"双联炮塔",desc:"每次开火 +1 发平行炮弹",max:3,apply:s=>s.multishot+=1},
-  {id:"vamp",type:"tank",rar:3,icon:"🩸",name:"收割装置",desc:"击杀敌人修复 1 点装甲",max:2,apply:s=>s.vampLv++},
-  {id:"ricochet",type:"tank",rar:2,icon:"🔄",name:"弹射装甲弹",desc:"炮弹碰钢墙/楼房反弹一次（可叠两次）",max:2,apply:s=>s.bounce+=1},
-  {id:"sprint",type:"tank",rar:1,icon:"🏃",name:"猎杀冲锋",desc:"击杀敌人后 3 秒内移速 +35%",max:2,
+  {id:"multi",type:"tank",rar:3,icon:"turret",name:"双联炮塔",desc:"每次开火 +1 发平行炮弹",max:3,apply:s=>s.multishot+=1},
+  {id:"vamp",type:"tank",rar:3,icon:"health",name:"收割装置",desc:"击杀敌人修复 1 点装甲",max:2,apply:s=>s.vampLv++},
+  {id:"ricochet",type:"tank",rar:2,icon:"patrol",name:"弹射装甲弹",desc:"炮弹碰钢墙/楼房反弹一次（可叠两次）",max:2,apply:s=>s.bounce+=1},
+  {id:"sprint",type:"tank",rar:1,icon:"move",name:"猎杀冲锋",desc:"击杀敌人后 3 秒内移速 +35%",max:2,
     apply:s=>{s.sprintLv++;if(s.sprintLv===2)s.sprintDur=4500;}},
-  {id:"pshield",type:"tank",rar:2,icon:"💠",name:"单兵力场",desc:"每波获得护盾，抵挡 2×Lv 次攻击",max:3,
+  {id:"pshield",type:"tank",rar:2,icon:"shield",name:"单兵力场",desc:"每波获得护盾，抵挡 2×Lv 次攻击",max:3,
     apply:s=>{s.playerShieldLv++;game.playerShieldHP=s.playerShieldLv*2;}},
-  // 🏰 基地系
-  {id:"baseRepair",type:"base",rar:1,icon:"🔧",name:"工程抢修班",desc:"每波开始重建基地围墙（Lv2+ 加筑外圈）",max:3,
+  //  基地系
+  {id:"baseRepair",type:"base",rar:1,icon:"repair",name:"工程抢修班",desc:"每波开始重建基地围墙（Lv2+ 加筑外圈）",max:3,
     apply:s=>{s.baseRepairLv++;genMap.applyShell&&genMap.applyShell();}},
-  {id:"airstrike",type:"base",rar:2,icon:"✈",name:"空袭协同",desc:"每波开始获得 1 次空投轰炸充能",max:3,
+  {id:"airstrike",type:"base",rar:2,icon:"airstrike",name:"空袭协同",desc:"每波开始获得 1 次空投轰炸充能",max:3,
     apply:s=>{s.airstrikeLv++;game.bombs+=1;}},
-  {id:"baseWall",type:"base",rar:2,icon:"🧱",name:"基地工事加固",desc:"基地围墙换装钢制掩体（永久）",max:2,
+  {id:"baseWall",type:"base",rar:2,icon:"wall",name:"基地工事加固",desc:"基地围墙换装钢制掩体（永久）",max:2,
     apply:s=>{s.baseWallLv++;genMap.applyShell&&genMap.applyShell();}},
-  {id:"autoTurret",type:"base",rar:2,icon:"🗼",name:"基地防御炮台",desc:"鹰旗自动炮台反击周围敌人，射速随级提升",max:4,
+  {id:"autoTurret",type:"base",rar:2,icon:"turret",name:"基地防御炮台",desc:"鹰旗自动炮台反击周围敌人，射速随级提升",max:4,
     apply:s=>{s.autoTurretLv++;if(autoTurretObj)autoTurretObj.visible=true;}},
-  {id:"baseShield",type:"base",rar:2,icon:"🔵",name:"护盾发生器",desc:"基地获得能量护盾，每波补满，吸收敌方炮火",max:3,
+  {id:"baseShield",type:"base",rar:2,icon:"shield",name:"护盾发生器",desc:"基地获得能量护盾，每波补满，吸收敌方炮火",max:3,
     apply:s=>{s.baseShieldMax+=2;game.baseShieldHP=s.baseShieldMax;}},
-  {id:"overload",type:"base",rar:3,icon:"☢",name:"超载协议",desc:"防御炮台射程 +40%、伤害 +1、射速大幅提升",max:2,apply:s=>s.overloadLv++},
-  {id:"emp",type:"base",rar:3,icon:"📡",name:"EMP 脉冲塔",desc:"基地每 9 秒释放脉冲：眩晕并伤害周围敌人",max:2,
+  {id:"overload",type:"base",rar:3,icon:"blast",name:"超载协议",desc:"防御炮台射程 +40%、伤害 +1、射速大幅提升",max:2,apply:s=>s.overloadLv++},
+  {id:"emp",type:"base",rar:3,icon:"research",name:"EMP 脉冲塔",desc:"基地每 9 秒释放脉冲：眩晕并伤害周围敌人",max:2,
     apply:s=>{s.empLv++;game._empTimer=Math.min(game._empTimer,2);}},
-  {id:"mortar",type:"base",rar:3,icon:"💣",name:"迫击炮阵地",desc:"基地定期炮击敌群，造成范围伤害",max:2,
+  {id:"mortar",type:"base",rar:3,icon:"blast",name:"迫击炮阵地",desc:"基地定期炮击敌群，造成范围伤害",max:2,
     apply:s=>{s.mortarLv++;if(s.mortarLv===1)game._mortarTimer=4;}},
-  {id:"evolve",type:"base",rar:3,icon:"🧬",name:"连锁进化",desc:"每波开始随机强化一张已拥有卡 +1 级",max:2,apply:s=>s.evolveLv+=1},
-  {id:"income",type:"base",rar:1,icon:"💰",name:"战利品回收",desc:"击杀金币收益 +30%",max:3,apply:s=>s.incomeLv+=1},
-  {id:"builder",type:"base",rar:2,icon:"🏗",name:"工程承包商",desc:"构筑商店全部价格 -15%",max:2,apply:s=>s.builderLv+=1},
-  {id:"netmaster",type:"base",rar:2,icon:"🕸",name:"火力网络",desc:"你布置的炮台伤害 +40%、射速 +25%",max:3,apply:s=>s.netmasterLv+=1},
+  {id:"evolve",type:"base",rar:3,icon:"research",name:"连锁进化",desc:"每波开始随机强化一张已拥有卡 +1 级",max:2,apply:s=>s.evolveLv+=1},
+  {id:"income",type:"base",rar:1,icon:"coin",name:"战利品回收",desc:"击杀金币收益 +30%",max:3,apply:s=>s.incomeLv+=1},
+  {id:"builder",type:"base",rar:2,icon:"build",name:"工程承包商",desc:"构筑商店全部价格 -15%",max:2,apply:s=>s.builderLv+=1},
+  {id:"netmaster",type:"base",rar:2,icon:"laser",name:"火力网络",desc:"你布置的炮台伤害 +40%、射速 +25%",max:3,apply:s=>s.netmasterLv+=1},
 ];
 
 /* ---------------- 玩家 ---------------- */
 function spawnPlayer(){
   if(player)scene.remove(player.group);
   const group=makeTank(0x3f8f46,0x57b564);
-  /* ★ 生存模式：出生在高台内部（主楼正前方），便于上台布防；其余模式沿用原地 */
+  /*  生存模式：出生在高台内部（主楼正前方），便于上台布防；其余模式沿用原地 */
   const c=ACTIVE_MODE.key==="survival"
     ?cellCenter((ACTIVE_MODE.base&&ACTIVE_MODE.base.col)||6,((ACTIVE_MODE.base&&ACTIVE_MODE.base.row)||41)-1)
     :cellCenter(Math.floor(GRID/2)-2,GRID-2);
@@ -2567,7 +2580,7 @@ function spawnPlayer(){
   const pSpd=11*(1+(TECH_TREE.tank.effect.speedPct||0.025)*tankLv);
   player={group,hp:pHp,maxHp:pHp,speed:pSpd,cd:0,heading:Math.PI,aim:Math.PI,
     invulnUntil:performance.now()+2500,alive:true,radius:1.5,
-    /* ★ P3-9 WC3 指令层 */
+    /*  P3-9 WC3 指令层 */
     moveTarget:null,attackTarget:null,attackMove:false};
   updateHpUI();
 }
@@ -2585,7 +2598,7 @@ const ENEMY_TYPES={
 };
 const BOSS_TYPE={color:0x1f1f26,turret:0xffb02e,hp:40,speed:SurvivalSystem.ENEMY_MOVEMENT.boss.base,fireCd:1.1,dmg:2,scale:1.7,score:2000};
 
-/* ★ P5 敌人类型 → Kenney graveyard-kit 怪物模型映射（用户拍板：敌人=怪物，丧尸尸潮风）
+/*  P5 敌人类型 → Kenney graveyard-kit 怪物模型映射（用户拍板：敌人=怪物，丧尸尸潮风）
    动画库与 blocky-characters 同构（idle/walk/sprint/die/attack-melee-*），直接复用动画状态机。
    normal=丧尸（主力，尸潮感）/ fast=幽灵（飘速快）/ heavy=吸血鬼（壮硕精英）
    sniper=守墓人（远程）/ boss=骷髅王（大体型） */
@@ -2601,30 +2614,24 @@ const ENEMY_CHAR_MAP={
 const SURVIVAL_ZOMBIE_VARIANTS=Object.freeze([
   {id:"survivors-zombie-a",texture:"zombie-a",heightScale:.96,pack:"survivors",tint:0xd7dfd8},
   {id:"survivors-zombie-c",texture:"zombie-c",heightScale:1.04,pack:"survivors",tint:0xc7d1c8},
-  {id:"survivors-female",texture:"survivor-female-a",heightScale:.94,pack:"survivors",tint:0x87988b},
-  {id:"survivors-male",texture:"survivor-male-b",heightScale:1.06,pack:"survivors",tint:0x75867a},
   {id:"retro-zombie-female",texture:"zombie-female-a",heightScale:.95,pack:"retro",tint:0xcbd5cc},
   {id:"retro-zombie-male",texture:"zombie-male-a",heightScale:1.03,pack:"retro",tint:0xb8c5ba},
-  {id:"retro-human-female",texture:"human-female-a",heightScale:.92,pack:"retro",tint:0x829287},
-  {id:"retro-human-male",texture:"human-male-a",heightScale:1.08,pack:"retro",tint:0x708177},
-  {id:"protagonists-criminal",texture:"criminal-male-a",heightScale:1.08,pack:"protagonists",tint:0x748079},
-  {id:"protagonists-cyborg",texture:"cyborg-female-a",heightScale:1.01,pack:"protagonists",tint:0x778b86},
-  {id:"protagonists-skater-female",texture:"skater-female-a",heightScale:.94,pack:"protagonists",tint:0x849087},
-  {id:"protagonists-skater-male",texture:"skater-male-a",heightScale:1.05,pack:"protagonists",tint:0x78847c},
 ].map((variant)=>Object.freeze({...variant,model:"survivor-zombie",idle:"survivor-idle",walk:"survivor-run"})));
 const SURVIVAL_MONSTER_TINTS=Object.freeze({
   heavy:0x56756f,lifesteal:0x416b72,siege:0x4c666d,elite:0x5e7d76,sniper:0x4f7075,
 });
 const SURVIVAL_ZOMBIE_TINT=0x607d73;
 const ENEMY_CHAR_TARGET_HEIGHT={
-  normal:3.2,
-  fast:2.85,
-  heavy:3.7,
-  sniper:3.3,
-  ghost:2.9,lifesteal:3.55,siege:3.9,elite:3.7,
-  corpse_king:4.8,swift_lord:4.5,corrupted_colossus:5.3,ghost_queen:4.7,vampire_lord:5,doom_keeper:5.5,
+  /* 坦克车体高度约 2.5；普通人形僵尸按人类比例控制在坦克的约三分之一，
+     不再用原先 3.2 的巨人尺寸堆进窄路。 */
+  normal:1.2,
+  fast:1.08,
+  heavy:1.35,
+  sniper:1.2,
+  ghost:1.1,lifesteal:1.3,siege:1.45,elite:1.4,
+  corpse_king:1.9,swift_lord:1.8,corrupted_colossus:2.1,ghost_queen:1.85,vampire_lord:2,doom_keeper:2.2,
 };
-/* ★ 角色动画名（Kenney blocky-characters 包：实际 GLB 字段为小写 idle/walk/die/sprint） */
+/*  角色动画名（Kenney blocky-characters 包：实际 GLB 字段为小写 idle/walk/die/sprint） */
 const _ANIM_IDLE="idle",_ANIM_WALK="walk",_ANIM_DEATH="die",_ANIM_SPRINT="sprint";
 const _IN_PLACE_ANIMS={};
 function _findAnim(anims,name){
@@ -2681,6 +2688,7 @@ function _variantAnimations(variant){
     const selected=source.find((clip)=>String(clip&&clip.name||"").toLowerCase().includes(expected))
       ||source.reduce((longest,clip)=>!longest||clip.duration>longest.duration?clip:longest,null);
     const copy=selected.clone();copy.name=canonicalName;
+    /* 生存模式双臂由固定前举姿态接管，Walk 只保留腿部动作，避免每次 mixer 更新把手臂放下。 */
     copy.tracks=copy.tracks.filter(track=>!/(^|[.:])root\.position$/i.test(track.name)
       &&!/(left|right)?(arm|forearm|hand|chest|spine)/i.test(track.name));
     clips.push(copy);
@@ -2708,10 +2716,13 @@ function _buildEnemyGroup(typeKey,isBoss,t){
     inst.traverse(o=>{if(o.isMesh){
       o.castShadow=!!isBoss;o.receiveShadow=false;o.frustumCulled=true;
       if(o.material&&(variantTexture||SURVIVAL_MONSTER_TINTS[typeKey]||survivalCharacter)){
+        const meshName=String(o.name||"").toLowerCase();
+        const zombieSkinMesh=survivalCharacter&&(meshName==="head"||meshName.includes("arm"));
         const applyMaterial=material=>{const copy=material.clone();if(variantTexture)copy.map=variantTexture;
-          const zombieTint=isBoss?0x6a3135:(SURVIVAL_MONSTER_TINTS[typeKey]||SURVIVAL_ZOMBIE_TINT);
-          /* 保留 Kenney 原始贴图（衣物、裤子、头发的细节），仅用深青绿色乘色
-             改变整体肤色氛围；禁止清空 map，否则所有角色会退化成无纹理人偶。 */
+          const zombieTint=isBoss?0x4b3032:0x294b43;
+          /* 头部与手臂包含肤色像素，去掉共享 colormap 后才能真正压住人类肤色；
+             躯干、腿部继续保留贴图，确保衣物、裤子和头发细节不丢失。 */
+          if(zombieSkinMesh)copy.map=null;
           copy.color&&copy.color.setHex(zombieTint);
           if(isBoss&&copy.emissive){copy.emissive.setHex(0x3a0808);copy.emissiveIntensity=.28;}
           copy.roughness=.92;copy.metalness=0;
@@ -2725,7 +2736,7 @@ function _buildEnemyGroup(typeKey,isBoss,t){
     inst.scale.setScalar(1);inst.updateMatrixWorld(true);
     const naturalBox=new THREE.Box3().setFromObject(inst);
     const naturalHeight=Math.max(.001,naturalBox.max.y-naturalBox.min.y);
-    const targetHeight=(ENEMY_CHAR_TARGET_HEIGHT[typeKey]||3.2)*(variant?.heightScale||1)*(isBoss?2.4:1);
+    const targetHeight=(ENEMY_CHAR_TARGET_HEIGHT[typeKey]||3.2)*(variant?.heightScale||1)*(isBoss?(survivalCharacter?5.2:2.4):1);
     inst.scale.set(targetHeight/naturalHeight*.9,targetHeight/naturalHeight,targetHeight/naturalHeight*.9);
     const poseBones={};
     inst.traverse((object)=>{
@@ -2769,9 +2780,9 @@ function _buildEnemyGroup(typeKey,isBoss,t){
       const key=String(clip&&clip.name||"").toLowerCase();
       if(key.includes("attack")&&!actions[key])actions[key]=mixer.clipAction(clip);
     }
-    worldRoot.userData.giantZombieScale=isBoss?2.4:1;
+    worldRoot.userData.giantZombieScale=isBoss?(survivalCharacter?5.2:2.4):1;
     return {group:worldRoot,visualRoot,animationRoot:inst,mixer,fallback:false,
-      variantId:variant&&variant.id,variantPack:variant&&variant.pack,actions,poseBones,baseBoneRotations};
+      lodHeight:targetHeight,variantId:variant&&variant.id,variantPack:variant&&variant.pack,actions,poseBones,baseBoneRotations};
   }catch(err){
     console.warn("[spawnEnemy] character clone failed, fallback to makeTank:",err);
     return {group:makeTank(t.color,t.turret,t.scale),mixer:null,fallback:true,actions:{}};
@@ -2787,19 +2798,20 @@ function _spreadEnemySpawn(origin,index){
   }
   return {x:origin.x+(Math.random()*2-1)*.5,z:origin.z+(Math.random()*2-1)*.5};
 }
-function spawnEnemy(typeKey,isBoss=false){
-  const waveSpec=SurvivalSystem.waveProfile(Math.max(1,game.wave));
-  const bossSpec=isBoss?SurvivalSystem.bossProfile(Math.max(1,game.wave)):null;
+function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
+  const waveSpec=SurvivalSystem.waveProfile(Math.max(1,sourceWave));
+  const bossSpec=isBoss?SurvivalSystem.bossProfile(Math.max(1,sourceWave)):null;
   if(bossSpec)typeKey=bossSpec.id;
-  const diff=(ACTIVE_MODE.difficultyScale||(w=>1))(game.wave);
+  const diff=(ACTIVE_MODE.difficultyScale||(w=>1))(sourceWave);
   const damageDiff=ACTIVE_MODE.key==="survival"?waveSpec.damageMultiplier:diff;
   let t=isBoss?Object.assign({},BOSS_TYPE,{color:bossSpec?bossSpec.color:BOSS_TYPE.color,
-                hp:(BOSS_TYPE.hp+Math.max(0,game.wave-5)*4)*(bossSpec?bossSpec.hpMultiplier/4:1)})
+                hp:(BOSS_TYPE.hp+Math.max(0,sourceWave-5)*4)*(bossSpec?bossSpec.hpMultiplier/4:1)})
               :ENEMY_TYPES[typeKey];
   const movementType=isBoss?"boss":(SurvivalSystem.ENEMY_MOVEMENT[typeKey]?typeKey:"normal");
-  t=Object.assign({},t,{hp:Math.ceil(t.hp*diff),dmg:t.dmg*damageDiff,
+  const selectedDifficulty=ACTIVE_MODE.key==="survival"?Math.max(.1,Number(game.difficultyMultiplier)||1):1;
+  t=Object.assign({},t,{hp:Math.ceil(t.hp*diff*selectedDifficulty),dmg:t.dmg*damageDiff*selectedDifficulty,
     speed:SurvivalSystem.enemyMoveSpeed(movementType,waveSpec.speedMultiplier)});
-  /* ★ 角色模型克隆（含 AnimationMixer 启动）；模型未就绪时回退 makeTank() */
+  /*  角色模型克隆（含 AnimationMixer 启动）；模型未就绪时回退 makeTank() */
   const built=_buildEnemyGroup(typeKey,isBoss,t);
   const group=built.group;
   const mixer=built.mixer;
@@ -2814,16 +2826,16 @@ function spawnEnemy(typeKey,isBoss=false){
   }
   const spread=_spreadEnemySpawn(c,enemies.length);
   group.position.set(spread.x,heightAt(spread.x,spread.z),spread.z);
-  /* ★ 巨型丧尸：第4波起按波次概率放大，终焉波大量出现。 */
+  /*  巨型丧尸：第4波起按波次概率放大，终焉波大量出现。 */
   let giant=false,elite=false,frenzy=false;
   let bodyScale=1;
   if(!isBoss&&Math.random()<(waveSpec.giantChance||0)){
     giant=true;
-    bodyScale=game.wave>=10?2.05:1.85;
+    bodyScale=sourceWave>=10?2.05:1.85;
     t=Object.assign({},t,{hp:Math.ceil(t.hp*2.35),dmg:t.dmg*1.28,score:t.score*2});
     group.scale.multiplyScalar(bodyScale);
   }
-  if(!isBoss&&!giant&&game.wave>=3&&Math.random()<.12){
+  if(!isBoss&&!giant&&sourceWave>=3&&Math.random()<.12){
     elite=true;
     t=Object.assign({},t,{hp:Math.ceil(t.hp*2.5),
       speed:Math.min(SurvivalSystem.ENEMY_MOVEMENT[movementType].max,t.speed*.92),score:t.score*3});
@@ -2831,21 +2843,27 @@ function spawnEnemy(typeKey,isBoss=false){
     const gold=new THREE.Color(0xffd75e);
     group.traverse(o=>{if(o.isMesh&&o.material&&o.material.color){
       o.material=o.material.clone();o.material.color.lerp(gold,.45);}});
-    /* ★ 狂暴词缀：第6波起精英有概率狂暴（移速大增、红纹） */
-    if(game.wave>=6&&Math.random()<.45){
+    /*  狂暴词缀：第6波起精英有概率狂暴（移速大增、红纹） */
+    if(sourceWave>=6&&Math.random()<.45){
       frenzy=true;t=Object.assign(t,{speed:Math.min(SurvivalSystem.ENEMY_MOVEMENT[movementType].max,t.speed*1.32)});
       group.traverse(o=>{if(o.isMesh&&o.material&&o.material.color){
         o.material.color.lerp(new THREE.Color(0xff4444),.4);}});
     }
-    if(!game._eliteToast){game._eliteToast=true;toast("⚠ 检测到精英敌军！");}
+    if(!game._eliteToast){game._eliteToast=true;toast(" 检测到精英敌军！");}
     bodyScale*=1.22;
   }
+  /* 同类尸潮保留体型区间差异，避免刷出整齐的复制人队列。 */
+  if(!isBoss){
+    const crowdSize=.88+Math.random()*.24;
+    group.scale.multiplyScalar(crowdSize);bodyScale*=crowdSize;
+  }
   scene.add(group);
-  /* ★ 角色模型需要面向镜头（默认朝 +Z），转向 +X 朝向战场内侧 */
+  /*  角色模型需要面向镜头（默认朝 +Z），转向 +X 朝向战场内侧 */
   group.rotation.y=-Math.PI/2;
-  const visualRadius=1.5*t.scale*bodyScale;
-  const e={group,visualRoot:built.visualRoot||group,animationRoot:built.animationRoot||group,
-    hordeId:++_enemySerial,variantId:built.variantId||null,variantPack:built.variantPack||null,
+  /* 人形碰撞按肩宽估算，不能再按坦克半径 1.5 计算。 */
+  const visualRadius=.65*t.scale*bodyScale;
+  const e={sourceWave,group,visualRoot:built.visualRoot||group,animationRoot:built.animationRoot||group,
+    _lodHeight:(built.lodHeight||3.2)*bodyScale,hordeId:++_enemySerial,variantId:built.variantId||null,variantPack:built.variantPack||null,
     type:typeKey,boss:isBoss,bossId:bossSpec&&bossSpec.id,bossName:bossSpec&&bossSpec.name,bossMechanic:bossSpec&&bossSpec.mechanic,
     elite,giant,frenzy,hp:t.hp,maxHp:t.hp,speed:t.speed,maxSpeed:SurvivalSystem.ENEMY_MOVEMENT[movementType].max,
     armor:Math.max(t.armor||0,waveSpec.armor||0),
@@ -2855,7 +2873,7 @@ function spawnEnemy(typeKey,isBoss=false){
     cd:1+Math.random()*1.5,thinkTimer:0,dir:new THREE.Vector3(0,0,1),
     score:t.score,alive:true,spawnFlash:performance.now()+(isBoss||elite?700:0),beam:null,objectiveKind:"base",objectiveCell:null,
     slowMult:1,slowUntil:0,velocity:new THREE.Vector3(),
-    mixer,characterModel:!built.fallback,currentAnim:_ANIM_IDLE,actions:built.actions||{},poseBones:built.poseBones||{},baseBoneRotations:built.baseBoneRotations||{},attackPose:0,
+    mixer,characterModel:!built.fallback,currentAnim:_ANIM_IDLE,actions:built.actions||{},poseBones:built.poseBones||{},baseBoneRotations:built.baseBoneRotations||{},attackPose:0,poseDirty:true,
     dying:false,dyingT:0,specialCd:isBoss?7:0,hasteUntil:0,phaseUntil:0};
   if(isBoss||elite){
     const beam=new THREE.Mesh(new THREE.CylinderGeometry(e.radius*.9,e.radius*.9,14,12,1,true),
@@ -2864,11 +2882,31 @@ function spawnEnemy(typeKey,isBoss=false){
     beam.position.set(group.position.x,7,group.position.z);
     scene.add(beam);e.beam=beam;
   }else e.beam=null;
+  applyEnemyHealthPressure(e);
   enemies.push(e);
   game.aliveThisWave++;
 }
 
 /* 释放仅由运行时临时创建、且不与资产源共享的对象（弹体、出生光柱等）。 */
+function clearEnemyTargetReferences(enemy){
+  for(const turret of builtTurrets)if(turret.lockTarget===enemy)turret.lockTarget=null;
+  for(const unit of friendlyUnits)if(unit.attackTarget===enemy)unit.attackTarget=null;
+  if(player?.attackTarget===enemy)player.attackTarget=null;
+}
+function releaseEnemyResources(enemy){
+  if(!enemy||enemy._resourcesReleased)return;
+  enemy.alive=false;clearEnemyTargetReferences(enemy);
+  enemy._resourcesReleased=true;
+  if(enemy.mixer){enemy.mixer.stopAllAction();enemy.mixer.uncacheRoot(enemy.animationRoot||enemy.group);}
+  const skeletons=new Set(),materials=new Set();
+  enemy.group.traverse(object=>{
+    if(object.skeleton&&!skeletons.has(object.skeleton)){skeletons.add(object.skeleton);object.skeleton.dispose();}
+    if(object.geometry&&!enemy.characterModel&&!_sharedGeoms.has(object.geometry))object.geometry.dispose();
+    for(const material of (Array.isArray(object.material)?object.material:[object.material])){
+      if(material&&!_sharedMats.has(material)&&!materials.has(material)){materials.add(material);material.dispose();}
+    }
+  });
+}
 function disposeTransientObject3D(root){
   if(!root)return;
   root.traverse((object)=>{
@@ -2903,14 +2941,14 @@ function makeProjectileMesh(type,dirVec){
 function shoot(owner,dirVec,friendly=false,opts={}){
   const isPlayer=owner==="player";
   const speed=isPlayer?34*game.stats.bulletSpeed:(friendly?TURRET_PROJECTILE_SPEED:22);
-  const dmg=isPlayer?game.stats.dmg*(1+(TECH_TREE.tank.effect.damagePct||0.07)*researchPowerLevel(game.tech.tank||0)):owner.dmg;
+  const dmg=isPlayer?game.stats.dmg*(1+(TECH_TREE.tank.effect.damagePct||0.07)*researchPowerLevel(game.tech.tank||0)):owner.dmg*(friendly?1:survivalPressureMultiplier());
   const projectileType=opts.projectileType||(isPlayer?"tank":(friendly?"tank":"cannon"));
   const projectileSpec=SurvivalSystem.PROJECTILE_VISUALS[projectileType]||SurvivalSystem.PROJECTILE_VISUALS.tank;
   const color=projectileSpec.color;
   const grp=isPlayer?player.group:owner.group;
   const origin=opts.origin?new THREE.Vector3().copy(opts.origin):new THREE.Vector3().copy(grp.position);
   if(!opts.origin)origin.y+=1.7;
-  /* ★ 防穿墙：出膛点沿炮管逐步外推，遇墙截停
+  /*  防穿墙：出膛点沿炮管逐步外推，遇墙截停
      （P4-3：塔弹 opts.thruWall=true → 跳过此检查，塔可隔墙/隔崖/隔自家建筑开火） */
   const testSolid=(pt)=>{
     const c=cellOf(pt.x,pt.z);
@@ -2935,7 +2973,7 @@ function shoot(owner,dirVec,friendly=false,opts={}){
     const m=makeProjectileMesh(projectileType,dirVec);
     m.position.copy(p);
     scene.add(m);
-    bullets.push({mesh:m,vel:dirVec.clone().multiplyScalar(speed),flightY:p.y,dmg,source:opts.source||null,
+    bullets.push({mesh:m,vel:opts.velocity?opts.velocity.clone():dirVec.clone().multiplyScalar(speed),gravity:opts.gravity||0,burnDamage:opts.burnDamage||0,burnDuration:opts.burnDuration||0,flightY:!opts.gravity&&Math.abs(dirVec.y)<.001?p.y:null,dmg,source:opts.source||null,
       owner:(isPlayer||friendly)?"player":"enemy",life:3,projectileType,trail:projectileSpec.trail,
       thruWall:!!opts.thruWall,
       pierceLeft:isPlayer?game.stats.pierce:(friendly?(opts.pierce||0):0),
@@ -2947,24 +2985,22 @@ function shoot(owner,dirVec,friendly=false,opts={}){
   }
   if(isPlayer||friendly){
     const caliber=projectileType==="machinegun"?"small":projectileType==="antitank"||projectileType==="cannon"?"large":owner&&owner.type==="heavy"?"large":"medium";
-    sfx.shoot(caliber);
+    if(projectileType==='incendiary'||projectileType==='grenade')playSpecialWeapon(projectileType);else sfx.shoot(caliber);
   }else sfx.eshoot();
 }
 
 /* ---------------- 粒子：单 Points 合批，避免每粒子一个 Mesh/材质 ---------------- */
 const PARTICLE_LIMIT=1400;
-const particleGeometry=new THREE.BufferGeometry();
-const particlePositions=new Float32Array(PARTICLE_LIMIT*3),particleColors=new Float32Array(PARTICLE_LIMIT*3);
-particleGeometry.setAttribute("position",new THREE.BufferAttribute(particlePositions,3));
-particleGeometry.setAttribute("color",new THREE.BufferAttribute(particleColors,3));
-particleGeometry.setDrawRange(0,0);
-const particleBatch=new THREE.Points(particleGeometry,new THREE.PointsMaterial({size:.42,vertexColors:true,transparent:true,opacity:.92,depthWrite:false,sizeAttenuation:true}));
-particleBatch.frustumCulled=false;scene.add(particleBatch);
+const particleFx=BattleEffects.createBatch(PARTICLE_LIMIT),particleBatch=particleFx.mesh,particleGeometry=particleBatch.geometry;
+const particlePool=[];
+scene.add(particleBatch);
 function spawnParticles(pos,color,count,power,size=1){
+  if(window.Settings&&!Settings.isParticles())return;
   for(let i=0;i<count;i++){
-    if(particles.length>=PARTICLE_LIMIT)particles.shift();
-    particles.push({position:pos.clone(),color:new THREE.Color(color),size,life:.5+Math.random()*.4,
-      vel:new THREE.Vector3((Math.random()-.5)*power,(Math.random()*.8+.2)*power,(Math.random()-.5)*power)});
+    if(particles.length>=PARTICLE_LIMIT)break;
+    const p=particlePool.pop()||{position:new THREE.Vector3(),color:new THREE.Color(),vel:new THREE.Vector3()};
+    p.position.copy(pos);p.color.setHex(color);p.size=size;p.life=p.total=.5+Math.random()*.4;
+    p.vel.set((Math.random()-.5)*power,(Math.random()*.8+.2)*power,(Math.random()-.5)*power);particles.push(p);
   }
 }
 function explode(pos,big=false){
@@ -2990,8 +3026,10 @@ function corpseSharedAssets(){
   _corpseShared={head,limb,drop,splat,flesh,bloods};
   return _corpseShared;
 }
-function spawnCorpseRemains(pos,big=false){
+function spawnCorpseRemains(pos,big=false,scale=1){
   const shared=corpseSharedAssets(),root=new THREE.Group();
+  const denseHorde=enemies.length>120;
+  root.scale.setScalar(Math.max(.25,Math.min(1.2,Number(scale)||1)));
   const infection=Math.random(),bloodMat=shared.bloods[Math.min(7,Math.floor(infection*8))];
   const splat=(radius,opacity=.78,offsetX=0,offsetZ=0)=>{
     const mat=bloodMat.clone();mat.opacity=opacity;
@@ -3002,20 +3040,14 @@ function spawnCorpseRemains(pos,big=false){
     mesh.renderOrder=1;mesh.raycast=()=>{};mesh.userData.blood=true;root.add(mesh);
   };
   splat(big?1.65:.82,.78);
-  for(let i=0;i<(big?7:4);i++){
+  for(let i=0;i<(big?7:(denseHorde?1:4));i++){
     const a=Math.random()*Math.PI*2,d=(big?1.2:.7)+Math.random()*(big?2.8:1.6);
     splat(big?.34:.2,.52,Math.cos(a)*d,Math.sin(a)*d);
   }
-  const pieces=[];
-  for(let i=0;i<(big?10:6);i++){
-    const drop=new THREE.Mesh(shared.drop,bloodMat);
-    drop.position.set(0,.45,0);drop.castShadow=false;drop.raycast=()=>{};drop.userData.blood=true;root.add(drop);
-    pieces.push({mesh:drop,velocity:new THREE.Vector3((Math.random()-.5)*(big?6:4),2+Math.random()*(big?5:3),(Math.random()-.5)*(big?6:4)),spin:new THREE.Vector3(0,0,0),blood:true});
-  }
-  root.position.copy(pos);scene.add(root);corpseDecals.push({root,pieces,life:Infinity,settle:1.15});
-  while(corpseDecals.length>600){const old=corpseDecals.shift();if(old){scene.remove(old.root);disposeTransientObject3D(old.root);}}
+  root.position.copy(pos);scene.add(root);corpseDecals.push({root,pieces:[],life:Infinity,settle:0});
+  while(corpseDecals.length>180){const old=corpseDecals.shift();if(old){scene.remove(old.root);disposeTransientObject3D(old.root);}}
 }
-/* ★ 电磁塔连锁闪电视觉：两点间一次性闪光线段，随粒子循环衰减 */
+/*  电磁塔连锁闪电视觉：两点间一次性闪光线段，随粒子循环衰减 */
 function lightningBeam(from,to,color){
   const geo=new THREE.BufferGeometry().setFromPoints([from,to]);
   const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.9}));
@@ -3046,7 +3078,7 @@ function applyPowerup(key){
   if(key==="heal"){player.hp=Math.min(player.maxHp,player.hp+2);toast("装甲修复 +2");}
   else if(key==="shield"){game.buffs.shieldUntil=performance.now()+6000;toast("能量护盾 6s");}
   else if(key==="rapid"){game.buffs.rapidUntil=performance.now()+8000;toast("极速装填 8s");}
-  else if(key==="bomb"){game.bombs++;toast("💣 空袭轰炸 ×1（按 P 释放）");}
+  else if(key==="bomb"){game.bombs++;toast(" 空袭轰炸 ×1（按 P 释放）");}
   updateBuffUI();updateHpUI();
 }
 
@@ -3056,7 +3088,7 @@ function solidForTank(t,isBullet){
   if(isBullet&&t===T_WATER)return false;
   return true;   // BRICK STEEL WATER BUILDING BASE
 }
-/* ★ P0-3：攀爬容差统一常量
+/*  P0-3：攀爬容差统一常量
    原缺陷：流场 BFS 用「格心高差 > 1.2 视为崖」，移动碰撞用「五点采样高差 > 0.9 即阻挡」，
    两套判据不一致 → 流场规划出物理走不通的坡道路线，敌人对着空气墙撞。
    修复 1：坡道延长为 4 格（每格 0.55 < 0.9），沿轴攀爬可行。
@@ -3073,18 +3105,39 @@ function solidForTank(t,isBullet){
 const STEP_UP=0.9;
 const STEP_DOWN=1.7;
 const RAMP_STEP_UP=PH/2+.15; // 1×1 坡道格心到高台格心的允许抬升
-function blockedForTank(px,pz,radius,curH,isBullet=false,isPlayer=false){
+// Mixed-height cells describe a build restriction, not a solid square cliff collider.
+function isNaturalBoundaryCell(x,z){
+  const key=idx(x,z);
+  return ACTIVE_MODE.key==='survival'&&terrainSurface?.natural?.wholeCells[key]===-1
+    &&grid[z]?.[x]===T_STEEL&&!structCells.has(key)&&!steelHP.has(key);
+}
+function naturalGroundClear(x,z,radius){
+  if(!terrainSurface?.natural)return true;
+  const r=radius*.6;
+  for(const [dx,dz] of [[0,0],[-r,-r],[r,-r],[-r,r],[r,r]]){
+    const px=x+dx,pz=z+dz,cell=cellOf(px,pz);
+    if(!inMap(cell.x,cell.z))return false;
+    if(naturalStairHeight(px,pz)!==null)continue;
+    const h=heightAt(px,pz);
+    if(h>.08&&h<PH-.08)return false;
+  }
+  return true;
+}
+function blockedForTank(px,pz,radius,curH,isBullet=false,isPlayer=false,ignoredCells=null){
+  let touchesBoundary=false;
   const minC=cellOf(px-radius,pz-radius),maxC=cellOf(px+radius,pz+radius);
   for(let cz=minC.z;cz<=maxC.z;cz++)for(let cx=minC.x;cx<=maxC.x;cx++){
     if(!inMap(cx,cz))return true;
     const t=grid[cz][cx],cellIndex=idx(cx,cz);
-    /* ★ 守军可自由出入自家大门（仅生存），敌人不可 */
+    if(!isBullet&&t===T_STEEL&&isNaturalBoundaryCell(cx,cz)){touchesBoundary=true;continue;}
+    /*  守军可自由出入自家大门（仅生存），敌人不可 */
     if(isPlayer&&ACTIVE_MODE.key==="survival"&&t===T_BASE)continue;
-    if(solidForTank(t,isBullet)||(!isBullet&&structCells.has(cellIndex))){
+    if(solidForTank(t,isBullet)||(!isBullet&&structCells.has(cellIndex)&&!ignoredCells?.has(cellIndex))){
       const c=cellCenter(cx,cz);
       if(Math.abs(px-c.x)<TILE/2+radius*.5&&Math.abs(pz-c.z)<TILE/2+radius*.5)return true;
     }
   }
+  if(!isBullet&&((touchesBoundary&&!naturalGroundClear(px,pz,radius))||blockedByFixedCollider(px,pz,radius)))return true;
   // 高度差：四角+中心采样；上坡 >STEP_UP 拦、下坡 >STEP_DOWN 拦（非对称，见上注释）
   if(!isBullet&&curH!==undefined){
     const r=radius*.6;
@@ -3095,6 +3148,36 @@ function blockedForTank(px,pz,radius,curH,isBullet=false,isPlayer=false){
     }
   }
   return false;
+}
+function navigationPositionClear(point,radius,ignoredCells=null){
+  // Workers and vehicle routes go around the actual base footprint; the door animation is a separate portal.
+  const min=cellOf(point.x-radius*.5,point.z-radius*.5),max=cellOf(point.x+radius*.5,point.z+radius*.5);
+  for(let z=min.z;z<=max.z;z++)for(let x=min.x;x<=max.x;x++)if(!inMap(x,z)||grid[z][x]===T_BASE)return false;
+  return !blockedForTank(point.x,point.z,radius,heightAt(point.x,point.z),false,true,ignoredCells);
+}
+function navigationSegmentClear(from,to,radius,ignoredCells=null){
+  const distance=Math.hypot(to.x-from.x,to.z-from.z),steps=Math.max(1,Math.ceil(distance/.4));
+  let previous=heightAt(from.x,from.z);
+  for(let i=1;i<=steps;i++){
+    const point={x:from.x+(to.x-from.x)*i/steps,z:from.z+(to.z-from.z)*i/steps};
+    if(!navigationPositionClear(point,radius,ignoredCells)||blockedForTank(point.x,point.z,radius,previous,false,true,ignoredCells))return false;
+    previous=heightAt(point.x,point.z);
+  }
+  return true;
+}
+function smoothNavigationRoute(points,radius){
+  if(points.length<3)return points;
+  const result=[points[0]];let anchor=0;
+  while(anchor<points.length-1){
+    let next=points.length-1;
+    while(next>anchor+1&&!navigationSegmentClear(points[anchor],points[next],radius))next--;
+    result.push(points[next]);anchor=next;
+  }
+  return result;
+}
+function invalidateNavigation(){
+  navigationStamp++;
+  friendlyFlowCache.key='';
 }
 function destroyBricksAround(px,pz,radius){
   const minC=cellOf(px-radius,pz-radius),maxC=cellOf(px+radius,pz+radius);
@@ -3112,14 +3195,14 @@ function destroyBricksAround(px,pz,radius){
   }
   if(broke)sfx.hit();
 }
-/* ★ 构筑墙可被敌人拆毁：玩家放置的钢墙有耐久（8 点），地图原生钢墙不可破坏 */
+/*  构筑墙可被敌人拆毁：玩家放置的钢墙有耐久（8 点），地图原生钢墙不可破坏 */
 const steelHP=new Map();
 /* 恢复坡道通行。生存地图始终复用唯一连续坡体，其他模式才允许生成单格坡道。 */
 function buildRampTile(parent,cx,cz){
   if(ACTIVE_MODE.mapType==="survival"){
     let continuousRamp=null;
     parent.traverse(object=>{
-      if(!continuousRamp&&object.userData&&object.userData.assetName==="block-grass-large-slope-steep")continuousRamp=object;
+      if(!continuousRamp&&object.userData&&object.userData.assetName==="natural-plateau")continuousRamp=object;
     });
     return continuousRamp;
   }
@@ -3192,7 +3275,14 @@ function damageWallCell(cx,cz,dmg){
 let flowField=null,flowDist=null;
 /* 某格是否可被流场穿过：不可破钢墙（无 steelHP 的 T_STEEL）阻断；其余可穿（砖/玩家钢墙敌人会啃） */
 function passableForFlow(cx,cz){
+  if(!inMap(cx,cz))return false;
   const t=grid[cz][cx];
+  const point=cellCenter(cx,cz);
+  if(blockedByFixedCollider(point.x,point.z,.6))return false;
+  if(isNaturalBoundaryCell(cx,cz)){
+    const p=cellCenter(cx,cz);return naturalGroundClear(p.x,p.z,.4);
+  }
+  if(t===T_WATER)return false;
   if(t===T_TREE)return false;                         // 树干是实体，尸潮与坦克均需绕行
   if(t===T_BASE)return false;                         // 大门/基地不可穿（仅作目标）
   if(t===T_BUILDING)return false;                     // 主楼实体：流场绕开，防敌人卡住
@@ -3200,9 +3290,9 @@ function passableForFlow(cx,cz){
   return true;
 }
 /* 从大门相邻格 BFS，填 flowDist（到门步数）；-1 表示不可达
-   ★ 爬坡约束：相邻格心高差 >1.2 视为崖壁不可越（台地 2.2 阻断、坡道格心 ≤1.1 可越，
+    爬坡约束：相邻格心高差 >1.2 视为崖壁不可越（台地 2.2 阻断、坡道格心 ≤1.1 可越，
    兼容城市图整格坡 1.1 高差）→ 敌人只能沿坡道上下台地 */
-/* ★ P0-3：相邻两格之间的真实攀爬高差
+/*  P0-3：相邻两格之间的真实攀爬高差
    沿 A→B 的连线采样，并在垂直于行进方向 ±(敌人半径*0.6) 处补采样（复刻 blockedForTank 的五点采样语义），
    取区间内 max-min 作为该条边的高差。这样「沿坡道插值轴爬升」得到 0.733（可攀），
    而「垂直于插值轴从北侧跨上坡道」得到 ~1.23（不可攀），与实际移动判定一致。 */
@@ -3243,13 +3333,13 @@ function flowCanStep(ax,az,bx,bz){
   return ok;
 }
 function computeFlowField(){
-  navigationStamp++;
-  friendlyFlowCache.key="";
+  invalidateNavigation();
   const B=ACTIVE_MODE.base, dirs=[[1,0],[-1,0],[0,1],[0,-1]];
-  const sx=B.gateCol, sz=B.gateRow,targets=[];
-  for(const [dx,dz] of dirs){
-    const x=sx+dx, z=sz+dz;
-    if(inMap(x,z)&&passableForFlow(x,z)&&flowCanStep(sx,sz,x,z))targets.push({x,z});
+  const targets=[];
+  const survival=ACTIVE_MODE.key==='survival',startX=survival?B.col:B.gateCol,startZ=survival?B.row:B.gateRow,size=survival?2:1;
+  for(let sz=startZ;sz<startZ+size;sz++)for(let sx=startX;sx<startX+size;sx++)for(const [dx,dz] of dirs){
+    const x=sx+dx,z=sz+dz;
+    if(inMap(x,z)&&passableForFlow(x,z)&&flowCanStep(sx,sz,x,z)&&!targets.some(t=>t.x===x&&t.z===z))targets.push({x,z});
   }
   flowField=new FlowField(GRID,GRID).compute(targets,{
     passable:passableForFlow,
@@ -3259,21 +3349,39 @@ function computeFlowField(){
   invalidateMinimapTerrain();
 }
 /* 依据流场为敌人选向下一格方向（仅 survival 使用）
-   ★ P0-2：流场最小值是 1（大门格 T_BASE 被 passableForFlow 判为不可穿），
+    P0-2：流场最小值是 1（大门格 T_BASE 被 passableForFlow 判为不可穿），
    敌人站在 d=1 时四个邻居全 ≥2，原逻辑会顺着「最小邻居」把它推离大门 → 门口反复弹跳、永不啃门。
    这里显式判定「已抵达」，并额外用世界距离兜底（玩家用墙围门改道时仍能正确啃门）。 */
 const GATE_ARRIVE_D=.05;      /* Dijkstra 目标格距离为 0 */
-const GATE_ARRIVE_DIST=7.5;   /* 世界坐标兜底：距基地中心 < 7.5（约 2 格）视为抵达 */
+const GATE_MODEL_COLLISION_RADIUS=.35;
+const GATE_ARRIVE_DIST=GATE_MODEL_COLLISION_RADIUS;   /* 门模型前沿的接触缓冲，不再使用基地中心空气半径 */
+function gateCollisionPoint(){
+  if(!baseGroup)return null;
+  const collider=baseGroup.userData?.gateCollider;
+  return collider?.localPoint?baseGroup.localToWorld(collider.localPoint.clone()):baseGroup.position;
+}
+function baseContactPoint(position){
+  const p=baseGroup.position;
+  return new THREE.Vector3(Math.max(p.x-TILE,Math.min(p.x+TILE,position.x)),p.y,Math.max(p.z-TILE,Math.min(p.z+TILE,position.z)));
+}
+function baseContactDistance(enemy){
+  const p=enemy.group.position,b=baseGroup.position;
+  return Math.hypot(Math.max(0,Math.abs(p.x-b.x)-TILE),Math.max(0,Math.abs(p.z-b.z)-TILE));
+}
 function flowDirFor(e){
   const p=e.group.position, here=cellOf(p.x,p.z);
   if(!inMap(here.x,here.z))return {best:null,bestD:Infinity,hereD:-1,atGate:false};
   const hereD=flowField?flowField.distanceAt(here.x,here.z):Infinity;
-  let bd=Infinity;
-  if(baseGroup)bd=Math.hypot(p.x-baseGroup.position.x,p.z-baseGroup.position.z);
-  if((hereD>=0&&hereD<=GATE_ARRIVE_D)||bd<=GATE_ARRIVE_DIST)
-    return {best:null,bestD:hereD,hereD,atGate:true};   /* ★ 已抵达：不再下梯度 */
+  if(baseContactDistance(e)<=.55+(e.radius||0))
+    return {best:null,bestD:hereD,hereD,atGate:true};   /*  已抵达：不再下梯度 */
+  if(hereD>=0&&hereD<=GATE_ARRIVE_D){const q=baseContactPoint(p),dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz)||1;return {best:[dx/d,dz/d],bestD:0,hereD,atGate:false};}
   const direction=flowField?flowField.directionAt(here.x,here.z):{x:0,z:0};
-  const best=(direction.x||direction.z)?[direction.x,direction.z]:null;
+  let best=null;
+  if(direction.x||direction.z){
+    const next=cellCenter(here.x+Math.round(direction.x),here.z+Math.round(direction.z));
+    const dx=next.x-p.x,dz=next.z-p.z,length=Math.hypot(dx,dz)||1;
+    best=[dx/length,dz/length];
+  }
   const bestD=best?hereD:Infinity;
   return {best,bestD,hereD,atGate:false};
 }
@@ -3286,8 +3394,7 @@ function updateEnemyObjective(enemy){
      高台/悬崖也会撞向它，形成视野外永久卡波。 */
   const fx=p.x+enemy.dir.x*(enemy.radius+.8),fz=p.z+enemy.dir.z*(enemy.radius+.8);
   const cell=cellOf(fx,fz);
-  if(inMap(cell.x,cell.z)&&(grid[cell.z][cell.x]===T_BRICK||grid[cell.z][cell.x]===T_STEEL)
-    &&(grid[cell.z][cell.x]===T_BRICK||steelHP.has(idx(cell.x,cell.z)))){
+  if(inMap(cell.x,cell.z)&&((grid[cell.z][cell.x]===T_BRICK||steelHP.has(idx(cell.x,cell.z)))||ownedStructureAtCell(idx(cell.x,cell.z)))){
     enemy.objectiveKind="wall";enemy.objectiveCell={x:cell.x,z:cell.z};
   }
   return enemy.objectiveKind;
@@ -3305,19 +3412,21 @@ function computeGateMaxHp(){
 function damageGate(rawDmg, attackerPos){
   if(!baseAlive||!baseGroup)return;
   const g=ACTIVE_MODE.gate||{};
-  /* ★ 闪避：概率免疫一次伤害（不触发受击） */
+  /*  闪避：概率免疫一次伤害（不触发受击） */
   const dvLv=game.gateDodgeLv||0, dodge=(g.dodgePerLv||0)*dvLv;
   if(dodge>0&&Math.random()<dodge){
     spawnParticles(baseGroup.position.clone().setY(2),0x9fe8ff,6,5,.7);
     return;
   }
-  /* ★ 护甲：按等级减伤 */
+  /*  护甲：按等级减伤 */
   const arLv=game.gateArmorLv||0,defenseLv=researchPowerLevel((game.tech&&game.tech.defense)||0);
   const armor=Math.min(.7,(g.armorPerLv||0)*arLv+(TECH_TREE.defense.effect.structureArmorPct||0.025)*defenseLv);
-  const dmg=Math.max(1,Math.round(rawDmg*(1-armor)));
+  const dmg=ACTIVE_MODE.key==="survival"
+    ?Math.max(.05,rawDmg*(1-armor))
+    :Math.max(1,Math.round(rawDmg*(1-armor)));
   game.gateHp-=dmg;
-  spawnParticles(baseGroup.position.clone().setY(1.8),0xff8080,8,6,.8);sfx.hit();
-  /* ★ 反伤：反弹给攻击者 */
+  spawnParticles(baseGroup.position.clone().setY(1.8),0xff8080,8,6,.8);sfx.gate();sfx.hit();
+  /*  反伤：反弹给攻击者 */
   const thLv=game.gateThornsLv||0, thorns=(g.thornsPerLv||0)*thLv;
   if(thorns>0&&attackerPos){
     // 反伤以落点附近敌人结算（攻击者为子弹/啃咬来源，用坐标就近找敌）
@@ -3335,16 +3444,24 @@ function damageGate(rawDmg, attackerPos){
 }
 
 /* ---------------- 输入 ---------------- */
+addEventListener('mobile-select-player',()=>{
+ if(ACTIVE_MODE.key!=='survival'||![STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state))return;
+ if(wc3BuildMode)closeWc3Build();
+ const entries=[...(player?.alive?[{kind:'player',ref:player}]:[]),...friendlyUnits.filter(u=>u.alive).map(ref=>({kind:'unit',ref}))];
+ if(!entries.length){toast('暂无部队，请先在重工厂生产');return;}
+ wc3SetSelection(entries);wc3RenderSel();renderCmdCard();
+ camFocus.x=entries[0].ref.group.position.x;camFocus.z=entries[0].ref.group.position.z;
+});
 addEventListener("keydown",e=>{
   keys[e.code]=true;
   if(e.code==="Space")e.preventDefault();
-  /* ★ P3-9 WC3：空格 = 跳转镜头到基地/大门（事件点跳转） */
+  /*  P3-9 WC3：空格 = 跳转镜头到基地/大门（事件点跳转） */
   if(e.code==="Space"&&ACTIVE_MODE.key==="survival"&&baseGroup&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD)){
     const f=baseGroup.position;
     camFocus.x=f.x;camFocus.z=f.z;
   }
   if(e.code==="Escape"){
-    /* ★ 新手引导 ESC 优先跳过 */
+    /*  新手引导 ESC 优先跳过 */
     if(questActive){questSkip();return;}
     if(state===STATE.PLAYING)setPause(true);
     else if(state===STATE.PAUSED)setPause(false);
@@ -3352,12 +3469,18 @@ addEventListener("keydown",e=>{
     else if(state===STATE.GATE)closeGateUp();
     else if(state===STATE.BUILD&&ACTIVE_MODE.key==="survival"&&wc3BuildMode)closeWc3Build();
     else if(state===STATE.BUILD&&ACTIVE_MODE.key==="survival")closeBuildMenu();
-    else if(state===STATE.PREP){
-      /* ★ 修复 Esc→PLAYING 30s 超时阻断：归零倒计时后由主循环统一接管过渡 */
-      game.prepTime=0;
-    }
+    else if(state===STATE.PREP)setPause(true);
   }
   if(e.code==="KeyQ"&&state===STATE.PLAYING)useBomb();
+  if(!e.repeat&&ACTIVE_MODE.key==="survival"&&
+     (state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD||state===STATE.TECH||state===STATE.GATE)){
+    if(e.code==="BracketLeft"||e.key==="["){
+      e.preventDefault();debugAddSurvivalGold();return;
+    }
+    if(e.code==="BracketRight"||e.key==="]"){
+      e.preventDefault();debugSkipToNextSurvivalWave();return;
+    }
+  }
   /* v6.4.0：WAR3 上下文快捷键只选择对应建筑，不再打开平行弹窗。 */
   if(e.code==="KeyB"&&ACTIVE_MODE.key==="survival"&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD&&wc3BuildMode)){
     selectBaseForCommand(true);
@@ -3365,18 +3488,67 @@ addEventListener("keydown",e=>{
   }
   if(e.code==="KeyB"&&ACTIVE_MODE.key!=="survival"&&(state===STATE.PLAYING||state===STATE.PREP))openBuildMenu();
   if(e.code==="KeyT"&&ACTIVE_MODE.key==="survival"&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD))selectResearchForCommand();
-  if(e.code==="KeyG"&&ACTIVE_MODE.key==="survival"&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD))selectBaseForCommand(false,"gate");
+  if(e.code==="KeyG"&&ACTIVE_MODE.key==="survival"&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD))selectBaseForCommand(false,"root");
 });
 addEventListener("keyup",e=>keys[e.code]=false);
-let wc3DragStart=null,wc3DragBox=null;
+let wc3DragStart=null,wc3DragBox=null,rightCameraDrag=null;
+function clearRightCameraDrag(){rightCameraDrag=null;renderer.domElement.style.cursor='';}
+function updateRightCameraDrag(event){
+  const drag=rightCameraDrag;if(!drag)return;
+  if(!(event.buttons&2)||![STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state)){clearRightCameraDrag();return;}
+  if(!drag.dragged&&Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<7)return;
+  drag.dragged=true;renderer.domElement.style.cursor='grabbing';
+  const scale=2*Math.tan(camera.fov*Math.PI/360)*Math.max(24,Math.min(120,camHeight))/innerHeight;
+  const limit=HALF-4;
+  camFocus.x=Math.max(-limit,Math.min(limit,camFocus.x-(event.clientX-drag.lastX)*scale));
+  camFocus.z=Math.max(-limit,Math.min(limit,camFocus.z-(event.clientY-drag.lastY)*scale/Math.sin(Math.PI/3)));
+  drag.lastX=event.clientX;drag.lastY=event.clientY;
+}
+addEventListener('blur',()=>{clearRightCameraDrag();mouse.down=false;for(const key of Object.keys(keys))keys[key]=false;});
+function issueRightClickCommand(e){
+    /*  P4-5：建造模式右键 = 取消当前条目；再无条目则收起建造模式 */
+    if(state===STATE.BUILD&&wc3BuildMode){
+      if(buildSel!==null)selectBuild(null);
+      else closeWc3Build();
+    }
+    else if(buildSel!==null){selectBuild(null);}        // 建造中右键=取消（保留原语义）
+    else if(wc3Sel&&wc3Sel.kind==="factory"){
+      const w=screenToWorld(e.clientX,e.clientY);
+      if(w){setFactoryRallyPoint(wc3Sel.ref,w);wc3Mark(w,0xc69a45);toast(" 重工厂集结点已更新");wc3RenderSel();}
+    }
+    else if(wc3Selection.some((entry)=>entry.kind==="player"||entry.kind==="unit")){
+      const w=screenToWorld(e.clientX,e.clientY);
+      if(w){
+        const clicked=wc3PickAt(e.clientX,e.clientY),repairTarget=normalizeRepairTarget(clicked);
+        const repairers=wc3Selection.filter((entry)=>entry.kind==="unit"&&entry.ref.type==="repair").map((entry)=>entry.ref);
+        if(repairTarget&&repairers.length){
+          repairers.forEach((unit)=>{if(repairTarget!==unit){unit.repairTarget=repairTarget;unit.autoRepairBlocked=false;unit.command="repair";}});
+          wc3Mark(repairTarget.group.position,0xc69a45);return;
+        }
+        /* 点敌=攻击目标，点地=移动 */
+        let tgt=null,bd=3.4*3.4;
+        for(const en of enemies){
+          if(!isEnemyCombatTarget(en)||!isPositionVisible(en.group.position))continue;
+          const dx=en.group.position.x-w.x,dz=en.group.position.z-w.z;
+          const dd=dx*dx+dz*dz;
+          if(dd<bd){bd=dd;tgt=en;}
+        }
+        if(tgt){
+          wc3Selection.filter((entry)=>entry.kind==="player"||entry.kind==="unit").forEach((entry)=>{entry.ref.attackTarget=tgt;entry.ref.moveTarget=null;entry.ref.attackMove=false;entry.ref.command="attack";});
+          wc3Mark(tgt.group.position,0xff5d5d);
+        }else{issueSelectionCommand("move",w);wc3Mark(w,0x39d98a);}
+      }
+    }
+}
+
 function updateWc3DragBox(event){
   if(!wc3DragStart)return;
   if(!wc3DragBox){wc3DragBox=document.createElement("div");wc3DragBox.style.cssText="position:fixed;border:1px solid #68df78;background:rgba(70,170,85,.14);pointer-events:none;z-index:80";document.body.appendChild(wc3DragBox);}
   const left=Math.min(wc3DragStart.x,event.clientX),top=Math.min(wc3DragStart.y,event.clientY);
   wc3DragBox.style.left=`${left}px`;wc3DragBox.style.top=`${top}px`;wc3DragBox.style.width=`${Math.abs(event.clientX-wc3DragStart.x)}px`;wc3DragBox.style.height=`${Math.abs(event.clientY-wc3DragStart.y)}px`;
 }
-addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY;updateWc3DragBox(e);});
-/* ★ P3-9 WC3 式操作（生存模式）：
+addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY;updateWc3DragBox(e);updateRightCameraDrag(e);});
+/*  P3-9 WC3 式操作（生存模式）：
    右键点地 → 移动指令（绿色点击标记）；右键点敌 → 攻击指令（红色标记）；
    A 键 → 攻击移动（下次左键点地，路径上自动交战）；
    玩家坦克有 moveTarget/attackTarget，由 updatePlayer 消费。
@@ -3402,7 +3574,7 @@ function screenToWorld(px,py){
 }
 function isInteractiveUiPointer(e){
   const target=e&&e.target;
-  return !!(target&&target.closest&&target.closest("button,.cmdBtn,.shopItem,.techCard,#wc3dock,#minimap,.overlay"));
+  return !!(target&&target.closest&&target.closest("button,.cmdBtn,.shopItem,.techCard,#wc3dock,#resDock,#minimap,.overlay"));
 }
 addEventListener("mousedown",e=>{
   if(isInteractiveUiPointer(e))return;
@@ -3414,20 +3586,20 @@ addEventListener("mousedown",e=>{
       }else if(buildSel!==null){
         /* 只有点到可经营建筑/单位才打断放置；地形、幽灵、崖壁一律按当前蓝图格建造。 */
         const hit=wc3PickAt(e.clientX,e.clientY);
-        const selectable=hit&&["goldmine","house","research","factory","beacon","turret","unit","player","base"].includes(hit.kind);
+        const selectable=hit&&["goldmine","house","research","heroHub","factory","beacon","turret","unit","player","base"].includes(hit.kind);
         if(selectable){
           const entries=e.detail>=2?wc3VisibleSameTypeEntries(hit):[hit];
           wc3SetSelection(entries);
           if(e.detail>=2)selectBuild(null);
           wc3RenderSel();renderCmdCard();
-        }else if(ghost&&ghost.visible&&ghostCell){
+        }else if(!e.mobileTouch&&ghost&&ghost.visible&&ghostCell){
           tryPlace();
         }else{
           const c=pickCell();
           if(c){ghostCell=c;if(ghost)ghost.visible=true;tryPlace();}
         }
       }
-      /* ★ P4-5：建造模式无选中条目时点击 = 点选 */
+      /*  P4-5：建造模式无选中条目时点击 = 点选 */
       else if(wc3BuildMode){
         const hit=wc3PickAt(e.clientX,e.clientY);
         if(hit){
@@ -3440,7 +3612,7 @@ addEventListener("mousedown",e=>{
     else if(ACTIVE_MODE.key==="survival"&&wc3AttackMove){
       const w=screenToWorld(e.clientX,e.clientY);
       if(w&&wc3AttackMove==="rally"&&wc3Sel&&wc3Sel.kind==="factory"){
-        setFactoryRallyPoint(wc3Sel.ref,w);wc3Mark(w,0xc69a45);toast("🚩 重工厂集结点已更新");wc3RenderSel();
+        setFactoryRallyPoint(wc3Sel.ref,w);wc3Mark(w,0xc69a45);toast(" 重工厂集结点已更新");wc3RenderSel();
       }else if(w){issueSelectionCommand(wc3AttackMove==="patrol"?"patrol":"attackMove",w);wc3Mark(w,wc3AttackMove==="patrol"?0x68d88a:0xff5d5d);}
       wc3AttackMove=false;
     }
@@ -3448,46 +3620,17 @@ addEventListener("mousedown",e=>{
       wc3DragStart={x:e.clientX,y:e.clientY,shift:e.shiftKey};
     }
   }
-  /* ★ WC3：右键指令（生存，非建造态） */
-  if(e.button===2&&ACTIVE_MODE.key==="survival"
-     &&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD)){
-    /* ★ P4-5：建造模式右键 = 取消当前条目；再无条目则收起建造模式 */
-    if(state===STATE.BUILD&&wc3BuildMode){
-      if(buildSel!==null)selectBuild(null);
-      else closeWc3Build();
-    }
-    else if(buildSel!==null){selectBuild(null);}        // 建造中右键=取消（保留原语义）
-    else if(wc3Sel&&wc3Sel.kind==="factory"){
-      const w=screenToWorld(e.clientX,e.clientY);
-      if(w){setFactoryRallyPoint(wc3Sel.ref,w);wc3Mark(w,0xc69a45);toast("🚩 重工厂集结点已更新");wc3RenderSel();}
-    }
-    else if(wc3Selection.some((entry)=>entry.kind==="player"||entry.kind==="unit")){
-      const w=screenToWorld(e.clientX,e.clientY);
-      if(w){
-        const clicked=wc3PickAt(e.clientX,e.clientY),repairTarget=normalizeRepairTarget(clicked);
-        const repairers=wc3Selection.filter((entry)=>entry.kind==="unit"&&entry.ref.type==="repair").map((entry)=>entry.ref);
-        if(repairTarget&&repairers.length){
-          repairers.forEach((unit)=>{if(repairTarget!==unit){unit.repairTarget=repairTarget;unit.autoRepairBlocked=false;unit.command="repair";}});
-          wc3Mark(repairTarget.group.position,0xc69a45);return;
-        }
-        /* 点敌=攻击目标，点地=移动 */
-        let tgt=null,bd=3.4*3.4;
-        for(const en of enemies){
-          if(!en.alive)continue;
-          const dx=en.group.position.x-w.x,dz=en.group.position.z-w.z;
-          const dd=dx*dx+dz*dz;
-          if(dd<bd){bd=dd;tgt=en;}
-        }
-        if(tgt){
-          wc3Selection.filter((entry)=>entry.kind==="player"||entry.kind==="unit").forEach((entry)=>{entry.ref.attackTarget=tgt;entry.ref.moveTarget=null;entry.ref.attackMove=false;entry.ref.command="attack";});
-          wc3Mark(tgt.group.position,0xff5d5d);
-        }else{issueSelectionCommand("move",w);wc3Mark(w,0x39d98a);}
-      }
-    }
-  }
-  else if(e.button===2&&state===STATE.BUILD)selectBuild(null);
+  if(e.button===2&&ACTIVE_MODE.key==='survival'&&[STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state)){
+    rightCameraDrag={x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,dragged:false};
+    e.preventDefault();
+  }else if(e.button===2&&state===STATE.BUILD)selectBuild(null);
 });
 addEventListener("mouseup",e=>{
+  if(e.button===2&&rightCameraDrag){
+    const gesture=rightCameraDrag;clearRightCameraDrag();
+    if(!gesture.dragged&&!isInteractiveUiPointer(e)&&[STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state))issueRightClickCommand(e);
+    return;
+  }
   if(e.button!==0)return;mouse.down=false;
   if(!wc3DragStart)return;
   const start=wc3DragStart;wc3DragStart=null;if(wc3DragBox){wc3DragBox.remove();wc3DragBox=null;}
@@ -3507,35 +3650,36 @@ addEventListener("mouseup",e=>{
   }
   if(entries.length)wc3SetSelection(entries);else wc3ClearSel();wc3RenderSel();renderCmdCard();
 });
-addEventListener("contextmenu",e=>{e.preventDefault();});   /* ★ WC3：全局禁右键菜单 */
-/* ★ WC3：A 键攻击移动预备 */
+addEventListener("contextmenu",e=>{e.preventDefault();});   /*  WC3：全局禁右键菜单 */
+/*  WC3：A 键攻击移动预备 */
 let wc3AttackMove=false;
 addEventListener("keydown",e=>{
+  if(e.repeat)return;
   if(e.code==="F1"&&ACTIVE_MODE.key==="survival"&&player&&player.alive){
     e.preventDefault();wc3Select("player",player);wc3RenderSel();
   }
   if(e.code==="Escape"&&wc3AttackMove){wc3AttackMove=false;renderCmdCard();}
   if(e.code==="KeyA"&&ACTIVE_MODE.key==="survival"&&wc3Selection.some((entry)=>entry.kind==="player"||entry.kind==="unit")&&(state===STATE.PLAYING||state===STATE.PREP)){
     wc3AttackMove=true;
-    toast("⚔ 攻击移动：左键点击目标位置");
+    toast(" 攻击移动：左键点击目标位置");
   }
   if(e.code==="KeyS"&&ACTIVE_MODE.key==="survival")issueSelectionCommand("stop");
   if(e.code==="KeyP"&&ACTIVE_MODE.key==="survival"&&wc3Selection.some((entry)=>entry.kind==="player"||entry.kind==="unit")){
-    wc3AttackMove="patrol";toast("🚩 巡逻：左键点击另一端");
+    wc3AttackMove="patrol";toast(" 巡逻：左键点击另一端");
   }
   if(e.code==="KeyU"&&!e.repeat&&ACTIVE_MODE.key==="survival"&&wc3Sel&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD)){
     const upgrade=commandItemsForSelection().find((item)=>item.hot==="U");
     if(upgrade){
       e.preventDefault();
-      if(upgrade.dim)toast("💰 当前选择没有可支付的升级");
+      if(upgrade.dim)toast(" 当前选择没有可支付的升级");
       else if(upgrade.act)upgrade.act();
     }
   }
   if(!e.repeat&&ACTIVE_MODE.key==="survival"&&wc3Sel&&(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD)){
     const hot=e.code&&e.code.startsWith("Key")&&e.code.length===4?e.code.slice(3):e.code&&e.code.startsWith("Digit")?e.code.slice(5):/^[0-9]$/.test(e.key)?e.key:null;
     if(hot&&hot!=="A"&&hot!=="S"&&hot!=="P"&&hot!=="U"&&hot!=="B"&&hot!=="T"&&hot!=="G"){
-      const matches=commandItemsForSelection().filter((item)=>String(item.hot)===hot&&item.act&&!item.dim);
-      if(matches.length===1){e.preventDefault();matches[0].act();return;}
+      const matches=commandItemsForSelection().filter((item)=>String(item.hot)===hot&&item.act);
+      if(matches.length===1){e.preventDefault();if(!matches[0].dim)matches[0].act();return;}
     }
   }
   if(state===STATE.BUILD){
@@ -3547,7 +3691,7 @@ addEventListener("keydown",e=>{
     }
   }
 });
-/* ★ 生存 RTS：滚轮缩放 —— P4-4 只改镜头距离（camHeight 复用为 dist），俯仰角固定 */
+/*  生存 RTS：滚轮缩放 —— P4-4 只改镜头距离（camHeight 复用为 dist），俯仰角固定 */
 addEventListener("wheel",e=>{
   if(ACTIVE_MODE.key!=="survival")return;
   if(!(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD))return;
@@ -3557,7 +3701,7 @@ addEventListener("wheel",e=>{
 },{passive:false});
 function useBomb(){
   if(game.bombs<=0)return;
-  game.bombs--;toast("💣 空袭轰炸！");sfx.bigboom();camShake=1.2;
+  game.bombs--;toast(" 空袭轰炸！");sfx.bigboom();camShake=1.2;
   [...enemies].forEach(e=>{if(performance.now()>=e.spawnFlash)killEnemy(e,false);});
   updateBuffUI();
 }
@@ -3565,7 +3709,7 @@ function useBomb(){
 /* ---------------- UI ---------------- */
 const $=id=>document.getElementById(id);
 function updateHpUI(){
-  /* ★ 英雄相关（经典/塔防）：仅存在英雄时显示装甲与命数 */
+  /*  英雄相关（经典/塔防）：仅存在英雄时显示装甲与命数 */
   if(player){
     $("hpText").textContent=`${player.hp} / ${player.maxHp}`;
     $("hpBar").style.width=(player.hp/player.maxHp*100)+"%";
@@ -3576,7 +3720,7 @@ function updateHpUI(){
   // 大门血量（生存模式）优先；其余模式显示基地护盾
   if(ACTIVE_MODE.key==="survival"&&game.gateMaxHp>0){
     $("baseBarWrap").style.display="block";
-    $("baseShieldText").textContent=`💎 ${Math.max(0,Math.ceil(game.gateHp))} / ${game.gateMaxHp}`;
+    $("baseShieldText").textContent=` ${Math.max(0,Math.ceil(game.gateHp))} / ${game.gateMaxHp}`;
     $("baseBar").style.width=(game.gateHp/game.gateMaxHp*100)+"%";
     $("baseBar").style.background=game.gateHp/game.gateMaxHp>.35
       ?"linear-gradient(90deg,#7ec8ff,#cfd8e6)":"linear-gradient(90deg,#ff5d5d,#ffa26d)";
@@ -3590,24 +3734,24 @@ function updateBuffUI(){
   const el=$("buffs");el.innerHTML="";
   const now=performance.now();
   if(now<game.buffs.shieldUntil)
-    el.insertAdjacentHTML("beforeend",`<span class="buff">🛡 护盾 ${((game.buffs.shieldUntil-now)/1000)|0}s</span>`);
+    el.insertAdjacentHTML("beforeend",`<span class="buff"> 护盾 ${((game.buffs.shieldUntil-now)/1000)|0}s</span>`);
   if(now<game.buffs.rapidUntil)
-    el.insertAdjacentHTML("beforeend",`<span class="buff">⚡ 速射 ${((game.buffs.rapidUntil-now)/1000)|0}s</span>`);
+    el.insertAdjacentHTML("beforeend",`<span class="buff"> 速射 ${((game.buffs.rapidUntil-now)/1000)|0}s</span>`);
   if(game.bombs>0)
-    el.insertAdjacentHTML("beforeend",`<span class="buff">💣 空袭 ×${game.bombs}</span>`);
+    el.insertAdjacentHTML("beforeend",`<span class="buff"> 空袭 ×${game.bombs}</span>`);
   Object.entries(game.upgrades).forEach(([id,lv])=>{
     const u=UPGRADES.find(u=>u.id===id);
     el.insertAdjacentHTML("beforeend",
-      `<span class="buff">${u.type==="base"?"🏰":""}${u.icon} ${u.name} Lv${lv}</span>`);
+      `<span class="buff">${u.type==="base"?"":""}${UIIcons.svg(u.icon)} ${u.name} Lv${lv}</span>`);
   });
 }
 let toastTimer=null;
 function toast(msg){
-  const a=$("announce");a.textContent=msg;a.style.opacity=1;a.style.fontSize="30px";
+  const a=$("announce");a.textContent=msg.trim();a.style.opacity=1;a.style.fontSize="18px";
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>a.style.opacity=0,1400);
 }
 function announce(msg){
-  const a=$("announce");a.textContent=msg;a.style.fontSize="52px";a.style.opacity=1;
+  const a=$("announce");a.textContent=msg;a.style.fontSize="32px";a.style.opacity=1;
   setTimeout(()=>a.style.opacity=0,1600);
 }
 
@@ -3651,7 +3795,7 @@ function drawMinimap(force=false){
     mmCtx.fillStyle="#ffd75e";
     mmCtx.fillRect((p.group.position.x+HALF)/TILE*S-1.5,(p.group.position.z+HALF)/TILE*S-1.5,3,3);
   });
-  /* ★ P4-5：镜头视野框（WC3 小地图惯例） */
+  /*  P4-5：镜头视野框（WC3 小地图惯例） */
   if(ACTIVE_MODE.key==="survival"){
     const d=camHeight;
     const vw=Math.min(GRID, d*1.2/TILE*S), vh=Math.min(GRID, d*.8/TILE*S);
@@ -3659,7 +3803,7 @@ function drawMinimap(force=false){
     mmCtx.strokeRect((camFocus.x+HALF)/TILE*S-vw/2,(camFocus.z+HALF)/TILE*S-vh/2,vw,vh);
   }
 }
-/* ★ P4-5：小地图点击 → 跳转镜头焦点 */
+/*  P4-5：小地图点击 → 跳转镜头焦点 */
 {
   const mm=$("minimap");
   if(mm){
@@ -3673,32 +3817,37 @@ function drawMinimap(force=false){
     mm.addEventListener("mousedown",mmJump);
   }
 }
-/* ★ P4-5：右下资源速览刷新（4Hz，与 goldUI 同步） */
+/* 左上资源与指挥状态刷新：复用节点，只在显示值变化时写入。 */
 function updateDockRes(){
-  if($("dockGold"))$("dockGold").textContent=Math.floor(game.gold);
-  if($("dockPop"))$("dockPop").textContent=`${game.popUsed}/${game.popMax}`;
-  if($("dockTech"))$("dockTech").textContent=researchInstitutes.length?"在线":"未建";
+  const setText=(id,value)=>{const el=$(id),text=String(value);if(el&&el.textContent!==text)el.textContent=text;};
+  setText("dockGold",Math.floor(game.gold));
+  setText("dockPop",`${game.popUsed}/${game.popMax}`);
+  const available=Math.max(0,game.popMax-game.popUsed);
+  setText("dockPopStatus",available>0?`可用 ${available}`:"已满");
+  $("dockPopRow")?.classList.toggle("isFull",available===0);
+  setText("dockTech",researchInstitutes.length?"在线":"未建");
   if($("dockGate")){
     const g=$("dockGate");
     if(game.gateMaxHp>0){
-      g.textContent=`${Math.max(0,Math.ceil(game.gateHp))}/${game.gateMaxHp}`;
+      setText("dockGate",`${Math.max(0,Math.ceil(game.gateHp))}/${game.gateMaxHp}`);
       g.style.color=game.gateHp/game.gateMaxHp>.4?"#7ec8ff":"#ff7d6d";
-    }else{g.textContent="—";}
+    }else{setText("dockGate","—");}
   }
 }
 
 /* ---------------- 波次 ---------------- */
 function isBossWave(n){return SurvivalSystem.waveProfile(n).isBoss;}
-function startWave(n){
+function startWave(n,preservePending=false){
   const wave=Math.max(1,Math.trunc(Number(n)||1));
   /* 准备期开过商店后关卡会误回 PREP，绝不能把已经打到的波次打回 1。 */
   if(ACTIVE_MODE.key==="survival"&&game.wave>0&&wave<game.wave)return;
-  _waveClearing=false;                    /* ★ P0-1：清波闸门复位，允许下一次 waveCleared */
+  _waveClearing=false;                    /*  P0-1：清波闸门复位，允许下一次 waveCleared */
   game.waveTransition=null;
-  _wdStallT=0;_wdKillTimer=0;_wdHarvesting=false;_wdRerouted=false; /* ★ 新波开始，看门狗进度清零 */
+  _wdStallT=0;_wdKillTimer=0;_wdHarvesting=false;_wdRerouted=false; /*  新波开始，看门狗进度清零 */
   game.wave=wave;
-  /* ★ 敌量曲线由模式配置决定 */
+  /*  敌量曲线由模式配置决定 */
   game.enemiesToSpawn=(ACTIVE_MODE.enemiesPerWave||(x=>4+x))(wave);
+  if(ACTIVE_MODE.key==="survival")enqueueSurvivalWave(wave,preservePending);
   const waveSpec=SurvivalSystem.waveProfile(wave);
   game.spawnTimer=0;game.aliveThisWave=0;
   const boss=isBossWave(wave);
@@ -3707,44 +3856,69 @@ function startWave(n){
   $("waveInfo").firstChild.textContent=boss?`WAVE ${wave} · ${bossSpec.name}`:`WAVE ${wave} · ${waveSpec.label}`;
   // 基地系波次效果
   if(game.stats.baseRepairLv>0)repairBaseShell();
-  /* ★ 战地维修：每波开始修复装甲 */
+  /*  战地维修：每波开始修复装甲 */
   if(game.stats.regenLv>0&&player&&player.alive&&player.hp<player.maxHp){
     player.hp=Math.min(player.maxHp,player.hp+2*game.stats.regenLv);
-    toast(`🧰 战地维修 +${2*game.stats.regenLv} 装甲`);
+    toast(` 战地维修 +${2*game.stats.regenLv} 装甲`);
   }
-  /* ★ 空袭协同：每波开始获得轰炸充能 */
+  /*  空袭协同：每波开始获得轰炸充能 */
   if(game.stats.airstrikeLv>0){game.bombs+=game.stats.airstrikeLv;}
   if(game.stats.baseShieldMax>0){
     game.baseShieldHP=game.stats.baseShieldMax;
-    toast("🔵 基地护盾已充能");
+    toast(" 基地护盾已充能");
   }
-  /* ★ 单兵力场：每波充能 */
+  /*  单兵力场：每波充能 */
   if(game.stats.playerShieldLv>0){
     game.playerShieldHP=game.stats.playerShieldLv*2;
-    toast(`💠 单兵力场充能 ×${game.playerShieldHP}`);
+    toast(` 单兵力场充能 ×${game.playerShieldHP}`);
   }
-  /* ★ 连锁进化：随机强化已拥有卡 */
+  /*  连锁进化：随机强化已拥有卡 */
   if(game.stats.evolveLv>0){
     for(let k=0;k<game.stats.evolveLv;k++){
       const owned=UPGRADES.filter(u=>(game.upgrades[u.id]||0)>0&&(game.upgrades[u.id]||0)<u.max);
       if(owned.length){
         const u=owned[Math.floor(Math.random()*owned.length)];
         game.upgrades[u.id]++;u.apply(game.stats);
-        toast(`🧬 ${u.name} 进化到 Lv${game.upgrades[u.id]}`);
+        toast(` ${u.name} 进化到 Lv${game.upgrades[u.id]}`);
       }
     }
   }
   updateHpUI();updateEnemyLeftUI();
 }
+function debugAddSurvivalGold(){
+  if(ACTIVE_MODE.key!=="survival")return false;
+  game.gold+=10000;
+  updateGoldUI();
+  toast("测试：+10000 金币");
+  return true;
+}
+function debugSkipToNextSurvivalWave(){
+  if(ACTIVE_MODE.key!=="survival")return false;
+  [...enemies].forEach(e=>{
+    scene.remove(e.group);releaseEnemyResources(e);
+    if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);}
+  });
+  enemies.length=0;
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    if(b.owner!=="enemy")continue;
+    scene.remove(b.mesh);disposeTransientObject3D(b.mesh);bullets.splice(i,1);
+  }
+  state=STATE.PLAYING;
+  startWave(Math.max(1,game.wave+1));
+  updateEnemyLeftUI();
+  toast(`测试：跳至第 ${game.wave} 波`);
+  return true;
+}
 function updateEnemyLeftUI(){
   const active=activeEnemyCount(),queued=Math.max(0,game.enemiesToSpawn||0),remain=queued+active;
-  $("enemyLeft").textContent=`剩余 ${remain} · 场上 ${active} / 待出 ${queued}`;
+  $("enemyLeft").textContent=`剩余 ${remain} · 场上 ${active} / 待出 ${queued}${ACTIVE_MODE.key==="survival"&&game.wave>0?` · ${survivalWaveStatus()} · 敌伤/血 ×${survivalPressureMultiplier().toFixed(2)}`:""}`;
 }
 function activeEnemyCount(){
   return enemies.reduce((count,enemy)=>count+(enemy&&enemy.alive?1:0),0);
 }
-function pickEnemyType(){
-  const archetype=SurvivalSystem.waveProfile(Math.max(1,game.wave)).archetype;
+function pickEnemyType(wave=game.wave){
+  const archetype=SurvivalSystem.waveProfile(Math.max(1,wave)).archetype;
   const bags={
     normal:[["normal",8],["fast",1],["heavy",1]],fast:[["fast",9],["normal",2]],heavy:[["heavy",8],["siege",2],["normal",1]],
     ranged:[["sniper",8],["normal",3]],ghost:[["ghost",9],["fast",2]],lifesteal:[["lifesteal",8],["normal",2]],
@@ -3764,7 +3938,7 @@ const RAR_NAME={1:"普通",2:"稀有",3:"史诗"};
 const RAR_W={1:100,2:42,3:14};   // 稀有度抽取权重
 function showUpgradeChoice(){
   state=STATE.UPGRADE;
-  /* ★ 经典模式过滤构筑联动卡（无金币/构筑系统） */
+  /*  经典模式过滤构筑联动卡（无金币/构筑系统） */
   const BUILD_LINKED=["income","builder","netmaster"];
   let pool=UPGRADES.filter(u=>(game.upgrades[u.id]||0)<u.max);
   if(!ACTIVE_MODE.buildEnabled)pool=pool.filter(u=>!BUILD_LINKED.includes(u.id));
@@ -3787,7 +3961,7 @@ function showUpgradeChoice(){
     const card=document.createElement("div");
     card.className="card rar"+u.rar+(u.type==="base"?" base-card":"");
     card.innerHTML=`<span class="rtag r${u.rar}">${RAR_NAME[u.rar]}</span>
-      <div class="icon">${u.icon}</div><div class="name">${u.name}</div>
+      <div class="icon">${UIIcons.svg(u.icon)}</div><div class="name">${u.name}</div>
       <div class="desc">${u.desc}</div>
       <span class="lv">Lv ${lv} → ${lv+1}${lv+1>=u.max?" · MAX":""}</span>`;
     card.onclick=()=>{
@@ -3805,20 +3979,20 @@ function showUpgradeChoice(){
 }
 
 /* =====================================================================
-   ★ 波间构筑系统（金币商店 + 防线布置）
+    波间构筑系统（金币商店 + 防线布置）
    每波肃清后进入构筑阶段：花金币在地图上放置炮台/墙/地雷，
    构筑物跨波次永久存在，与肉鸽卡「战利品回收/工程承包商/火力网络」联动
    ===================================================================== */
 const BUILDS=[
-  {id:"mg",    icon:"🔫", name:"机枪炮台", price:60,  desc:"自动索敌 · 射速快 / 伤害低 · 射程 16"},
-  {id:"cannon",icon:"🎯", name:"重炮炮台", price:110, desc:"远程高伤 · 范围溅射 · 射程 26"},
-  {id:"frost", icon:"❄️", name:"冰冻塔",   price:80,  desc:"范围减速 · 冰控集火 · 射程 13"},
-  {id:"wallS", icon:"🧱", name:"钢墙块",   price:18,  desc:"不可摧毁掩体，改写敌军进攻动线"},
-  {id:"wallB", icon:"🟫", name:"砖墙块",   price:8,   desc:"廉价路障，可被炮火炸毁"},
-  {id:"mine",  icon:"💣", name:"地雷",     price:30,  desc:"敌军踩中即爆（范围 6 伤害）· 一次性"},
-  {id:"goldmine",icon:"💰", name:"金矿",   price:70,  desc:"每秒产金 · 可升级（Lv1~6）"},
+  {id:"mg",    icon:"turret", name:"机枪炮台", price:60,  desc:"自动索敌 · 射速快 / 伤害低 · 射程 16"},
+  {id:"cannon",icon:"attack", name:"重炮炮台", price:110, desc:"远程高伤 · 范围溅射 · 射程 26"},
+  {id:"frost", icon:"laser", name:"冰冻塔",   price:80,  desc:"范围减速 · 冰控集火 · 射程 13"},
+  {id:"wallS", icon:"wall", name:"钢墙块",   price:18,  desc:"不可摧毁掩体，改写敌军进攻动线"},
+  {id:"wallB", icon:"wall", name:"砖墙块",   price:8,   desc:"廉价路障，可被炮火炸毁"},
+  {id:"mine",  icon:"blast", name:"地雷",     price:30,  desc:"敌军踩中即爆（范围 6 伤害）· 一次性"},
+  {id:"goldmine",icon:"coin", name:"金矿",   price:70,  desc:"每秒产金 · 可升级（Lv1~6）"},
 ];
-/* ★ 生存模式专属商店：全量 SURVIVAL_BUILDS（科技点门槛在渲染时灰显），经典沿用 BUILDS
+/*  生存模式专属商店：全量 SURVIVAL_BUILDS（科技点门槛在渲染时灰显），经典沿用 BUILDS
    注意：SURVIVAL_BUILDS 在 config.js 中通过 window.SURVIVAL_BUILDS 挂载，engine.js 顶层
    不可见（script-block 隔离），必须经 window 访问；找不到则回退 BUILDS 防止 UI 整盘炸 */
 function shopList(){
@@ -3835,7 +4009,7 @@ function goldMineCost(){
   cost*=Math.max(.35,1+(TECH_TREE.economy.effect.buildCostPct||0)*economyLv);
   return Math.max(1,Math.round(cost));
 }
-/* ★ 基础矿之后共五次升级：280→1120→4480→17920→71680。 */
+/*  基础矿之后共五次升级：280→1120→4480→17920→71680。 */
 function goldMineUpCost(level){
   let cost=SurvivalSystem.mineUpgradeCost(level);
   if(cost==null)return null;
@@ -3846,10 +4020,11 @@ function goldMineUpCost(level){
 function houseUpgradeCost(level){return level>=5?null:Math.round(100*Math.pow(2,Math.max(0,level-1)));}
 function upgradeHouse(house){
   if(!house||builtHouses.indexOf(house)<0)return false;
-  const cost=houseUpgradeCost(house.level||1);if(cost==null){toast("🏠 人口房已达 Lv5");return false;}
-  if(game.gold<cost){toast(`💰 升级需要 ${cost} 金币`);return false;}
+  const cost=paidUpgradeCost(houseUpgradeCost(house.level||1));if(cost==null){toast(" 人口房已达 Lv5");return false;}
+  if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
+  if(deferUpgrade('house','',upgradeOwner('house',house),cost,house.level||1))return true;
   game.gold-=cost;const old=house.popProvided||6;house.level=(house.level||1)+1;house.popProvided=old+4;game.popMax+=4;
-  const visual=house.visualRoot||house.group;visual.scale.setScalar(1+.06*(house.level-1));updateGoldUI();updateResUI();wc3RenderSel();renderCmdCard();toast(`🏠 人口房升至 Lv${house.level} · 人口上限 +4`);return true;
+  const visual=house.visualRoot||house.group;visual.scale.setScalar(1+.06*(house.level-1));updateGoldUI();updateResUI();wc3RenderSel();renderCmdCard();toast(` 人口房升至 Lv${house.level} · 人口上限 +4`);return true;
 }
 function mineIncomeText(amount){
   const rounded=Math.round(Math.max(0,amount)*10)/10;
@@ -3861,6 +4036,7 @@ function mineIncomeLayer(){
   return layer;
 }
 function spawnMineIncomePopup(mine,amount){
+  if(window.Settings&&!Settings.isDamageText())return;
   if(!mine||!mine.group||amount<=0)return null;
   while(mineIncomePopups.length>=160){
     const stale=mineIncomePopups.shift();if(stale&&stale.element)stale.element.remove();
@@ -3885,21 +4061,22 @@ function updateMineIncomePopups(dt){
     popup.element.style.transform=`translate(${x}px,${y}px) translate(-50%,-50%)`;
   }
 }
-/* 金矿升级视觉：只放大建筑本体；Lv1~Lv6 为 1.00~1.25，逻辑根节点与占地不变。 */
+/* Lv1 保留原尺寸，Lv6 达旧顶级 1.25 的 150%，中间线性递增。 */
 function upgradeGoldMineVisual(ex){
   if(!ex||!ex.group)return;
   const lv=Math.max(1,Math.min(6,ex.level||1)),visual=ex.visualRoot||ex.group.children[0];
   if(!visual)return;
   if(!ex.visualBaseScale)ex.visualBaseScale=visual.scale.clone();
-  visual.scale.copy(ex.visualBaseScale).multiplyScalar(1+.05*(lv-1));
+  visual.scale.copy(ex.visualBaseScale).multiplyScalar(1+.175*(lv-1));
   ex.group.userData.goldMineVisualLevel=lv;
 }
 function upgradeGoldMine(mine){
   if(!mine||goldMines.indexOf(mine)<0)return false;
   const maxLevel=(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.mineMaxLevel)||SurvivalSystem.MINE_ECONOMY.maxLevel;
-  if(mine.level>=maxLevel){toast("⚠ 金矿已完成五次升级");return false;}
-  const cost=goldMineUpCost(mine.level);
-  if(cost==null||game.gold<cost){toast(`💰 升级需要 ${cost||0} 金币`);return false;}
+  if(mine.level>=maxLevel){toast(" 金矿已完成五次升级");return false;}
+  const cost=paidUpgradeCost(goldMineUpCost(mine.level));
+  if(cost==null||game.gold<cost){toast(` 升级需要 ${cost||0} 金币`);return false;}
+  if(deferUpgrade('goldmine','',upgradeOwner('goldmine',mine),cost,mine.level))return true;
   game.gold-=cost;
   mine.level++;
   upgradeGoldMineVisual(mine);
@@ -3909,7 +4086,7 @@ function upgradeGoldMine(mine){
     const position=mine.group.position.clone();
     spawnParticles(position.setY(heightAt(position.x,position.z)+1),0xffd75e,8,6,.8);
   }
-  toast(`💰 金矿升至 Lv${mine.level} · ${SurvivalSystem.mineIncome(mine.level)} 金/秒`);
+  toast(` 金矿升至 Lv${mine.level} · ${SurvivalSystem.mineIncome(mine.level)} 金/秒`);
   wc3RenderSel();
   return true;
 }
@@ -3956,9 +4133,9 @@ function renderShop(){
     const d=document.createElement("div");
     const poor=game.gold<priceOf(b)||(b.pop>0&&game.popUsed+b.pop>game.popMax);
     d.className="shopItem"+(buildSel===i?" sel":"")+(poor?" poor":"");
-    let tags=`<div class="pr">💰 ${priceOf(b)}</div>`;
-    if(b.pop>0)tags+=`<div class="pop">👥 ${b.pop}</div>`;
-    d.innerHTML=`<span class="hk">${i+1}</span><div class="ic">${b.icon}</div>
+    let tags=`<div class="pr"> ${priceOf(b)}</div>`;
+    if(b.pop>0)tags+=`<div class="pop"> ${b.pop}</div>`;
+    d.innerHTML=`<span class="hk">${i+1}</span><div class="ic">${UIIcons.svg(b.icon)}</div>
       <div class="nm">${b.name}</div>${tags}
       <div class="ds">${b.desc}</div>`;
     d.onclick=()=>selectBuild(buildSel===i?null:i);
@@ -3974,7 +4151,7 @@ function selectBuild(i){
   }
   buildSel=i;
   renderShop();
-  if(ghost){scene.remove(ghost);ghost=null;}
+  if(ghost){scene.remove(ghost);disposeTransientObject3D(ghost);ghost=null;}
   if(i!==null){
     const build=shopList()[i],tall=build.id.startsWith("wall");
     const footprint=build.footprint||[1,1];
@@ -3990,6 +4167,10 @@ const _ray=new THREE.Raycaster(),_ndc=new THREE.Vector2();
 function pickCell(){
   _ndc.x=(mouse.x/innerWidth)*2-1;_ndc.y=-(mouse.y/innerHeight)*2+1;
   _ray.setFromCamera(_ndc,camera);
+  if(ACTIVE_MODE.key==='survival'&&terrainSurface?.natural){
+    const point=intersectTerrainRay(_ray.ray,new THREE.Vector3());
+    if(!point)return null;const cell=cellOf(point.x,point.z);return inMap(cell.x,cell.z)?cell:null;
+  }
   const origin=_ray.ray.origin,dir=_ray.ray.direction;
   const planeHit=(y)=>{
     if(Math.abs(dir.y)<1e-5)return null;
@@ -4025,7 +4206,7 @@ function snapBuildAnchor(cell,build){
   return cell;
 }
 function cellPlaceable(c){
-  /* ★ P4-2：T_RAMP 坡道格允许建墙（WC3 式堵坡口战术）；
+  /*  P4-2：T_RAMP 坡道格允许建墙（WC3 式堵坡口战术）；
      破坏/拆除后由 buildWallTile 恢复坡道，不会隐形封死 */
   const t=grid[c.z][c.x];
   return (t===T_EMPTY||t===T_ROAD||t===T_PLATEAU||t===T_RAMP)
@@ -4036,8 +4217,15 @@ function footprintCells(anchor,build){
   for(let dz=0;dz<footprint[1];dz++)for(let dx=0;dx<footprint[0];dx++)cells.push({x:anchor.x+dx,z:anchor.z+dz});
   return cells;
 }
-function footprintPlaceable(anchor,build){
-  return footprintCells(anchor,build).every(cell=>inMap(cell.x,cell.z)&&cellPlaceable(cell));
+function footprintPlaceable(anchor,build,restoring=false){
+  const cells=footprintCells(anchor,build);
+  if(build.id==='heroHub'&&ACTIVE_MODE.key==='survival'&&terrainSurface?.natural&&cells.some(c=>!inMap(c.x,c.z)||terrainSurface.natural.wholeCells[idx(c.x,c.z)]!==1))return false;
+  if(!restoring&&ACTIVE_MODE.key==='survival'&&typeof constructionEntranceCells==='function'){
+    const entrance=constructionEntranceCells();
+    if(cells.some(c=>entrance.some(e=>e.x===c.x&&e.z===c.z)))return false;
+  }
+  return cells.every(cell=>inMap(cell.x,cell.z)&&cellPlaceable(cell))&&
+    (ACTIVE_MODE.key!=="survival"||naturalFootprintSupported(cells,build));
 }
 function footprintCenter(anchor,build){
   const footprint=(build&&build.footprint)||[1,1];
@@ -4049,9 +4237,11 @@ function footprintCenter(anchor,build){
 function reserveFootprint(record,cells){
   record.footprintCells=cells.map(cell=>idx(cell.x,cell.z));
   record.footprintCells.forEach(cellIndex=>structCells.add(cellIndex));
+  invalidateNavigation();
 }
 function releaseFootprint(record){
   (record&&record.footprintCells||[]).forEach(cellIndex=>structCells.delete(cellIndex));
+  invalidateNavigation();
 }
 function releaseDestroyedFootprint(record){
   if(!record)return;
@@ -4065,9 +4255,11 @@ function releaseDestroyedFootprint(record){
 }
 function ownedStructurePools(){
   return [[builtTurrets,"turret"],[goldMines,"goldmine"],[researchInstitutes,"research"],
-    [heavyFactories,"factory"],[builtHouses,"house"],[visionBeacons,"beacon"]];
+    [heroHubs,"heroHub"],[heavyFactories,"factory"],[builtHouses,"house"],[visionBeacons,"beacon"]];
 }
 function ownedStructureAtCell(cellIndex){
+  const job=constructionJobs.find(j=>j.phase!=='returning'&&(j.footprintCells||[]).includes(cellIndex));
+  if(job)return {record:job,records:constructionJobs,kind:'construction'};
   for(const [records,kind] of ownedStructurePools()){
     const record=records.find((item)=>(item.footprintCells||[]).includes(cellIndex));
     if(record)return {record,records,kind};
@@ -4089,6 +4281,7 @@ function destroyOwnedStructure(record,records,kind){
 }
 function damageOwnedStructureAtCell(cellIndex,damage){
   const hit=ownedStructureAtCell(cellIndex);if(!hit)return false;
+  if(hit.kind==='construction')return damageConstruction(hit.record,damage);
   if(!Number.isFinite(hit.record.maxHp)){hit.record.maxHp=180;hit.record.hp=180;}
   hit.record.hp=Math.max(0,hit.record.hp-Math.max(0,damage||0));
   if(hit.record.hp<=0)destroyOwnedStructure(hit.record,hit.records,hit.kind);
@@ -4107,7 +4300,7 @@ function updateGhost(){
   ghost.material.color.setHex(ok?0x39d98a:0xff5d5d);
   ghost.visible=true;
 }
-/* ★ 生存炮塔：取某等级的当前属性（基础 + N 阶升级覆盖） */
+/*  生存炮塔：取某等级的当前属性（基础 + N 阶升级覆盖） */
 function turretStats(key,lvl){
   const t=TURRET_TYPES[key];
   if(!t)return null;
@@ -4124,7 +4317,7 @@ function turretStats(key,lvl){
   return s;
 }
 function populateTurretWeapon(tur,key,M){
-  while(tur.children.length)tur.remove(tur.children[tur.children.length-1]);
+  while(tur.children.length){const child=tur.children[tur.children.length-1];tur.remove(child);disposeTransientObject3D(child);}
   tur.userData.muzzleMarker=null;
   const addBox=(w,h,d,x,y,z,mat)=>{const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);mesh.position.set(x,y,z);tur.add(mesh);return mesh;};
   const addBarrel=(radius,length,x,y,z,mat)=>{const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius*.82,radius,length,10),mat);mesh.rotation.x=Math.PI/2;mesh.position.set(x,y,z);tur.add(mesh);return mesh;};
@@ -4155,11 +4348,11 @@ function populateTurretWeapon(tur,key,M){
     muzzleZ=4.25;muzzleY=.36;
   }else if(key==="emp"){
     addBox(1.42,.5,1.38,0,.25,.05,main);addBox(1.05,.16,.82,0,.55,.02,steel);
-    const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(.46,1),warmEmissiveMaterial(0xa7e9ff,1.5));orb.position.set(0,.72,.48);orb.userData.nightGlow=true;tur.add(orb);
-    [-.43,.43].forEach((x)=>{addBarrel(.08,1.35,x,.42,1.15,M(0x83d7e7,.35,.35));addRing(.15,.045,x,.42,1.78,accent);});
-    const coilA=addRing(.62,.065,0,.71,.46,accent),coilB=addRing(.75,.045,0,.71,.46,steel);coilA.rotation.y=.18;coilB.rotation.y=-.2;
-    addBox(.11,.72,.11,-.62,.53,.1,dark);addBox(.11,.72,.11,.62,.53,.1,dark);
-    muzzleZ=1.86;muzzleY=.42;
+    addBarrel(.24,2.4,0,.42,1.45,dark);
+    for(const x of [-.36,.36]){addBox(.16,.28,2.1,x,.42,1.25,steel);for(let i=0;i<5;i++)addBox(.2,.44,.09,x,.42,.35+i*.32,accent);}
+    addRing(.32,.09,0,.42,2.7,steel);
+    const lens=new THREE.Mesh(new THREE.CircleGeometry(.22,16),warmEmissiveMaterial(0x78ffe3,1.5));lens.position.set(0,.42,2.72);tur.add(lens);
+    muzzleZ=2.74;muzzleY=.42;
   }else{
     addBox(1.42,.56,1.5,0,.29,0,main);addBox(1.05,.18,.5,0,.61,.18,accent);
     addBarrel(.14,2.4,0,.36,1.55,dark);addRing(.2,.05,0,.36,2.73,steel);
@@ -4167,6 +4360,9 @@ function populateTurretWeapon(tur,key,M){
     muzzleZ=2.81;muzzleY=.36;
   }
   const muzzleMarker=new THREE.Object3D();muzzleMarker.name="muzzle";muzzleMarker.position.set(0,muzzleY,muzzleZ);tur.add(muzzleMarker);tur.userData.muzzleMarker=muzzleMarker;
+  const pitchPivot=new THREE.Group();pitchPivot.name='炮管俯仰轴';pitchPivot.position.y=muzzleY;
+  for(const part of [...tur.children]){part.position.y-=muzzleY;pitchPivot.add(part);}
+  tur.add(pitchPivot);tur.userData.pitchPivot=pitchPivot;
   tur.userData.weaponKind=key;
 }
 /* 标准炮台：固定石铁底座；四个专精拥有独立、可一眼辨认的炮身。 */
@@ -4185,12 +4381,14 @@ function makeTurretMesh(key){
   statusLight.position.set(.68,1.42,-.18);statusLight.userData.nightGlow=true;g.add(statusLight);
   g.userData.base=base;g.userData.mount=mount;g.userData.statusLight=statusLight;
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  if(ACTIVE_MODE.key==="survival")g.scale.setScalar(.75);
   return g;
 }
-/* 专属炮台只强化原有炮台轮廓：炮座更稳、炮身略长、金属质感和状态灯逐级增强。 */
+/* 前四级渐进强化轮廓，五级换装分支重型炮身。 */
 function applyTurretLevelVisual(turret){
   if(!turret||!turret.group)return;
   const visualLevel=Math.max(1,(turret.level||0)+1);
+  if(visualLevel>=5&&turret.turretKey!=="turret")promoteVeteranTurret(turret.group,turret.turretKey);
   const step=visualLevel-1,g=turret.group,mount=g.userData.mount,tur=g.userData.turret,statusLight=g.userData.statusLight;
   const overall=SurvivalSystem.turretVisualScale(visualLevel);
   if(mount){
@@ -4212,8 +4410,9 @@ function applyTurretLevelVisual(turret){
 }
 function chooseTurretBranch(turret,branchId){
   if(!turret||turret.turretKey!=="turret"||!SurvivalSystem.TURRET_BRANCHES[branchId])return false;
-  const cost=turretBranchCost();
-  if(game.gold<cost){toast(`💰 专精需要 ${cost} 金币`);return false;}
+  const cost=paidUpgradeCost(turretBranchCost());
+  if(game.gold<cost){toast(` 专精需要 ${cost} 金币`);return false;}
+  if(deferUpgrade('branch',branchId,upgradeOwner('turret',turret),cost))return true;
   game.gold-=cost;turret.turretKey=branchId;turret.kind=branchId;turret.level=0;
   const stats=turretStats(branchId,0);Object.assign(turret,{dmg:stats.dmg,fireCd:1/stats.fireRate,range:stats.range*TILE,
     blast:stats.splash||0,pierce:stats.pierce||0,slow:stats.slow||0,stun:stats.stun||0,chain:stats.chain||0});
@@ -4221,18 +4420,20 @@ function chooseTurretBranch(turret,branchId){
   populateTurretWeapon(turret.group.userData.turret,branchId,M);
   turret.group.traverse((object)=>{if(object.isMesh&&object.material&&object!==turret.bar&&object!==turret.barFg){object.material=object.material.clone();object.material.color.lerp(new THREE.Color(color),.18);}});
   applyTurretLevelVisual(turret);
-  updateGoldUI();sfx.levelup();toast(`🔧 炮台专精：${TURRET_TYPES[branchId].name}`);wc3RenderSel();return true;
+  updateGoldUI();sfx.levelup();toast(` 炮台专精：${TURRET_TYPES[branchId].name}`);wc3RenderSel();return true;
 }
 /* 专属炮台：基础五级后由炮台突破继续开放，属性进入递减成长。 */
 function upgradeTurretAt(x,z){
   const t=builtTurrets.find(t=>t.cx===x&&t.cz===z);
-  if(!t){toast("⚠ 该位置没有可升级的炮塔");return false;}
+  if(!t){toast(" 该位置没有可升级的炮塔");return false;}
+  if(!doctrineAllows('tower',t.level+1)){toast("高阶炮台需要炮台专精");return false;}
   if(t.turretKey==="turret"){toast("请先在选中面板选择炮台专精");return false;}
-  if(t.level>=turretUnlockedMaxLevel()-1){toast(`⚠ 炮塔已达当前上限 Lv${turretUnlockedMaxLevel()}，请研究炮台突破`);return false;}
+  if(t.level>=turretUnlockedMaxLevel()-1){toast(` 炮塔已达当前上限 Lv${turretUnlockedMaxLevel()}，请研究炮台突破`);return false;}
   const tt=TURRET_TYPES[t.turretKey];
-  if(!tt){toast("⚠ 暂无可应用升级");return false;}
-  const cost=turretUpgradeCost(t);
-  if(cost==null||game.gold<cost){toast(`💰 升级需要 ${cost||0} 金币`);return false;}
+  if(!tt){toast(" 暂无可应用升级");return false;}
+  const cost=paidUpgradeCost(turretUpgradeCost(t));
+  if(cost==null||game.gold<cost){toast(` 升级需要 ${cost||0} 金币`);return false;}
+  if(deferUpgrade('turret','',upgradeOwner('turret',t),cost,t.level))return true;
   game.gold-=cost;updateGoldUI();
   const st=turretStats(t.turretKey,t.level+1);
   if(st.dmg!=null)t.dmg=st.dmg;
@@ -4247,7 +4448,7 @@ function upgradeTurretAt(x,z){
   applyTurretLevelVisual(t);
   sfx.levelup();
   spawnParticles(t.group.position.clone().setY(2),0x9fd4ff,10,6,.8);
-  toast(`🔧 ${tt.name} 升至 ${t.level+1} 级`);
+  toast(` ${tt.name} 升至 ${t.level+1} 级`);
   updateResUI();
   wc3RenderSel();
   return true;
@@ -4259,10 +4460,11 @@ function turretBranchCost(){
 function upgradeWallAt(x,z){
   if(!inMap(x,z))return false;
   const ci=idx(x,z),meta=wallMeta.get(ci),curLv=meta&&meta.lv||0;
-  if(curLv<1||grid[z][x]!==T_STEEL||!steelHP.has(ci)){toast("⚠ 该位置没有可升级的巨岩墙");return false;}
-  if(curLv>=wallUnlockedMaxLevel()){toast(`⚠ 墙体已达当前上限 Lv${wallUnlockedMaxLevel()}，请研究巨岩突破`);return false;}
-  const cost=wallPriceNext(curLv);
-  if(game.gold<cost){toast(`💰 升级需要 ${cost} 金币`);return false;}
+  if(curLv<1||grid[z][x]!==T_STEEL||!steelHP.has(ci)){toast(" 该位置没有可升级的巨岩墙");return false;}
+  if(curLv>=wallUnlockedMaxLevel()){toast(` 墙体已达当前上限 Lv${wallUnlockedMaxLevel()}，请研究巨岩突破`);return false;}
+  const cost=paidUpgradeCost(wallPriceNext(curLv));
+  if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
+  if(deferUpgrade('wall','',upgradeOwner('wall',{x,z}),cost,curLv))return true;
   game.gold-=cost;updateGoldUI();
   const nextLv=curLv+1,w=wallDefinition(nextLv),oldHp=steelHP.get(ci),oldMax=wallMaxHp(curLv);
   const ratio=oldMax>0?Math.max(0,Math.min(1,oldHp/oldMax)):1,wasRamp=!!meta.wasRamp;
@@ -4272,11 +4474,23 @@ function upgradeWallAt(x,z){
   wallMeta.set(ci,{lv:nextLv,hp:newHp,thorns:w.thorns||0,wasRamp});
   computeFlowField();sfx.levelup();
   const center=cellCenter(x,z);spawnParticles(new THREE.Vector3(center.x,heightAt(center.x,center.z)+1,center.z),0x9fd4ff,12,7,.9);
-  toast(`🧱 墙升至 Lv${nextLv}（${w.tag}·❤${wallMaxHp(nextLv)}）`);updateResUI();
+  toast(` 墙升至 Lv${nextLv}（${w.tag}·${wallMaxHp(nextLv)}）`);updateResUI();
   return true;
 }
 function tryPlace(px,pz){
-  /* ★ 烟测/外部 API：允许直接传入世界坐标触发放置（优先于光标 ghostCell） */
+  if(ACTIVE_MODE.key!=="survival")return placeBuildingImmediately(px,pz);
+  if(px!=null&&pz!=null){ghostCell=cellOf(px,pz);if(ghost)ghost.visible=true;}
+  if(buildSel===null||!ghostCell||!ghost||!ghost.visible)return;
+  const build=shopList()[buildSel];if(!build)return;
+  const anchor=snapBuildAnchor(ghostCell,build);
+  if(!inMap(anchor.x,anchor.z))return false;
+  if((build.id==="goldmine"&&goldMines.some(m=>m.x===anchor.x&&m.z===anchor.z))||
+    (build.kind==="turret"&&builtTurrets.some(t=>t.cx===anchor.x&&t.cz===anchor.z))||
+    (build.kind==="wall"&&wallLvAt(anchor.x,anchor.z)>0))return placeBuildingImmediately(px,pz);
+  return queueConstruction(build,anchor);
+}
+function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
+  /*  烟测/外部 API：允许直接传入世界坐标触发放置（优先于光标 ghostCell） */
   if(px!=null&&pz!=null){
     ghostCell=cellOf(px,pz);
     if(ghost&&ghostCell){ghost.position.set(px,0,pz);ghost.visible=true;}
@@ -4293,44 +4507,35 @@ function tryPlace(px,pz){
   const existingTurret=b.kind==="turret"&&builtTurrets.find(t=>t.cx===ghostCell.x&&t.cz===ghostCell.z);
   const wallUpgradeTarget=ACTIVE_MODE.key==="survival"&&b.kind==="wall"&&grid[ghostCell.z][ghostCell.x]===T_STEEL;
   const upgradeTarget=!!(existingTurret||wallUpgradeTarget);
-  if(!upgradeTarget&&!footprintPlaceable(ghostCell,b)){
+  if(!upgradeTarget&&!footprintPlaceable(ghostCell,b,restoring)){
     const now=performance.now();
     if(now-(tryPlace._lastBlockedToast||0)>650){
       tryPlace._lastBlockedToast=now;
-      toast("🚫 这里不能建造");
+      toast(" 这里不能建造");
     }
     return;
   }
   const buildCells=footprintCells(ghostCell,b);
   const cc=footprintCenter(ghostCell,b);
   /* 避免把玩家困死 */
-  if(player&&player.alive&&Math.hypot(player.group.position.x-cc.x,player.group.position.z-cc.z)<3.2)return;
+  if(!constructionJob&&player&&player.alive&&Math.hypot(player.group.position.x-cc.x,player.group.position.z-cc.z)<3.2)return;
   const gy=heightAt(cc.x,cc.z);
   /* ---- 金矿：这里只负责新建；已有矿必须先选中，再由面板按钮升级。 ---- */
   if(b.id==="goldmine"){
-    if(goldMines.length>=mineUnlockedCount()){toast(`💰 金矿数量已达 ${mineUnlockedCount()}，请在研究院升级采矿扩张`);return;}
-    const cost=priceOf(b);
+    if(goldMines.length>=mineUnlockedCount()){toast(` 金矿数量已达 ${mineUnlockedCount()}，请在研究院升级采矿扩张`);return;}
+    const cost=constructionJob?constructionJob.cost:priceOf(b);
     if(game.gold<cost)return;
     game.gold-=cost;updateGoldUI();
-    const g=new THREE.Group(),visualRoot=new THREE.Group();g.add(visualRoot);
-    /* 生存金矿：只保留工业套装矿井本体；收益由头顶飘字表达。 */
-    let baseM=null;
-    if(ACTIVE_MODE.key==="survival"&&ASSETS["industrial-building-s"]){
-      baseM=placeModel(visualRoot,"industrial-building-s",0,0,TILE*.78,-Math.PI/2,0,0xffffff,2.4,2.45);
-      if(baseM){baseM.position.y=0;baseM.scale.x*=.46;applyGoldMinePalette(baseM);}
-    }else{
-      const base=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.5,.6,8),
-        new THREE.MeshStandardMaterial({color:0x3a4a60,roughness:.7,metalness:.3}));
-      base.position.y=.3;visualRoot.add(base);
-    }
+    const g=takeConstructionModel(constructionJob,makeGoldmineVisual),visualRoot=g.userData.visualRoot;
     g.position.set(cc.x,gy,cc.z);scene.add(g);
     const mineMaxHp=Math.round(220*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
     const mineHealth=attachWorldHealthBar(g,4.5,2.7);
+    mineHealth.bar.userData.panelOnly=true;
     const record={group:g,visualRoot,visualBaseScale:visualRoot.scale.clone(),crystal:null,x:ghostCell.x,z:ghostCell.z,
       level:1,incomePulse:0,hp:mineMaxHp,maxHp:mineMaxHp,kind:"goldmine",...mineHealth};
     upgradeGoldMineVisual(record);
-    reserveFootprint(record,buildCells);goldMines.push(record);
-    sfx.levelup();
+    finishIndustrialFacade(g,"goldmine");reserveFootprint(record,buildCells);goldMines.push(record);
+    sfx.complete();
     spawnParticles(new THREE.Vector3(cc.x,gy+1,cc.z),0xffd75e,8,6,.8);
     return;
   }
@@ -4341,15 +4546,16 @@ function tryPlace(px,pz){
       const ex=existingTurret;
       if(ex){upgradeTurretAt(ghostCell.x,ghostCell.z);return;}
     }
-    if(b.id==="house"&&builtHouses.length>=5){toast("🏠 人口房最多建造 5 座");return;}
-    if(b.kind==="research"&&researchInstitutes.length){toast("🏛 研究院最多建造一座");return;}
-    if(b.kind==="factory"&&heavyFactories.length){toast("🏭 重工厂最多建造一座");return;}
+    if(b.id==="house"&&builtHouses.length>=5){toast(" 人口房最多建造 5 座");return;}
+    if(b.kind==="heroHub"&&heroHubs.length){toast("英雄枢纽最多一座");return;}
+    if(b.kind==="research"&&researchInstitutes.length){toast(" 研究院最多建造一座");return;}
+    if(b.kind==="factory"&&heavyFactories.length){toast(" 重工厂最多建造一座");return;}
     const needPop=b.pop||0;
-    if(needPop>0&&game.popUsed+needPop>game.popMax){
-      toast(`👥 人口不足（${game.popUsed}/${game.popMax}），请先建住房`);return;
+    if(!constructionJob&&needPop>0&&game.popUsed+needPop>game.popMax){
+      toast(` 人口不足（${game.popUsed}/${game.popMax}），请先建住房`);return;
     }
-    const cost=priceOf(b);
-    if(game.gold<cost){toast("💰 金币不足");return;}
+    const cost=constructionJob?constructionJob.cost:priceOf(b);
+    if(game.gold<cost){toast(" 金币不足");return;}
     game.gold-=cost;updateGoldUI();
 
     if(b.kind==="wall"){
@@ -4376,11 +4582,11 @@ function tryPlace(px,pz){
         tileMeshes[cellIndex]=m;structCells.add(cellIndex);
       }
       computeFlowField();
-      sfx.hit();
+      sfx.complete();
       spawnParticles(new THREE.Vector3(cc.x,gy+1,cc.z),0xc89a6a,6,5,.7);
-      toast(`🧱 建墙 Lv1（${w0.tag}·❤${initialHp}）`);
+      toast(` 建墙 Lv1（${w0.tag}·${initialHp}）`);
     }else if(b.kind==="turret"){
-      const key=b.turret, st=turretStats(key,0), g=makeTurretMesh(key);
+      const key=b.turret, st=turretStats(key,0), g=takeConstructionModel(constructionJob,()=>makeTurretMesh(key));
       g.position.set(cc.x,gy,cc.z);scene.add(g);
       const bar=new THREE.Mesh(new THREE.PlaneGeometry(2.4,.3),
         new THREE.MeshBasicMaterial({color:0x1c1410,transparent:true,opacity:.7,depthWrite:false}));
@@ -4390,7 +4596,7 @@ function tryPlace(px,pz){
       g.add(bar);g.add(barFg);
       const structureMult=1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0),turretHp=Math.round(40*structureMult);
       const record={group:g,kind:key,turretKey:key,level:0,cx:ghostCell.x,cz:ghostCell.z,x:ghostCell.x,z:ghostCell.z,
-        /* ★ range 以"格"配置，转世界单位参与距离比较（TILE=4） */
+        /*  range 以"格"配置，转世界单位参与距离比较（TILE=4） */
         range:st.range*TILE,cd:0,fireCd:1/st.fireRate,dmg:st.dmg,blast:st.splash||0,
         pierce:st.pierce||0,slow:st.slow||0,stun:st.stun||0,chain:st.chain||0,
         popUsed:needPop||0,
@@ -4398,141 +4604,40 @@ function tryPlace(px,pz){
       reserveFootprint(record,buildCells);builtTurrets.push(record);
       if(needPop>0)game.popUsed+=needPop;
       updateResUI();
-      sfx.levelup();
+      sfx.complete();
     }else if(b.id==="house"){
-      const g=new THREE.Group();
-      /* 人口房：与基地、研究院、重工厂共享工业建筑语言。 */
-      if(ACTIVE_MODE.key==="survival"&&ASSETS["industrial-building-i"]){
-        const body=placeModel(g,"industrial-building-i",0,0,TILE*.72,-Math.PI/2,0,0xffffff,2.8,2.8);
-        if(body)body.position.y=0;
-      }else{
-        const body=new THREE.Mesh(new THREE.BoxGeometry(2.8,2,2.8),
-          new THREE.MeshStandardMaterial({color:0x8a6b4f,roughness:.85}));
-        body.position.y=1;g.add(body);
-        const roof=new THREE.Mesh(new THREE.ConeGeometry(2.2,1.4,4),
-          new THREE.MeshStandardMaterial({color:0xb04a3a,roughness:.7}));
-        roof.position.y=2.7;roof.rotation.y=Math.PI/4;g.add(roof);
-      }
-      addWarmWindow(g,-.48,.95,TILE*.37,.42,.34,.08);
-      addWarmWindow(g,.48,.95,TILE*.37,.42,.34,.08);
+      const g=takeConstructionModel(constructionJob,makeHouseVisual);
       g.position.set(cc.x,gy,cc.z);scene.add(g);
       game.popMax+=(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.housePop)||6;
       const houseMaxHp=Math.round(160*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
       const houseHealth=attachWorldHealthBar(g,3.35,2.5);
       const record={group:g,visualRoot:g,x:ghostCell.x,z:ghostCell.z,level:1,hp:houseMaxHp,maxHp:houseMaxHp,
         kind:"house",popProvided:(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.housePop)||6,...houseHealth};
-      reserveFootprint(record,buildCells);builtHouses.push(record);
+      finishIndustrialFacade(g,"house");reserveFootprint(record,buildCells);builtHouses.push(record);
       updateResUI();
-      sfx.hit();
+      sfx.complete();
+    }else if(b.id==="heroHub"){
+      const g=takeConstructionModel(constructionJob,makeHeroHubModel);g.position.set(cc.x,gy,cc.z);scene.add(g);
+      const maxHp=620*(1+(TECH_TREE.defense.effect.structureHpPct||.1)*researchPowerLevel(game.tech.defense||0)),health=attachWorldHealthBar(g,4.1,4);const record={group:g,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"heroHub",...health};reserveFootprint(record,buildCells);heroHubs.push(record);sfx.complete();
     }else if(b.id==="research"){
-      const g=new THREE.Group();
-      /* 研究院：工业套装主楼 + 黄铜观测球，避免与重工厂风格割裂。 */
-      if(ACTIVE_MODE.key==="survival"&&ASSETS["industrial-building-g"]){
-        const tower=placeModel(g,"industrial-building-g",0,0,TILE*1.55,-Math.PI/2,0,0xffffff,5.8,5.8);
-        if(tower)tower.position.y=0;
-      }else{
-        const base=new THREE.Mesh(new THREE.BoxGeometry(TILE*2.5,3.2,TILE*2.5),
-          new THREE.MeshStandardMaterial({color:0x67655f,roughness:.9,metalness:.08}));
-        base.position.y=1.6;g.add(base);
-      }
-      const orb=new THREE.Mesh(new THREE.IcosahedronGeometry(.75,1),
-        new THREE.MeshStandardMaterial({color:0xc69a45,emissive:0x59320b,emissiveIntensity:.9,roughness:.3,metalness:.7}));
-      orb.position.y=6.55;g.add(orb);
-      const orbit=new THREE.Mesh(new THREE.TorusGeometry(1.15,.08,8,24),
-        new THREE.MeshStandardMaterial({color:0x9b7334,roughness:.36,metalness:.72}));
-      orbit.position.y=6.55;orbit.rotation.x=Math.PI/2;g.add(orbit);
-      addWarmWindow(g,-1.3,2.7,TILE*1.24,.72,.56,.12);
-      addWarmWindow(g,1.3,2.7,TILE*1.24,.72,.56,.12);
+      const g=takeConstructionModel(constructionJob,()=>makeBuildingModel("research")),orb=g.userData.orb;
       g.position.set(cc.x,gy,cc.z);scene.add(g);
       const maxHp=Math.round(520*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
       const health=attachWorldHealthBar(g,7.25,4.2);
       const record={group:g,orb,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"research",...health};
-      reserveFootprint(record,buildCells);researchInstitutes.push(record);
-      sfx.hit();
+      finishIndustrialFacade(g,"research");reserveFootprint(record,buildCells);researchInstitutes.push(record);
+      sfx.complete();
     }else if(b.id==="factory"){
-      const g=new THREE.Group();
-      if(ASSETS["industrial-building-m"]){
-        const building=placeModel(g,"industrial-building-m",0,0,TILE*1.65,-Math.PI/2,0,0xffffff,6.2,6.2);
-        if(building)building.position.y=0;
-      }else{
-      const stone=new THREE.MeshStandardMaterial({color:0x62645f,roughness:.88,metalness:.12});
-      const iron=new THREE.MeshStandardMaterial({color:0x686c68,roughness:.58,metalness:.48});
-      const darkIron=new THREE.MeshStandardMaterial({color:0x383d40,roughness:.66,metalness:.55});
-      const brass=new THREE.MeshStandardMaterial({color:0x8d6b32,roughness:.5,metalness:.58});
-      const slab=new THREE.Mesh(new THREE.BoxGeometry(TILE*3.6,.65,TILE*3.6),stone);
-      slab.position.y=.33;g.add(slab);
-      const hall=new THREE.Mesh(new THREE.BoxGeometry(TILE*3.1,3.2,TILE*2.65),iron);
-      hall.position.set(0,2,-.4);g.add(hall);
-      /* 双坡金属屋顶打破“大黑盒”轮廓，亮暗分面保持俯视可读。 */
-      [-1,1].forEach((side)=>{
-        const roofPanel=new THREE.Mesh(new THREE.BoxGeometry(TILE*1.72,.3,TILE*2.82),darkIron);
-        roofPanel.position.set(side*TILE*.79,4.18,-.4);roofPanel.rotation.z=side*-.19;g.add(roofPanel);
-      });
-      const ridge=new THREE.Mesh(new THREE.BoxGeometry(.28,.32,TILE*2.86),brass);ridge.position.set(0,4.78,-.4);g.add(ridge);
-      if(ASSETS["wall-half"]){
-        placeModel(g,"wall-half",-TILE*1.35,0,TILE*1.2,Math.PI/2,0,0x777168,3.2,3.2);
-        placeModel(g,"wall-half",TILE*1.35,0,TILE*1.2,Math.PI/2,0,0x777168,3.2,3.2);
-      }
-      if(ASSETS["crate-strong"])placeModel(g,"crate-strong",-TILE*1.1,TILE*1.2,TILE*.72,0,0,0x6b5c46,1.2,1.2);
-      if(ASSETS["barrel"])placeModel(g,"barrel",TILE*1.15,TILE*1.18,TILE*.62,0,0,0x5e5648,1.4,1.4);
-      const door=new THREE.Mesh(new THREE.BoxGeometry(TILE*1.55,2.25,.18),
-        darkIron);
-      door.position.set(0,1.55,TILE*.94);g.add(door);
-      for(let slat=0;slat<4;slat++){
-        const rail=new THREE.Mesh(new THREE.BoxGeometry(TILE*1.48,.09,.08),brass);
-        rail.position.set(0,.75+slat*.48,TILE*.99);g.add(rail);
-      }
-      addWarmWindow(g,-TILE*.68,2.55,TILE*.96,.9,.48,.12);
-      addWarmWindow(g,TILE*.68,2.55,TILE*.96,.9,.48,.12);
-      [-1,1].forEach(side=>{
-        const pipe=new THREE.Mesh(new THREE.CylinderGeometry(.25,.32,4.5,8),iron);
-        pipe.position.set(side*TILE*1.15,4.35,-TILE*.9);g.add(pipe);
-        const marker=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),warmEmissiveMaterial(0xc65f38,.95));
-        marker.position.set(side*TILE*1.15,6.62,-TILE*.9);marker.userData.nightGlow=true;g.add(marker);
-      });
-      }
+      const g=takeConstructionModel(constructionJob,()=>makeBuildingModel("factory"));
       g.position.set(cc.x,gy,cc.z);scene.add(g);
       const maxHp=Math.round(760*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
       const health=attachWorldHealthBar(g,7.15,5.2);
       const record={group:g,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"factory",queue:[],progress:0,autoType:null,
         rally:{x:cc.x+TILE*2.8,z:cc.z},...health};
-      reserveFootprint(record,buildCells);heavyFactories.push(record);
-      sfx.hit();
+      finishIndustrialFacade(g,"factory");reserveFootprint(record,buildCells);heavyFactories.push(record);
+      sfx.complete();
     }else if(b.id==="beacon"){
-      const g=new THREE.Group();g.userData.assetName="medical-watch-beacon";
-      if(ASSETS["tower-square-base"]){
-        const tower=placeModel(g,"tower-square-base",0,0,TILE*.78,0,0,0x5f625f,2.6,4.9);
-        replaceModelMaterial(tower,0x555956,{roughness:.9,metalness:.08});
-      }else{
-        const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.72,1.15,3.6,8),new THREE.MeshStandardMaterial({color:0x555956,roughness:.92}));
-        shaft.position.y=1.8;g.add(shaft);
-      }
-      const stoneTrim=new THREE.MeshStandardMaterial({color:0x383e40,roughness:.86,metalness:.12});
-      const plinth=new THREE.Mesh(new THREE.CylinderGeometry(1.48,1.62,.38,8),stoneTrim);
-      plinth.position.y=.19;g.add(plinth);
-      for(const [x,z] of [[-.92,-.92],[.92,-.92],[-.92,.92],[.92,.92]]){
-        const buttress=new THREE.Mesh(new THREE.CylinderGeometry(.18,.34,3.7,4),stoneTrim);
-        buttress.position.set(x,1.9,z);buttress.rotation.y=Math.PI/4;g.add(buttress);
-      }
-      const door=new THREE.Mesh(new THREE.BoxGeometry(.58,1.15,.09),new THREE.MeshStandardMaterial({color:0x1b2125,roughness:.72,metalness:.48}));
-      door.position.set(0,.73,1.31);g.add(door);
-      const slitMaterial=warmEmissiveMaterial(0xffc56a,1.15);
-      [[0,2.8,1.33,0],[0,3.45,-1.33,0],[1.33,3.1,0,Math.PI/2],[-1.33,2.55,0,Math.PI/2]].forEach(([x,y,z,ry])=>{
-        const slit=new THREE.Mesh(new THREE.BoxGeometry(.18,.48,.07),slitMaterial);
-        slit.position.set(x,y,z);slit.rotation.y=ry;slit.userData.nightGlow=true;g.add(slit);
-      });
-      const gallery=new THREE.Mesh(new THREE.CylinderGeometry(1.02,1.15,.24,10),new THREE.MeshStandardMaterial({color:0x30363a,roughness:.62,metalness:.45}));
-      gallery.position.y=4.25;g.add(gallery);
-      const lantern=new THREE.Mesh(new THREE.CylinderGeometry(.36,.44,.78,10),warmEmissiveMaterial(0xffc56a,2.25));
-      lantern.position.y=4.78;lantern.userData.nightGlow=true;g.add(lantern);
-      const cap=new THREE.Mesh(new THREE.ConeGeometry(.72,.55,8),new THREE.MeshStandardMaterial({color:0x252b30,roughness:.68,metalness:.42}));
-      cap.position.y=5.43;g.add(cap);
-      const railMaterial=new THREE.MeshStandardMaterial({color:0x2b3033,roughness:.62,metalness:.55});
-      for(let index=0;index<8;index++){
-        const angle=index*Math.PI/4,rail=new THREE.Mesh(new THREE.BoxGeometry(.07,.62,.07),railMaterial);
-        rail.position.set(Math.cos(angle)*.7,4.72,Math.sin(angle)*.7);g.add(rail);
-      }
-      const pool=new THREE.Mesh(new THREE.CircleGeometry(1.35,24),makeLightPoolMaterial());pool.rotation.x=-Math.PI/2;pool.position.y=.06;pool.renderOrder=3;pool.raycast=()=>{};g.add(pool);
+      const g=takeConstructionModel(constructionJob,makeBeaconVisual),lantern=g.userData.lantern,pool=g.userData.pool;
       g.position.set(cc.x,gy,cc.z);g.traverse((object)=>{if(object.isMesh){object.castShadow=true;object.receiveShadow=true;}});
       pool.castShadow=false;pool.receiveShadow=false;pool.raycast=()=>{};
       scene.add(g);
@@ -4540,23 +4645,23 @@ function tryPlace(px,pz){
       const maxHp=Math.round(180*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
       const health=attachWorldHealthBar(g,6.15,2.8);
       const record={group:g,light,lantern,pool,x:ghostCell.x,z:ghostCell.z,level:1,hp:maxHp,maxHp,kind:"beacon",popUsed:needPop||0,...health};
-      reserveFootprint(record,buildCells);visionBeacons.push(record);game.popUsed+=needPop;updateResUI();applyMedicalBeaconVisual(record);redrawVisionFog();sfx.hit();
+      reserveFootprint(record,buildCells);visionBeacons.push(record);game.popUsed+=needPop;updateResUI();applyMedicalBeaconVisual(record);queueVisionFogRedraw();sfx.complete();
     }
     spawnParticles(new THREE.Vector3(cc.x,gy+1,cc.z),0xffd75e,8,6,.8);
     return;
   }
 
   /* ---- 经典/塔防：沿用原 id 分支 ---- */
-  const cost=priceOf(b);
+  const cost=constructionJob?constructionJob.cost:priceOf(b);
   if(game.gold<cost)return;
   game.gold-=cost;updateGoldUI();
   if(b.id==="wallS"||b.id==="wallB"){
     grid[ghostCell.z][ghostCell.x]=b.id==="wallS"?T_STEEL:T_BRICK;
-    if(b.id==="wallS")steelHP.set(idx(ghostCell.x,ghostCell.z),8); /* ★ 玩家钢墙耐久 8 点 */
+    if(b.id==="wallS")steelHP.set(idx(ghostCell.x,ghostCell.z),8); /*  玩家钢墙耐久 8 点 */
     const m=buildWallTile(mapGroup,ghostCell.x,ghostCell.z,b.id==="wallS");
     tileMeshes[idx(ghostCell.x,ghostCell.z)]=m;
     mapGroup.add(m);
-    sfx.hit();
+    sfx.complete();
   }else if(b.id==="mine"){
     const g=new THREE.Group();
     const body=new THREE.Mesh(new THREE.CylinderGeometry(.9,1.1,.55,10),
@@ -4568,7 +4673,7 @@ function tryPlace(px,pz){
     g.position.set(cc.x,gy,cc.z);
     scene.add(g);
     builtMines.push({group:g,lamp,radius:2.6});
-    sfx.shoot();
+    sfx.complete();
   }else{ /* mg / cannon 炮台 —— 优先用 Kenney 塔防炮模型 */
     const g=new THREE.Group();
     const base=new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.45,1,12),
@@ -4587,7 +4692,7 @@ function tryPlace(px,pz){
     tur.position.set(0,1.6,-.6);g.add(tur);
     }
     g.position.set(cc.x,gy,cc.z);
-    /* ★ 炮台血条（受击后显示） */
+    /*  炮台血条（受击后显示） */
     const hpMax=b.id==="mg"?14:b.id==="frost"?16:22;
     const bar=new THREE.Mesh(new THREE.PlaneGeometry(2.4,.3),
       new THREE.MeshBasicMaterial({color:0x1c1410,transparent:true,opacity:.7,depthWrite:false}));
@@ -4602,11 +4707,11 @@ function tryPlace(px,pz){
       fireCd:b.id==="mg"?.55:(b.id==="frost"?2.0:2.0),dmg:b.id==="mg"?1:(b.id==="frost"?3:4),
       blast:b.id==="mg"?0:(b.id==="frost"?0:2.2),
       hp:hpMax,maxHp:hpMax,bar,barFg});
-    sfx.levelup();
+    sfx.complete();
   }
   spawnParticles(new THREE.Vector3(cc.x,gy+1,cc.z),0xffd75e,8,6,.8);
 }
-/* ★ 构筑物运行时：炮台索敌开火 + 地雷触发 */
+/*  构筑物运行时：炮台索敌开火 + 地雷触发 */
 function updateStructBars(t){
   if(!t||!t.bar||!t.barFg)return;
   if(t.bar.userData&&t.bar.userData.fill===t.barFg){syncWorldHealthBar(t.bar,t.hp,t.maxHp);return;}
@@ -4621,7 +4726,7 @@ function updateStructBars(t){
   }
 }
 function updateDamageHealthBars(){
-  for(const structure of [...builtTurrets,...goldMines,...researchInstitutes,...heavyFactories,...builtHouses,...visionBeacons])updateStructBars(structure);
+  for(const structure of [...builtTurrets,...goldMines,...researchInstitutes,...heroHubs,...heavyFactories,...builtHouses,...visionBeacons])updateStructBars(structure);
   for(const [cellKey,meta] of wallMeta){
     const group=tileMeshes[cellKey];if(!group||!meta)continue;
     syncWorldHealthBar(group.userData.healthBar,steelHP.get(cellKey)||0,wallMaxHp(meta.lv));
@@ -4629,40 +4734,29 @@ function updateDamageHealthBars(){
 }
 function destroyTurret(t){
   explode(t.group.position.clone().setY(1.4),false);
-  scene.remove(t.group);releaseDestroyedFootprint(t);game.popUsed=Math.max(0,game.popUsed-(t.popUsed||0));
+  scene.remove(t.group);disposeTransientObject3D(t.group);releaseDestroyedFootprint(t);game.popUsed=Math.max(0,game.popUsed-(t.popUsed||0));
   const i=builtTurrets.indexOf(t);
   if(i>=0)builtTurrets.splice(i,1);
   camShake=Math.max(camShake,.4);
 }
+function isEnemyCombatTarget(enemy){
+  return !!(enemy&&enemy.alive&&!enemy.dying&&enemy.hp>0&&enemy.group?.parent===scene&&
+    !enemy._resourcesReleased&&Number.isFinite(enemy.group.position.x)&&Number.isFinite(enemy.group.position.z));
+}
 function updateBuiltTurrets(dt){
   const now=performance.now();
-  /* ★ 科技树全局增益：B伤害 / C射程 / D射速 */
+  /*  科技树全局增益：B伤害 / C射程 / D射速 */
   const turretLv=researchPowerLevel((game.tech&&game.tech.turret)||0);
   const dMult=(1+.4*(game.stats.netmasterLv||0))*(1+(TECH_TREE.turret.effect.damagePct||0.08)*turretLv);
   const rMult=ACTIVE_MODE.key==="survival"?1:(1+.25*(game.stats.netmasterLv||0))*(1+(TECH_TREE.turret.effect.rangePct||0.025)*turretLv);
   const fMult=1+(TECH_TREE.turret.effect.fireRatePct||0.045)*turretLv;
   for(const t of builtTurrets){
     t.cd-=dt;
-    /* EMP：范围持续减速与科技伤害。 */
-    if(t.kind==="emp"){
-      const eLv=turretLv;
-      const slowPct=Math.min(.75,(t.slow||.3)*(1+.02*eLv)+(t.stun||0)*.15);
-      const dotPerSec=Math.max(eLv*.25,(t.dmg||0)*.12);
-      const fr=(ACTIVE_MODE.key==="survival"?SurvivalSystem.rangeAtResearchLevel(t.turretKey||t.kind,turretLv)*TILE:t.range*rMult);
-      for(const en of enemies){
-        if(!en.alive||now<en.spawnFlash||!isPositionVisible(en.group.position))continue;
-        const dx=en.group.position.x-t.group.position.x,dz=en.group.position.z-t.group.position.z;
-        if(dx*dx+dz*dz<fr*fr){
-          en.slowMult=1-slowPct;en.slowUntil=now+450;
-          if(dotPerSec>0)damageEnemy(en,dotPerSec*dt,{source:"turret",armorPierce:t.pierce});
-        }
-      }
-      /* EMP 同时保留区域压制与可辨识的冰晶弹体。 */
-    }
-    const effectiveRange=ACTIVE_MODE.key==="survival"?SurvivalSystem.rangeAtResearchLevel(t.turretKey||t.kind,turretLv)*TILE:t.range*rMult;
+
+    const effectiveRange=(ACTIVE_MODE.key==="survival"?SurvivalSystem.rangeAtResearchLevel(t.turretKey||t.kind,turretLv)*TILE:t.range*rMult)*(1+.03*doctrineLevel('range'));
     const rangeSq=effectiveRange*effectiveRange;
     const validTarget=(enemy)=>{
-      if(!enemy||!enemy.alive||now<enemy.spawnFlash||!isPositionVisible(enemy.group.position))return false;
+      if(!isEnemyCombatTarget(enemy)||now<enemy.spawnFlash||!isPositionVisible(enemy.group.position))return false;
       const dx=enemy.group.position.x-t.group.position.x,dz=enemy.group.position.z-t.group.position.z;
       return dx*dx+dz*dz<=rangeSq;
     };
@@ -4677,26 +4771,34 @@ function updateBuiltTurrets(dt){
       }
       t.lockTarget=tgt;
     }
+    if(!tgt){t._sustainTime=0;t._sustainTarget=null;t._sustainMultiplier=1;}
     if(tgt){
+      if(t._sustainTarget!==tgt){t._sustainTarget=tgt;t._sustainTime=0;}t._sustainTime=(t._sustainTime||0)+dt;
+      t._sustainMultiplier=1+Math.min(5,Math.floor(t._sustainTime/2))*.01*doctrineLevel('sustained');
       const lead=SurvivalSystem.predictInterceptPoint({shooter:t.group.position,target:tgt.group.position,
         velocity:tgt.velocity||{x:0,z:0},projectileSpeed:TURRET_PROJECTILE_SPEED,maxLeadTime:2.5});
-      const dx=lead.x-t.group.position.x,dz=lead.z-t.group.position.z;
+      const aimPoint=enemyAimPoint(tgt);
+      if(t.kind!=="emp"){aimPoint.x=lead.x;aimPoint.z=lead.z;}
+      const dx=aimPoint.x-t.group.position.x,dz=aimPoint.z-t.group.position.z;
       const want=Math.atan2(dx,dz);
-      /* ★ P3-3 固定坦克炮台：车体不动，仅炮塔旋转索敌 */
+      /*  P3-3 固定坦克炮台：车体不动，仅炮塔旋转索敌 */
       const tur=t.group.userData.turret;
-      if(tur)tur.rotation.y+=shortAngle(want-tur.rotation.y)*Math.min(1,dt*7);
+      if(tur)aimTurretAt(t.group,aimPoint,dt);
       else t.group.rotation.y+=shortAngle(want-t.group.rotation.y)*Math.min(1,dt*7);
-      if(t.cd<=0){
-        t.cd=t.fireCd/fMult;
-        const dir=new THREE.Vector3(dx,0,dz).normalize();
+      if(t.cd<=0&&(!tur||tur.userData.aimReady)){
+        t.cd=t.fireCd/(fMult*(t._speedAura||1)*(1+.02*doctrineLevel('feed')));
         const muzzleMarker=tur&&tur.userData.muzzleMarker;
         const shotOrigin=muzzleMarker?muzzleMarker.getWorldPosition(new THREE.Vector3()):null;
-        if(t.kind==="antitank"){
+        const origin=shotOrigin||t.group.position;
+        const dir=aimPoint.clone().sub(origin).normalize();
+        if(t.kind==="emp"){
+          fireLaserTurret(t,origin,enemyAimPoint(tgt),effectiveRange,t.dmg*dMult*(t._damageAura||1)*(t._sustainMultiplier||1));
+        }else if(t.kind==="antitank"){
           /* 狙击：超远高伤，可穿透（升级后） */
-          shoot({group:t.group,dmg:t.dmg*dMult,blast:t.blast},dir,true,{pierce:t.pierce,thruWall:true,source:"turret",projectileType:"antitank",origin:shotOrigin});
+          shoot({group:t.group,dmg:t.dmg*dMult*(t._damageAura||1)*(t._sustainMultiplier||1),blast:t.blast},dir,true,{armorPierce:t.pierce,pierce:0,thruWall:true,source:"turret",projectileType:"antitank",origin:shotOrigin});
         }else if(t.kind==="pulse"){
           /* 脉冲：范围眩晕 + 伤害 */
-          const R=effectiveRange,dmg=t.dmg*dMult;
+          const R=effectiveRange,dmg=t.dmg*dMult*(t._damageAura||1)*(t._sustainMultiplier||1);
           for(const e of enemies){
             if(!e.alive||now<e.spawnFlash||!isPositionVisible(e.group.position))continue;
             const ex=e.group.position.x-t.group.position.x,ez=e.group.position.z-t.group.position.z;
@@ -4710,7 +4812,7 @@ function updateBuiltTurrets(dt){
           spawnParticles(t.group.position.clone().setY(1.6),0xc084fc,12,7,1);
         }else if(t.kind==="tesla"){
           /* 电磁：主目标 + 最近 N 个敌人连锁闪电 */
-          const R=effectiveRange,dmg=t.dmg*dMult;
+          const R=effectiveRange,dmg=t.dmg*dMult*(t._damageAura||1)*(t._sustainMultiplier||1);
           const hitList=[tgt];
           let cur=tgt;
           for(let c=0;c<(t.chain||0);c++){
@@ -4731,9 +4833,9 @@ function updateBuiltTurrets(dt){
             if(e.hp<=0)killEnemy(e);
           });
         }else{
-          /* mg / cannon / 经典：标准发射（★ P4-3：塔弹穿墙，不被悬崖/自家建筑挡炮） */
+          /* mg / cannon / 经典：标准发射（ P4-3：塔弹穿墙，不被悬崖/自家建筑挡炮） */
           const projectileType=t.kind==="rapid"?"machinegun":t.kind==="cannon"?"cannon":t.kind==="emp"?"emp":"tank";
-          shoot({group:t.group,dmg:t.dmg*dMult,blast:t.blast},dir,true,{thruWall:true,source:"turret",projectileType,origin:shotOrigin});
+          shoot({group:t.group,dmg:t.dmg*dMult*(t._damageAura||1)*(t._sustainMultiplier||1),blast:t.blast},dir,true,{thruWall:true,source:"turret",projectileType,origin:shotOrigin});
         }
       }
     }else t.lockTarget=null;
@@ -4761,7 +4863,7 @@ function updateBuiltTurrets(dt){
     }
   }
 }
-/* ★ 构筑完成（按钮或倒计时归零共用） */
+/*  构筑完成（按钮或倒计时归零共用） */
 function finishBuild(){
   /* 幸存者模式：商店只是暂停界面，关闭后继续战斗 */
   if(ACTIVE_MODE.key==="survival"){
@@ -4779,16 +4881,17 @@ $("buildDoneBtn").onclick=finishBuild;
 function killEnemy(e,giveScore=true){
   if(!e.alive)return;
   e.alive=false;
-  if(typeof _wdProgress==="function")_wdProgress();   /* ★ P1-1：敌人死亡=波次推进事实 */
+  clearEnemyTargetReferences(e);
+  if(typeof _wdProgress==="function")_wdProgress();   /*  P1-1：敌人死亡=波次推进事实 */
   const horde=enemies.length;
   const skipDeathAnim=!e.boss&&!e.giant&&horde>220;
   if(ACTIVE_MODE.key==="survival"&&(e.boss||e.giant||e.elite||horde<180||Math.random()<.18))
-    spawnCorpseRemains(e.group.position.clone().setY(0),e.boss||e.elite);
+    spawnCorpseRemains(e.group.position.clone().setY(0),e.boss||e.elite,(e.visualRadius||1.5)/1.5);
   if(!skipDeathAnim||e.boss)explode(e.group.position.clone().setY(1.4),e.boss);
-  /* ★ 角色模型：保留 mesh 播放 die 骨骼动画，1.05s 后由 updateEnemies 真正清理 */
+  /*  角色模型：保留 mesh 播放 die 骨骼动画，1.05s 后由 updateEnemies 真正清理 */
   if(skipDeathAnim){
     if(e.mixer){try{e.mixer.stop();}catch(_){}}
-    scene.remove(e.group);
+    scene.remove(e.group);releaseEnemyResources(e);
     if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);e.beam=null;}
   }else if(e.characterModel&&e.actions&&e.actions.die){
     e.dying=true;
@@ -4802,25 +4905,25 @@ function killEnemy(e,giveScore=true){
     /* fadeOut 旧动作 */
     if(e.actions.idle)e.actions.idle.stop();
     if(e.actions.walk)e.actions.walk.stop();
-    /* ★ beam 变红：视觉提示"濒死"——1s 内会被一起清理 */
+    /*  beam 变红：视觉提示"濒死"——1s 内会被一起清理 */
     if(e.beam){e.beam.material.color.setHex(0xff5d5d);e.beam.material.opacity=.55;}
   }else if(e.characterModel){
     e.dying=true;e.dyingT=0;e.currentAnim=_ANIM_DEATH;
     if(e.mixer)e.mixer.stopAllAction();
     if(e.beam){e.beam.material.color.setHex(0x7a1118);e.beam.material.opacity=.35;}
   }else{
-    scene.remove(e.group);
+    scene.remove(e.group);releaseEnemyResources(e);
     if(e.beam)scene.remove(e.beam);
   }
   if(giveScore){
     game.score+=e.score;$("score").textContent=game.score;
     /* 生存模式与经典玩法完全隔离：生存不生成经典道具掉落。 */
     if(ACTIVE_MODE.key!=="survival")dropPowerup(e.group.position,!!e.elite);
-    /* ★ 金币掉落：仅构筑模式生效（经典/塔防不产金币） */
+    /*  金币掉落：仅构筑模式生效（经典/塔防不产金币） */
     if(ACTIVE_MODE.buildEnabled){
       let g;
       if(ACTIVE_MODE.key==="survival"){
-        /* ★ 生存：统一击杀金币 economy.killGold，保留精英/狂暴加成 */
+        /*  生存：统一击杀金币 economy.killGold，保留精英/狂暴加成 */
         const ec=ACTIVE_MODE.economy||{};
         g=e.boss?(ec.bossGold||70):((ec.killGold||1)*(e.elite?3:1));
         if(e.frenzy)g+=8;
@@ -4834,9 +4937,9 @@ function killEnemy(e,giveScore=true){
       game.gold+=g;updateGoldUI();
       spawnParticles(e.group.position.clone().setY(2),0xffd75e,4,5,.5);
     }
-    /* ★ 猎杀冲锋：击杀后短时提速 */
+    /*  猎杀冲锋：击杀后短时提速 */
     if(game.stats.sprintLv>0)game.sprintUntil=performance.now()+game.stats.sprintDur;
-    /* ★ 收割装置：击杀修复装甲 */
+    /*  收割装置：击杀修复装甲 */
     if(game.stats.vampLv>0&&player&&player.alive&&player.hp<player.maxHp){
       player.hp=Math.min(player.maxHp,player.hp+game.stats.vampLv);
       updateHpUI();
@@ -4849,12 +4952,12 @@ function damagePlayer(dmg){
   const now=performance.now();
   if(!player||!player.alive||now<player.invulnUntil)return;
   if(now<game.buffs.shieldUntil){sfx.hit();return;}
-  /* ★ 单兵力场：优先消耗护盾抵挡 */
+  /*  单兵力场：优先消耗护盾抵挡 */
   if(game.playerShieldHP>0){
     game.playerShieldHP--;sfx.hit();
     spawnParticles(player.group.position.clone().setY(1.8),0x7ec8ff,8,6,.8);
     player.invulnUntil=now+600;
-    toast(`💠 力场抵消伤害（剩余 ${game.playerShieldHP}）`);
+    toast(` 力场抵消伤害（剩余 ${game.playerShieldHP}）`);
     return;
   }
   player.hp-=dmg;sfx.hurt();camShake=Math.max(camShake,.5);
@@ -4868,13 +4971,13 @@ function damageEnemy(enemy,rawDamage,options={}){
   if(!enemy||!enemy.alive)return 0;
   const raw=Math.max(0,Number(rawDamage)||0);
   const armor=Math.min(.72,Math.max(0,Number(enemy.armor)||0));
-  const pierce=Math.min(1,Math.max(0,Number(options.armorPierce)||0));
+  const pierce=Math.min(1,Math.max(0,Number(options.armorPierce)||0)+(options.source==='turret'?.03*doctrineLevel('penetration'):0));
   const armorFactor=1-armor*(1-pierce);
   const pressure=options.source==="turret"?SurvivalSystem.turretPressureMultiplier(enemy.type,enemy.boss):1;
   const pressurePierce=pressure+(1-pressure)*pierce;
   const amount=raw*armorFactor*pressurePierce*Math.max(0,Number(options.multiplier)||1);
   enemy.hp-=amount;
-  if(enemy.hp<=0)killEnemy(enemy);
+  if(enemy.hp<=0){if(options.source==='hero')heroArchive().kills++;killEnemy(enemy);}
   return amount;
 }
 function playerDie(){
@@ -4899,15 +5002,15 @@ function baseDestroyed(){
 /* 波间推进使用正式游戏时钟，不依赖浏览器定时器和 UI 状态。
    建造、研究与大门面板只改变交互层，不得取消已经排队的下一波。 */
 let _waveClearing=false;
-let _wdStallT=0;                         /* ★ P1-1：无推进事实秒数（声明须在 resetGame 首次调用之前） */
-let _wdKillTimer=0;                      /* ★ P1-1：看门狗逐个击杀计时器 */
+let _wdStallT=0;                         /*  P1-1：无推进事实秒数（声明须在 resetGame 首次调用之前） */
+let _wdKillTimer=0;                      /*  P1-1：看门狗逐个击杀计时器 */
 let _wdHarvesting=false;                 /* v5.1.0：超时后保持收割态 */
 let _wdRerouted=false;                   /* 一次无进展周期只重算一次寻路 */
 function waveCleared(){
-  if(_waveClearing)return;              /* ★ 重复进入直接吞掉 */
+  if(_waveClearing)return;              /*  重复进入直接吞掉 */
   _waveClearing=true;
   game.score+=500+game.wave*100;$("score").textContent=game.score;
-  /* ★ 肃清金币奖励 */
+  /*  肃清金币奖励 */
   const economy=ACTIVE_MODE.economy||{};
   const bonus=typeof economy.waveClearBonus==="function"
     ?economy.waveClearBonus(game.wave)
@@ -4915,11 +5018,13 @@ function waveCleared(){
   game.gold+=bonus;updateGoldUI();
   announce(`第 ${game.wave} 波 肃清！　+${bonus} 金币`);
   game.waveTransition=SurvivalSystem.createWaveTransition(game.wave+1,1.8);
+  updateEnemyLeftUI();
 }
 function updateWaveTransition(dt){
   const current=game.waveTransition;
   if(!current||current.consumed)return;
   game.waveTransition=SurvivalSystem.tickWaveTransition(current,dt,state);
+  if(Math.ceil(current.remaining)!==Math.ceil(game.waveTransition.remaining))updateEnemyLeftUI();
   if(!game.waveTransition.ready)return;
   game.waveTransition=Object.freeze({...game.waveTransition,consumed:true});
   if(ACTIVE_MODE.key==="survival"){
@@ -4930,14 +5035,14 @@ function updateWaveTransition(dt){
     showUpgradeChoice();
   }
 }
-/* ★ 进入波间构筑阶段（倒计时由模式配置决定） */
+/*  进入波间构筑阶段（倒计时由模式配置决定） */
 function showBuildPhase(){
   state=STATE.BUILD;
   game.buildTimer=ACTIVE_MODE.buildTimer||45;
   $("build").classList.remove("hidden");
   renderShop();updateGoldUI();selectBuild(null);
 }
-/* ★ 幸存者模式：B 键随时打开构筑商店（暂停游戏，无倒计时） */
+/*  幸存者模式：B 键随时打开构筑商店（暂停游戏，无倒计时） */
 let buildReturnState=STATE.PLAYING; /* 记录打开商店前状态，关闭后恢复 */
 function openBuildMenu(){
   if(state!==STATE.PLAYING&&state!==STATE.BUILD&&state!==STATE.PREP)return;
@@ -4958,14 +5063,14 @@ function closeBuildMenu(){
   lastT=performance.now();
   state=buildReturnState===STATE.PREP?STATE.PREP:STATE.PLAYING;
 }
-/* ★ 幸存者模式科技树：T 键随时打开，暂停游戏升级全局科技 */
+/*  幸存者模式科技树：T 键随时打开，暂停游戏升级全局科技 */
 let techReturnState=STATE.PLAYING;
 
 /* ---------------- P4-5 WC3 底部常驻 HUD（三栏） ----------------
-   左=小地图（点击跳镜头）｜中=选中状态面板 ↔ 命令卡 双态｜右=资源速览。
+   命令居中，资源位于左上；左侧显示选中对象，右侧显示生产，小地图独立锚定。
    B 键 = 进入建造模式（不暂停）：命令卡切成建造条目，1-9 选择，左键放置，右键/B 取消。 */
 let _cmdT=0;
-let wc3BuildMode=false;   /* ★ P4-5：建造模式（命令卡二态） */
+let wc3BuildMode=false;   /*  P4-5：建造模式（命令卡二态） */
 
 /* ---- 选中系统：selKind(sel/enemy/wall/turret/goldmine/house/tech) + 引用 ---- */
 let wc3Sel=null;
@@ -4975,31 +5080,19 @@ let wc3CommandPage="root";
 const wc3ExtraRings=[];
 let portraitSignature="";
 function selectionPortraitIcon(entry){
-  if(!entry)return "🚫";
-  if(entry.kind==="player")return "🛡";
-  if(entry.kind==="unit")return entry.ref.type==="repair"?"🔧":"🛡";
-  return {base:"🏰",factory:"🏭",research:"🏛",enemy:entry.ref&&entry.ref.boss?"👹":"🧟",turret:"🔫",wall:"🧱",goldmine:"💰",beacon:"🟢"}[entry.kind]||"◆";
+ if(!entry)return 'shield';
+ if(entry.kind==='unit')return entry.ref.type==='repair'?'repair':'tank';
+ return {base:'base',player:'tank',factory:'factory',research:'research',enemy:'zombie',turret:entry.ref.turretKey==='emp'?'laser':'turret',wall:'wall',goldmine:'mine',beacon:'health',house:'house',construction:'build'}[entry.kind]||'shield';
 }
-function renderModelPortrait(ref,fallbackIcon){
-  const fallback=$("spIcon"),canvas=$("spPortraitCanvas");
-  if(!ref||!canvas){
-    if(canvas)canvas.style.display="none";if(fallback){fallback.style.display="flex";fallback.textContent=fallbackIcon;}return;
-  }
-  if(canvas)canvas.style.display="block";if(fallback)fallback.style.display="none";
-  const context=canvas.getContext("2d"),gradient=context.createRadialGradient(64,50,8,64,64,78);
-  gradient.addColorStop(0,"#514a37");gradient.addColorStop(.62,"#252118");gradient.addColorStop(1,"#0d0b08");
-  context.fillStyle=gradient;context.fillRect(0,0,128,128);
-  context.strokeStyle="rgba(224,185,95,.2)";context.lineWidth=1;
-  for(let line=10;line<128;line+=14){context.beginPath();context.moveTo(0,line);context.lineTo(128,line);context.stroke();}
-  context.textAlign="center";context.textBaseline="middle";context.font='56px "Segoe UI Emoji","Microsoft YaHei"';
-  context.shadowColor="rgba(0,0,0,.85)";context.shadowBlur=8;context.fillStyle="#ead49b";context.fillText(fallbackIcon,64,63);
-  context.shadowBlur=0;context.fillStyle="#b38a46";context.fillRect(20,105,88,3);
+function renderModelPortrait(ref,icon){
+ const fallback=$('spIcon'),canvas=$('spPortraitCanvas');
+ if(canvas)canvas.style.display='none';if(fallback){fallback.style.display='flex';fallback.innerHTML=UIIcons.svg(icon);}
 }
 function updateSelectionPortrait(){
   const grid=$("spPortraitGrid"),canvas=$("spPortraitCanvas"),fallback=$("spIcon");if(!grid||!canvas)return;
   if(wc3Selection.length>1){
     portraitSignature="";canvas.style.display="none";if(fallback)fallback.style.display="none";grid.style.display="grid";grid.innerHTML="";
-    wc3Selection.slice(0,8).forEach((entry)=>{const mini=document.createElement("div");mini.className="portraitMini";mini.textContent=selectionPortraitIcon(entry);mini.title=entry.ref.name||entry.kind;grid.appendChild(mini);});
+    wc3Selection.slice(0,8).forEach((entry)=>{const mini=document.createElement("div");mini.className="portraitMini";mini.innerHTML=UIIcons.svg(entry.kind);mini.title=entry.ref.name||entry.kind;grid.appendChild(mini);});
     return;
   }
   grid.style.display="none";grid.innerHTML="";
@@ -5009,7 +5102,7 @@ function updateSelectionPortrait(){
 }
 function wc3UpdateSelectionRing(){
   if(!wc3Sel)return;
-  const ref=wc3Sel.ref;
+  const ref=wc3Sel.kind==="construction"?{group:wc3Sel.ref.site||wc3Sel.ref.worker}:wc3Sel.ref;
   let x,z,y,radius=1.7;
   if(ref&&ref.group){x=ref.group.position.x;z=ref.group.position.z;y=heightAt(x,z);radius=ref.radius||radius;}
   else if(ref&&ref.x!=null){const c=cellCenter(ref.x,ref.z);x=c.x;z=c.z;y=heightAt(x,z);radius=TILE*.46;}
@@ -5076,7 +5169,7 @@ function selectBaseForCommand(openBuild=false,page="root"){
 function selectResearchForCommand(){
   if(wc3BuildMode)closeWc3Build();
   const institute=researchInstitutes[0];
-  if(!institute){toast("🏛 请先建造研究院");return false;}
+  if(!institute){toast(" 请先建造研究院");return false;}
   return focusSelectedStructure("research",institute);
 }
 function issueSelectionCommand(command,target=null){
@@ -5084,6 +5177,7 @@ function issueSelectionCommand(command,target=null){
   if(!controllable.length)return false;
   const slots=target?SurvivalSystem.formationSlotsForRadii(controllable.map((unit)=>unit.radius||1.5),target,{padding:.45}):[];
   controllable.forEach((unit,index)=>{
+    unit.autoRepairBlocked=false;
     if(command==="stop"){
       clearFriendlyRoute(unit);unit.attackTarget=null;unit.repairTarget=null;unit.attackMove=false;unit.command="stop";unit.patrolPoints=[];return;
     }
@@ -5105,58 +5199,63 @@ function wc3RenderSel(){
   const s=wc3Sel.ref,k=wc3Sel.kind;
   let html="",hp=-1,hpMax=1,btns="";
   if(wc3Selection.length>1){
-    ic.textContent="🛡";nm.textContent=`已选择 ${wc3Selection.length} 个目标`;
+    ic.innerHTML=UIIcons.svg("shield");nm.textContent=`已选择 ${wc3Selection.length} 个目标`;
     const kindNames={wall:"巨岩墙",goldmine:"金矿",turret:"炮台",beacon:"医疗灯塔",factory:"重工厂",research:"研究院",base:"基地"};
     const counts={};wc3Selection.forEach((entry)=>{const name=entry.kind==="player"?"指挥车":entry.ref.name||kindNames[entry.kind]||"单位";counts[name]=(counts[name]||0)+1;});
     html=Object.entries(counts).map(([name,count])=>`${name} ×${count}`).join(" · ");
+  }else if(k==="construction"&&constructionJobs.includes(s)){
+    ic.innerHTML=UIIcons.svg("build");nm.textContent=s.build.name;
+    const phase=s.phase==="building"?`施工中 · ${Math.ceil(s.duration-s.elapsed)} 秒`:s.phase==="returning"?"工程师返回基地":s.route?"工程师赶往工地":"道路受阻，等待通行";
+    html=phase+` · 已付 ${s.cost} 金币`;hp=s.elapsed;hpMax=s.duration;
   }else if(k==="base"&&s&&baseAlive&&baseGroup){
-    ic.textContent="🏰";nm.textContent="基地大门";hp=game.gateHp;hpMax=game.gateMaxHp;
-    html=`护甲 <b>${Math.round(((ACTIVE_MODE.baseGrowth&&ACTIVE_MODE.baseGrowth.armorPerLv)||0)*(game.gateArmorLv||0)*100)}%</b> · 反伤 <b>Lv${game.gateThornsLv||0}</b> · 自修 <b>Lv${game.gateRegenLv||0}</b>`;
+    ic.innerHTML=UIIcons.svg("base");nm.textContent=BASE_ROUTES[game.doctrine]?.name||"基础指挥基地";hp=game.gateHp;hpMax=game.gateMaxHp;
+    html=game.doctrine?`<b>${BASE_ROUTES[game.doctrine].name}</b> · 底部四格研究专属科技`:`选择高级基地流派 · 改建完成后解锁四项专属科技`;
   }else if(k==="player"&&s&&s.alive){
-    ic.textContent="🛡️";
+    ic.innerHTML=UIIcons.svg("shield");
     nm.textContent="装甲指挥车";
     hp=s.hp;hpMax=s.maxHp;
     html=`伤害 <b>${game.stats.dmg.toFixed(1)}</b> · 射速 <b>${game.stats.fireRate.toFixed(2)}</b> · 移速 <b>${(s.speed*game.stats.moveSpeed).toFixed(1)}</b>`;
   }else if(k==="unit"&&s&&s.alive){
-    ic.textContent=s.type==="repair"?"🔧":"🛡";nm.textContent=s.name;
-    hp=s.hp;hpMax=s.maxHp;html=`伤害 <b>${Math.round(s.dmg)}</b> · 移速 <b>${s.speed.toFixed(1)}</b> · 人口 <b>${s.population}</b>`;
+    ic.innerHTML=UIIcons.svg(s.type==="repair"?"repair":"shield");nm.textContent=s.name;
+    hp=s.hp;hpMax=s.maxHp;html=`${friendlyWeaponDescription(s)}<br>伤害 <b>${s.dmg.toFixed(1)}</b> · 移速 <b>${s.speed.toFixed(1)}</b> · 人口 <b>${s.population}</b>`;
   }else if(k==="factory"&&s&&heavyFactories.includes(s)){
-    ic.textContent="🏭";nm.textContent="重工厂";hp=s.hp;hpMax=s.maxHp;
+    ic.innerHTML=UIIcons.svg("factory");nm.textContent="重工厂";hp=s.hp;hpMax=s.maxHp;
     html=s.queue[0]?`生产中 <b>${SurvivalSystem.FRIENDLY_UNIT_TYPES[s.queue[0].typeId].name}</b> · <b>${Math.round(s.progress*100)}%</b> · 队列 <b>${s.queue.length}/5</b>`:`队列空闲 · <b>0/5</b>`;
+  }else if(k==="heroHub"&&s){ic.innerHTML=UIIcons.svg("base");nm.textContent="英雄枢纽";hp=s.hp;hpMax=s.maxHp;html=`英雄 ${{unbuilt:'待生产',producing:'整备中',alive:'已出战',dead:'等待复活'}[heroArchive().status]} · 击杀 ${heroArchive().kills} · 攻击成长 ×${HeroSystem.growth(heroArchive().kills).toFixed(2)}`;
   }else if(k==="research"&&s&&researchInstitutes.includes(s)){
-    ic.textContent="🏛";nm.textContent="研究院";hp=s.hp;hpMax=s.maxHp;
+    ic.innerHTML=UIIcons.svg("research");nm.textContent="研究院";hp=s.hp;hpMax=s.maxHp;
     const cap=researchUnlockedMaxLevel();
-    html=Object.values(TECH_TREE).map((tech)=>`${tech.icon}${game.tech[tech.id]||0}/${cap}`).join(" · ")+`<br>⛏金矿 ${goldMines.length}/${mineUnlockedCount()} · 🧱墙上限 ${wallUnlockedMaxLevel()} · 🔧炮台上限 ${turretUnlockedMaxLevel()}`;
+    html=Object.values(TECH_TREE).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`).join(" · ")+`<br>金矿 ${goldMines.length}/${mineUnlockedCount()} · 墙上限 ${wallUnlockedMaxLevel()} · 炮台上限 ${turretUnlockedMaxLevel()}`;
   }else if(k==="house"&&s&&builtHouses.includes(s)){
-    ic.textContent="🏠";nm.textContent=`人口房 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
+    ic.innerHTML=UIIcons.svg("house");nm.textContent=`人口房 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
     html=`人口上限 +${s.popProvided||6} · 建造上限 5 座`;
   }else if(k==="enemy"&&s&&s.alive){
-    ic.textContent=s.boss?"👹":"🧟";
+    ic.innerHTML=UIIcons.svg(s.boss?"zombie":"zombie");
     nm.textContent=(s.boss?"BOSS · ":"")+(s.bossName||ENEMY_TYPES[s.type]?.name||s.type||"僵尸");
     /* Boss 的 type 可能是 null（由 bossProfile 只提供 bossId），
        不能再从 ENEMY_TYPES 推断最大生命，否则 hpMax 会退化为当前 hp，血条永远满格。 */
     hp=Math.max(0,Number(s.hp)||0);hpMax=Math.max(1,Number(s.maxHp)||hp);
-    html=`伤害 <b>${s.dmg}</b> · 速度 <b>${s.speed.toFixed(1)}</b>`;
+    html=`近战伤害 <b>${enemyMeleeDamage(s).toFixed(2)}</b> · 速度 <b>${s.speed.toFixed(1)}</b> · 时间伤害/血量 ×${survivalPressureMultiplier().toFixed(2)}`;
   }else if(k==="turret"&&s&&builtTurrets.indexOf(s)>=0){
-    ic.textContent=TURRET_TYPES[s.turretKey]?"🔫":"🚫";
+    ic.innerHTML=UIIcons.svg(TURRET_TYPES[s.turretKey]?"turret":"stop");
     nm.textContent=TURRET_TYPES[s.turretKey]?TURRET_TYPES[s.turretKey].name:"炮塔";
     hp=s.hp;hpMax=s.maxHp;
-    html=`等级 <b>Lv${s.level+1}</b> · 伤害 <b>${s.dmg}</b> · 射程 <b>${Math.round(s.range/TILE)}</b>`;
+    html=`等级 <b>Lv${s.level+1}</b> · 伤害 <b>${s.dmg}</b> · 射程 <b>${Math.round(s.range/TILE)}</b><br>${TURRET_TYPES[s.turretKey]?.desc||''}`;
     const branchCost=turretBranchCost();
     const turretCost=turretUpgradeCost(s);
   }else if(k==="wall"&&s&&grid[s.z][s.x]===T_STEEL){
     const lv=wallLvAt(s.x,s.z)||1,w=wallDefinition(lv);
     const progress=SurvivalSystem.wallProgress(lv),nextCost=lv<wallUnlockedMaxLevel()?wallPriceNext(lv):null;
-    ic.textContent="🧱";
+    ic.innerHTML=UIIcons.svg("wall");
     nm.textContent=w?`${w.tag}墙 Lv${lv}`:"墙";
     hp=steelHP.get(idx(s.x,s.z))||0;hpMax=w?wallMaxHp(lv):hp;
-    html=w?`${progress.name}大阶 · 小等级 <b>${progress.minor}/10</b> · ❤ <b>${Math.ceil(hp)}/${hpMax}</b>${w.thorns>0?` · 反伤 <b>${Math.round(w.thorns*100)}%</b>`:""}`:"";
+    html=w?`${progress.name}大阶 · 小等级 <b>${progress.minor}/10</b> ·  <b>${Math.ceil(hp)}/${hpMax}</b>${w.thorns>0?` · 反伤 <b>${Math.round(w.thorns*100)}%</b>`:""}`:"";
   }else if(k==="goldmine"&&s&&goldMines.indexOf(s)>=0){
-    ic.textContent="💰";nm.textContent=`金矿 Lv${s.level}`;
+    ic.innerHTML=UIIcons.svg("coin");nm.textContent=`金矿 Lv${s.level}`;
     const currentIncome=SurvivalSystem.mineIncome(s.level),nextCost=goldMineUpCost(s.level),nextIncome=nextCost==null?null:SurvivalSystem.mineIncome(s.level+1);
     html=`产出 <b>${currentIncome}</b> 金/秒${nextIncome==null?" · <b>五次升级完成</b>":` · 下级 <b>${nextIncome}</b> 金/秒`}`;
   }else if(k==="beacon"&&s&&visionBeacons.includes(s)){
-    ic.textContent="💚";nm.textContent=`医疗灯塔 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
+    ic.innerHTML=UIIcons.svg("health");nm.textContent=`医疗灯塔 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
     html=`视野 <b>${medicalBeaconVisionRadius(s)}</b> · 修补 <b>${(medicalBeaconRepairPercentPerSecond(s)*100).toFixed(2)}%</b>最大生命/秒 · 范围 <b>${medicalBeaconRepairRadius(s)}</b> · 多塔封顶 <b>10%</b>/秒`;
   }else{wc3ClearSel();return;}
   nm.textContent=nm.textContent||"";
@@ -5187,6 +5286,8 @@ function wc3PickAt(px,py){
   for(const h of hits){
     let o=h.object;
     while(o){
+      const construction=constructionJobs.find(j=>j.site===o||j.worker===o);
+      if(construction)return {kind:"construction",ref:construction};
       if(player&&player.alive&&player.group===o)return{kind:"player",ref:player};
       if(baseAlive&&baseGroup===o)return{kind:"base",ref:baseSelectionRef()};
       const unit=friendlyUnits.find((candidate)=>candidate.group===o&&candidate.alive);
@@ -5198,6 +5299,7 @@ function wc3PickAt(px,py){
       if(tr)return{kind:"turret",ref:tr};
       const mn=goldMines.find(m=>m.group===o);
       if(mn)return{kind:"goldmine",ref:mn};
+      const hub=heroHubs.find(item=>item.group===o);if(hub)return {kind:"heroHub",ref:hub};
       const institute=researchInstitutes.find((item)=>item.group===o);
       if(institute)return{kind:"research",ref:institute};
       const factory=heavyFactories.find((item)=>item.group===o);
@@ -5253,6 +5355,7 @@ function wc3SelectableEntriesFor(seed){
   if(seed.kind==='beacon')return visionBeacons.map((ref)=>({kind:'beacon',ref}));
   if(seed.kind==='research')return researchInstitutes.map((ref)=>({kind:'research',ref}));
   if(seed.kind==='factory')return heavyFactories.map((ref)=>({kind:'factory',ref}));
+  if(seed.kind==='house')return builtHouses.map((ref)=>({kind:'house',ref}));
   if(seed.kind==='base')return baseAlive?[{kind:'base',ref:baseSelectionRef()}]:[];
   if(seed.kind==='wall'){
     const entries=[];
@@ -5295,9 +5398,10 @@ function sellSelectedSingle(){
   if(!wc3Sel)return false;
   const {kind,ref}=wc3Sel;
   if(kind==="unit"&&friendlyUnits.includes(ref)){
+    if(ref.type==='hero'){toast("唯一英雄不能出售");return false;}
     const refund=Math.round((SurvivalSystem.FRIENDLY_UNIT_TYPES[ref.type]?.cost||0)*.5);
-    scene.remove(ref.group);friendlyUnits.splice(friendlyUnits.indexOf(ref),1);game.popUsed=Math.max(0,game.popUsed-(ref.population||0));if(heroTank===ref)heroTank=null;
-    game.gold+=refund;updateGoldUI();updateResUI();toast(`🧹 拆除${ref.name||"单位"}，回收 ${refund} 金币`);wc3ClearSel();wc3RenderSel();renderCmdCard();return true;
+    scene.remove(ref.group);disposeTransientObject3D(ref.group);friendlyUnits.splice(friendlyUnits.indexOf(ref),1);game.popUsed=Math.max(0,game.popUsed-(ref.population||0));if(heroTank===ref)heroTank=null;
+    game.gold+=refund;updateGoldUI();updateResUI();toast(` 拆除${ref.name||"单位"}，回收 ${refund} 金币`);wc3ClearSel();wc3RenderSel();renderCmdCard();return true;
   }
   const cell=selectedRecordCell(kind,ref);
   if(!cell||cell.x==null||cell.z==null||!attemptDestroy(cell.x,cell.z))return false;
@@ -5315,7 +5419,7 @@ function batchUpgradeSelected(kind){
     if(ok)upgraded++;
   }
   const spent=Math.round(beforeGold-game.gold),notUpgraded=Math.max(0,selected.length-upgraded);
-  toast(upgraded?`✅ 批量升级 ${upgraded} 个 · 花费 ${spent} · 未升级 ${notUpgraded}`:`⚠ 没有可升级的目标 · 未升级 ${notUpgraded}`);
+  toast(upgraded?` 批量升级 ${upgraded} 个 · 花费 ${spent} · 未升级 ${notUpgraded}`:` 没有可升级的目标 · 未升级 ${notUpgraded}`);
   wc3RenderSel();renderCmdCard();return upgraded;
 }
 function structureUpgradeItem(kind,ref,multi){
@@ -5329,58 +5433,53 @@ function structureUpgradeItem(kind,ref,multi){
     const costs=selectedEntriesOfKind(kind).map(({ref:item})=>kind==="wall"?(wallLvAt(item.x,item.z)<wallUnlockedMaxLevel()?wallPriceNext(wallLvAt(item.x,item.z)):null)
       :kind==="goldmine"?goldMineUpCost(item.level):kind==="beacon"?medicalBeaconUpgradeCost(item):kind==="turret"?turretUpgradeCost(item):kind==="house"?houseUpgradeCost(item.level):null).filter((value)=>value!=null);
     const total=costs.reduce((sum,value)=>sum+value,0),minimum=costs.length?Math.min(...costs):Infinity;
-    return {k:"U",commandId:`${kind}-up`,icon:kind==="wall"?"🧱":kind==="goldmine"?"💰":kind==="beacon"?"🟢":kind==="house"?"🏠":"🔧",name:costs.length?"批量升级":"全部满级",price:costs.length?total:null,hot:"U",tip:`选中 ${selectedEntriesOfKind(kind).length} 个 · 可升级 ${costs.length} 个`,dim:!costs.length||game.gold<minimum||(kind==="turret"&&ref.turretKey==="turret"),act:()=>batchUpgradeSelected(kind)};
+    return {upgradeType:kind,upgradeId:'',upgradeOwner:upgradeOwner(kind,ref),k:"U",commandId:`${kind}-up`,icon:"upgrade",name:costs.length?"批量升级":"全部满级",price:costs.length?total:null,hot:"U",tip:`选中 ${selectedEntriesOfKind(kind).length} 个 · 可升级 ${costs.length} 个`,dim:!costs.length||game.gold<minimum||(kind==="turret"&&ref.turretKey==="turret"),act:()=>batchUpgradeSelected(kind)};
   }
-  return {k:"U",commandId:`${kind}-up`,icon:kind==="wall"?"🧱":kind==="goldmine"?"💰":kind==="beacon"?"🟢":kind==="house"?"🏠":"🔧",name:cost==null?`已满级 Lv${level}`:`升级 Lv${level+1}`,price:cost,hot:"U",tip:`当前 Lv${level}`,dim:cost==null||game.gold<cost||(kind==="turret"&&ref.turretKey==="turret"),act};
+  return {upgradeType:kind,upgradeId:'',upgradeOwner:upgradeOwner(kind,ref),k:"U",commandId:`${kind}-up`,icon:"upgrade",name:cost==null?`已满级 Lv${level}`:`升级 Lv${level+1}`,price:cost,hot:"U",tip:`当前 Lv${level}${kind==="turret"&&!doctrineAllows('tower',level)?" · 需要炮台专精":""}`,dim:cost==null||game.gold<cost||(kind==="turret"&&(ref.turretKey==="turret"||!doctrineAllows('tower',level))),act};
 }
 function commandItemsForSelection(){
   if(!wc3Sel)return [];
   const kinds=new Set(wc3Selection.map((entry)=>entry.kind));
   if([...kinds].every((kind)=>kind==="player"||kind==="unit"))return [
-    {k:"M",icon:"🚩",name:"移动",tip:"右键点击地面移动",hot:"右键"},
-    {k:"A",icon:"⚔️",name:"攻击",tip:"攻击移动",hot:"A",act:()=>{wc3AttackMove=true;toast("⚔ 攻击移动：左键点击目标位置");}},
-    {k:"S",icon:"✋",name:"停止",tip:"停止当前指令",hot:"S",act:()=>issueSelectionCommand("stop")},
-    {k:"P",icon:"🚩",name:"巡逻",tip:"在两点间往返警戒",hot:"P",act:()=>{wc3AttackMove="patrol";toast("🚩 巡逻：左键点击另一端");}},
-    ...(wc3Selection.length===1&&wc3Sel.kind==="unit"?[{k:"X",icon:"🛠",name:"拆除",tip:"拆除该单位并回收部分金币",hot:"X",act:sellSelectedSingle}]:[]),
+    {k:"M",icon:"move",name:"移动",tip:"右键点击地面移动",hot:"右键"},
+    {k:"A",icon:"attack",name:"攻击",tip:"攻击移动",hot:"A",act:()=>{wc3AttackMove=true;toast(" 攻击移动：左键点击目标位置");}},
+    {k:"S",icon:"stop",name:"停止",tip:"停止当前指令",hot:"S",act:()=>issueSelectionCommand("stop")},
+    {k:"P",icon:"patrol",name:"巡逻",tip:"在两点间往返警戒",hot:"P",act:()=>{wc3AttackMove="patrol";toast(" 巡逻：左键点击另一端");}},
+    ...repairUpgradeCommands(),
+    ...(wc3Selection.length===1&&wc3Sel.ref.type==='hero'?[{k:'H',hot:'H',icon:'base',name:'英雄枢纽',tip:'前往枢纽学习和升级被动武器',dim:!heroHub(),act:()=>{const h=heroHub();if(h)focusSelectedStructure('heroHub',h);}}]:[]),
+    ...(wc3Selection.length===1&&wc3Sel.kind==="unit"&&wc3Sel.ref.type!=='hero'?[{k:"X",icon:"demolish",name:"拆除",tip:"拆除该单位并回收部分金币",hot:"X",act:sellSelectedSingle}]:[]),
   ];
   if(kinds.size!==1||wc3Sel.kind==="enemy")return [];
   const kind=wc3Sel.kind,ref=wc3Sel.ref,multi=wc3Selection.length>1;
-  if(kind==="base"){
-    if(wc3CommandPage==="gate"){
-      const gate=ACTIVE_MODE.gate||{};
-      return [...Object.keys(GATE_UP_FIELD).map((upgradeKind)=>{
-        const lv=game[GATE_UP_FIELD[upgradeKind][0]]||0,max=Math.max(lv,gate[GATE_UP_FIELD[upgradeKind][1]]||5),cost=gateUpCost(upgradeKind);
-        return {k:upgradeKind[0].toUpperCase(),icon:upgradeKind==="hp"?"❤️":upgradeKind==="armor"?"🛡":"✨",name:GATE_UP_NAME[upgradeKind],price:lv>=max?null:cost,hot:"G",tip:`${GATE_UP_DESC[upgradeKind]}<br>Lv${lv}/${max}`,dim:lv>=max||game.gold<cost,act:()=>upgradeGate(upgradeKind)};
-      }),{k:"X",icon:"↩",name:"返回",hot:"B",tip:"返回基地建造",act:()=>{wc3CommandPage="root";renderCmdCard();}}];
-    }
-    return [...shopList().map((build,index)=>{const mineCapped=build.id==="goldmine"&&goldMines.length>=mineUnlockedCount(),houseCapped=build.id==="house"&&builtHouses.length>=5;return {k:String(index+1),icon:build.icon,name:build.name,price:priceOf(build),hot:String(index+1),tip:mineCapped?`${build.desc}<br>数量 ${goldMines.length}/${mineUnlockedCount()} · 研究采矿扩张可提高上限`:houseCapped?`${build.desc}<br>数量 ${builtHouses.length}/5 · 已达建造上限`:build.desc,sel:wc3BuildMode&&buildSel===index,dim:mineCapped||houseCapped||game.gold<priceOf(build)||(build.pop>0&&game.popUsed+build.pop>game.popMax),act:()=>{if(mineCapped){toast(`💰 金矿数量已达 ${mineUnlockedCount()}`);return;}if(houseCapped){toast("🏠 人口房最多建造 5 座");return;}if(!wc3BuildMode)openWc3Build();selectBuild(index);toast(`🔧 已选择 ${build.name}`);}};}),
-      {k:"G",icon:"🚪",name:"基地升级",hot:"G",tip:"大门耐久、护甲、反伤与自修",act:()=>{if(wc3BuildMode)closeWc3Build();wc3CommandPage="gate";renderCmdCard();}}];
-  }
+  if(kind==="construction")return ref.phase==="returning"?[]:[{k:"X",icon:"close",name:"取消施工",hot:"X",tip:"退回全部建造费用，工人返回基地",act:()=>{cancelConstruction(ref);renderCmdCard();wc3RenderSel();}}];
+  if(kind==="base")return baseDoctrineCommands();
+  if(kind==="heroHub")return heroCommands();
   if(kind==="research"){
     const cap=researchUnlockedMaxLevel();
     const normal=Object.values(TECH_TREE).map((tech,index)=>{
       const lv=game.tech[tech.id]||0,cost=techCost(tech.id),maxed=lv>=cap,unlocked=techUnlocked(tech.id);
-      return {k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,act:()=>upgradeTech(tech.id)};
+      return {upgradeType:'tech',upgradeId:tech.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,act:()=>upgradeTech(tech.id)};
     });
-    const icons={mining:"⛏",science:"📚",wall:"🧱",turret:"🔧"};
+    const icons={mining:"mine",science:"research",wall:"wall",turret:"turret"};
     const breakthrough=Object.values(SurvivalSystem.BREAKTHROUGH_RESEARCH).map((item,index)=>{
       const lv=breakthroughLevel(item.id),cost=breakthroughCost(item.id);
       const target=item.id==="mining"?`金矿上限 ${mineUnlockedCount()}`:item.id==="science"?`科技上限 ${researchUnlockedMaxLevel()}`:item.id==="wall"?`巨岩上限 ${wallUnlockedMaxLevel()}`:`炮台上限 ${turretUnlockedMaxLevel()}`;
-      return {k:String(index+5),icon:icons[item.id],name:item.name,price:cost,hot:String(index+5),tip:`无限研究 · Lv${lv}<br>${target}`,dim:game.gold<cost,act:()=>upgradeBreakthrough(item.id)};
+      return {upgradeType:'breakthrough',upgradeId:item.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+5),icon:icons[item.id],name:item.name,price:cost,hot:String(index+5),tip:`无限研究 · Lv${lv}<br>${target}`,dim:game.gold<cost,act:()=>upgradeBreakthrough(item.id)};
     });
-    return [...normal,...breakthrough,{k:"X",icon:"🛠",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle}];
+    return [...normal,...breakthrough,{k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle}];
   }
-  if(kind==="factory")return [...Object.entries(SurvivalSystem.FRIENDLY_UNIT_TYPES).map(([typeId,spec],index)=>{return {k:String(index+1),icon:typeId==="repair"?"🔧":"🛡",name:spec.name,price:spec.cost,hot:String(index+1),autoType:typeId,tip:`人口 ${spec.population} · 生产 ${spec.buildTime}秒 · 右键切换自动生产`,dim:ref.queue.length>=5||game.gold<spec.cost||game.popUsed+spec.population>game.popMax,act:()=>{if(queueFactoryUnit(ref,typeId)){toast(`🏭 ${spec.name} 已加入生产队列`);wc3RenderSel();renderCmdCard();}}};}),
-    {k:"R",icon:"🚩",name:"集结点",hot:"R",tip:"设置新的出厂集结点",act:()=>{wc3AttackMove="rally";toast("🚩 左键点击设置集结点");}},
-    {k:"C",icon:"↩",name:"取消生产",hot:"C",tip:"取消队尾单位并返还 75% 金币",dim:!ref.queue.length,act:()=>cancelFactoryQueue(ref)},
-    {k:"X",icon:"🛠",name:"拆除",hot:"X",tip:"拆除重工厂",act:sellSelectedSingle}];
+  if(kind==="factory")return [...Object.entries(SurvivalSystem.FRIENDLY_UNIT_TYPES).filter(([id])=>["light","medium","heavy"].includes(id)).map(([typeId,spec],index)=>{spec={...spec,cost:Math.ceil(spec.cost*(1-.03*doctrineLevel('supply'))),buildTime:spec.buildTime*(1-.04*doctrineLevel('supply'))};const medical=typeId==='repair'?repairProductionStatus():null;return {k:String(index+1),icon:typeId==="repair"?"repair":"tank",name:medical?`${spec.name} ${medical.count}/${medical.max}`:spec.name,price:spec.cost,hot:String(index+1),autoType:typeId,tip:`人口 ${spec.population} · 生产 ${spec.buildTime}秒 · 右键切换自动生产${medical?`<br>${medical.reason}<br>医疗车同目标不叠加；与灯塔独立补充`:""}`,dim:(medical&&!medical.allowed)||ref.queue.length>=5||game.gold<spec.cost||game.popUsed+spec.population>game.popMax,act:()=>{if(queueFactoryUnit(ref,typeId)){toast(` ${spec.name} 已加入生产队列`);wc3RenderSel();renderCmdCard();}}};}),
+    {k:"R",icon:"flag",name:"集结点",hot:"R",tip:"设置新的出厂集结点",act:()=>{wc3AttackMove="rally";toast(" 左键点击设置集结点");}},
+    {k:"C",icon:"close",name:"取消生产",hot:"C",tip:"取消队尾单位并返还 75% 金币",dim:!ref.queue.length,act:()=>cancelFactoryQueue(ref)},
+    {k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除重工厂",act:sellSelectedSingle}];
   if(["wall","goldmine","beacon","turret","house"].includes(kind)){
     if(kind==="turret"&&multi&&new Set(wc3Selection.map((entry)=>entry.ref.turretKey)).size>1)return [];
     const items=[structureUpgradeItem(kind,ref,multi)];
-    if(kind==="turret"&&ref.turretKey==="turret"&&!multi)for(const [branchId,branch] of Object.entries(SurvivalSystem.TURRET_BRANCHES)){
-      const cost=turretBranchCost();items.push({k:branchId[0].toUpperCase(),branchId,icon:"🎯",name:branch.name||TURRET_TYPES[branchId]?.name||branchId,price:cost,hot:"1",tip:"炮台专精分支",dim:game.gold<cost,act:()=>chooseTurretBranch(ref,branchId)});
-    }
-    if(!multi)items.push({k:"X",icon:"🛠",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle});
+    if(kind==="turret"&&ref.turretKey==="turret"&&!multi)Object.entries(SurvivalSystem.TURRET_BRANCHES).forEach(([branchId,branch],index)=>{
+      const hot=String(index+1),cost=turretBranchCost();
+      items.push({upgradeType:'branch',upgradeId:branchId,upgradeOwner:upgradeOwner('turret',ref),k:hot,branchId,icon:branchId==="emp"?"laser":branchId==="cannon"?"blast":branchId==="antitank"?"attack":"turret",name:branch.name||TURRET_TYPES[branchId]?.name||branchId,price:cost,hot,tip:TURRET_TYPES[branchId].desc,dim:game.gold<cost,act:()=>chooseTurretBranch(ref,branchId)});
+    });
+    if(!multi)items.push({k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle});
     return items;
   }
   return [];
@@ -5392,30 +5491,32 @@ function renderCmdCard(){
     wrap.addEventListener("click",activateCmdCardProgrammaticClick);
     wrap.dataset.pointerActivationBound="true";
   }
-  const items=commandItemsForSelection().filter((item)=>!item.sep);
+  const items=decorateUpgradeCommands(commandItemsForSelection().filter((item)=>!item.sep));
   const factoryRef=wc3Sel&&wc3Sel.kind==="factory"?wc3Sel.ref:null;
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
-  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.hot==="A"&&!!wc3AttackMove]),factoryQueue]);
+  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
   _cmdCardSignature=signature;wrap.innerHTML="";
   items.forEach(it=>{
+    if(it.empty){const slot=document.createElement("div");slot.className="cmdSlot";wrap.appendChild(slot);return;}
     const d=document.createElement("div");
-    d._cmdCardItem=it;
+    d._cmdCardItem=it;d.setAttribute('role','button');d.tabIndex=it.dim?-1:0;d.setAttribute('aria-label',it.name+(it.price!=null?' · '+it.price+' 金币':'')+' · '+it.hot);d.addEventListener('keydown',event=>{if(event.code==='Enter'||event.code==='Space'){event.preventDefault();event.stopPropagation();d.click();}});
     if(it.branchId)d.dataset.branch=it.branchId;
     if(it.commandId)d.dataset.commandId=it.commandId;
     d.setAttribute("aria-disabled",it.dim?"true":"false");
-    d.className="cmdBtn"+(it.sel?" active":"")+(it.dim?" disabled":"")
+    d.className="cmdBtn"+(it.category?" category-"+it.category:"")+(it.sel?" active":"")+(it.dim?" disabled":"")
       +(it.hot==="A"&&wc3AttackMove?" active":"");
     const queued=it.autoType&&factoryRef?(factoryRef.queue||[]).filter((q)=>q.typeId===it.autoType).length:0;
     const producing=it.autoType&&factoryRef&&factoryRef.queue[0]&&factoryRef.queue[0].typeId===it.autoType;
-    d.innerHTML=`<span class="ck">${it.hot||""}</span><span class="ci">${it.icon||""}</span><span class="cn">${it.name||""}</span>`
-      +(it.price!=null?`<span class="cp">💰${it.price}</span>`:"")
+    d.innerHTML=`<span class="ck">${it.hot||""}</span><span class="ci">${UIIcons.svg(it.icon)}</span><span class="cn">${it.name||""}</span>`
+      +(it.price!=null?`<span class="cp">${it.price}</span>`:"")
       +(queued?`<span class="cq">${queued}</span>`:"")
+      +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;
-      tip.innerHTML=`<div class="t">${it.icon} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;
+      tip.innerHTML=`<div class="t">${UIIcons.svg(it.icon)} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;
       tip.style.display="block";
     };
     d.onmouseleave=()=>{const tip=$("wc3tip");if(tip)tip.style.display="none";};
@@ -5428,7 +5529,7 @@ function renderCmdCard(){
     }
   }
 }
-/* ★ P4-5：B 键建造模式（不暂停，命令卡二态） */
+/*  P4-5：B 键建造模式（不暂停，命令卡二态） */
 function openWc3Build(){
   if(!wc3Sel||wc3Sel.kind!=="base"){
     if(!baseAlive||!baseGroup)return;
@@ -5439,7 +5540,7 @@ function openWc3Build(){
   if(gridHelper)gridHelper.visible=true;
   if(state===STATE.PLAYING||state===STATE.PREP)state=STATE.BUILD;
   renderCmdCard();updateGoldUI();
-  toast("🏗 建造模式：1-9 选择 · 左键放置 · 右键/B 收起");
+  toast(" 建造模式：1-9 选择 · 左键放置 · 右键/B 收起");
 }
 function closeWc3Build(){
   wc3BuildMode=false;
@@ -5452,8 +5553,9 @@ function closeWc3Build(){
   renderCmdCard();
 }
 function openTechMenu(){
+  if(ACTIVE_MODE.key==='survival'){selectResearchForCommand();return;}
   if(state!==STATE.PLAYING&&state!==STATE.PREP&&state!==STATE.BUILD)return;
-  if(ACTIVE_MODE.key==="survival"&&!researchInstitutes.length){toast("🏛 请先建造研究院");return;}
+  if(ACTIVE_MODE.key==="survival"&&!researchInstitutes.length){toast(" 请先建造研究院");return;}
   techReturnState=state;
   if(state===STATE.BUILD)$("build").classList.add("hidden");
   state=STATE.TECH;
@@ -5469,15 +5571,18 @@ function closeTechMenu(){
 function techCost(branch){return SurvivalSystem.researchCost(branch,game.tech[branch]||0,researchUnlockedMaxLevel());}
 function breakthroughCost(id){return SurvivalSystem.breakthroughCost(id,breakthroughLevel(id));}
 function upgradeBreakthrough(id){
+  if(id==='turret'&&!doctrineAllows('tower',3)){toast("需要炮台专精");return false;}
   const item=SurvivalSystem.BREAKTHROUGH_RESEARCH[id];
-  if(!item){toast("⚠ 未知突破研究");return false;}
-  const cost=breakthroughCost(id);
-  if(game.gold<cost){toast(`💰 ${item.name}需要 ${cost} 金币`);return false;}
+  if(!item){toast(" 未知突破研究");return false;}
+  const cost=paidUpgradeCost(breakthroughCost(id));
+  if(game.gold<cost){toast(` ${item.name}需要 ${cost} 金币`);return false;}
+  if(deferUpgrade('breakthrough',id,upgradeOwner('research',researchInstitutes[0]),cost,breakthroughLevel(id)))return true;
   game.gold-=cost;game.breakthroughs[id]=breakthroughLevel(id)+1;
   const result=id==="mining"?`金矿上限 ${mineUnlockedCount()}`:id==="science"?`科技上限 ${researchUnlockedMaxLevel()}`:id==="wall"?`巨岩上限 ${wallUnlockedMaxLevel()}`:`炮台上限 ${turretUnlockedMaxLevel()}`;
   sfx.levelup();toast(`${item.name} Lv${game.breakthroughs[id]} · ${result}`);updateGoldUI();wc3RenderSel();renderCmdCard();return true;
 }
 function techUnlocked(branch){
+  if((branch==='tank'||branch==='turret')&&!doctrineAllows(branch==='tank'?'tank':'tower',game.tech[branch]||0))return false;
   const req=TECH_TREE[branch].requires||{};
   for(const k in req)if((game.tech[k]||0)<req[k])return false;
   return true;
@@ -5493,15 +5598,15 @@ function renderTech(){
     const pips=Array.from({length:Math.min(cap,20)},(_,i)=>`<span class="pip${i<Math.min(lv,20)?" on":""}"></span>`).join("");
     let reqTxt="";
     if(!unlocked){
-      const req=[];for(const k in t.requires)req.push(`${TECH_TREE[k].icon}${TECH_TREE[k].name} Lv.${t.requires[k]}`);
-      reqTxt=`<div class="req">🔒 需先解锁：${req.join(" · ")}</div>`;
+      const req=[];for(const k in t.requires)req.push(`${TECH_TREE[k].name} Lv.${t.requires[k]}`);
+      reqTxt=`<div class="req"> 需先解锁：${req.join(" · ")}</div>`;
     }
-    card.innerHTML=`<div class="ic">${t.icon}</div>
+    card.innerHTML=`<div class="ic">${UIIcons.svg(t.icon)}</div>
       <div class="nm">${t.name}</div>
       <div class="ds">${t.desc}</div>
       <div class="pips">${pips}</div>
       <div class="lv">Lv.${lv}/${cap}</div>
-      ${maxed?`<div class="maxedTag">✅ 已满级</div>`:`<div class="cost">💰 ${cost}</div>`}
+      ${maxed?`<div class="maxedTag"> 已满级</div>`:`<div class="cost"> ${cost}</div>`}
       ${reqTxt}`;
     card.onclick=()=>upgradeTech(t.id);
     wrap.appendChild(card);
@@ -5509,16 +5614,18 @@ function renderTech(){
   updateGoldUI();
 }
 function upgradeTech(branch){
+  if((branch==='tank'||branch==='turret')&&!doctrineAllows(branch==='tank'?'tank':'tower',game.tech[branch]||0)){toast("高阶科技需要对应主战专精");return false;}
   const t=TECH_TREE[branch],lv=game.tech[branch]||0;
   const cap=researchUnlockedMaxLevel();
-  if(lv>=cap){toast(`${t.icon} ${t.name} 已达当前上限，请先研究科技突破`);return;}
+  if(lv>=cap){toast(`${t.name} 已达当前上限，请先研究科技突破`);return;}
   if(!techUnlocked(branch)){toast("前置科技未解锁，需先强化前置分支");return;}
-  const cost=techCost(branch);
+  const cost=paidUpgradeCost(techCost(branch));
   if(game.gold<cost){toast("金币不足，升级失败");return;}
+  if(deferUpgrade('tech',branch,upgradeOwner('research',researchInstitutes[0]),cost,lv))return true;
   game.gold-=cost;
   game.tech[branch]=lv+1;
   if(sfx&&sfx.levelup)sfx.levelup();
-  toast(`${t.icon} ${t.name} 升至 Lv.${game.tech[branch]}！`);
+  toast(`${t.name} 升至 Lv.${game.tech[branch]}！`);
   if(branch==="defense"){
     const oldMultiplier=1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(lv);
     const newMultiplier=1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense);
@@ -5526,7 +5633,7 @@ function upgradeTech(branch){
       const ratio=(steelHP.get(ci)||0)/Math.max(1,wallDefinition(meta.lv).hp*oldMultiplier);
       const next=Math.max(1,Math.round(wallMaxHp(meta.lv)*ratio));steelHP.set(ci,next);meta.hp=next;
     }
-    for(const structure of [...builtTurrets,...researchInstitutes,...heavyFactories,...visionBeacons]){
+    for(const structure of [...builtTurrets,...researchInstitutes,...heroHubs,...heavyFactories,...visionBeacons]){
       const ratio=structure.hp/structure.maxHp;structure.maxHp=Math.round(structure.maxHp/oldMultiplier*newMultiplier);structure.hp=Math.max(1,Math.round(structure.maxHp*ratio));
     }
     const newMax=computeGateMaxHp();
@@ -5548,10 +5655,11 @@ function upgradeTech(branch){
     updateHpUI();
   }
   if(branch==="tank")for(const unit of friendlyUnits){
+    if(unit.type==='hero')continue;
     const spec=SurvivalSystem.FRIENDLY_UNIT_TYPES[unit.type],ratio=unit.hp/unit.maxHp,power=researchPowerLevel(game.tech.tank);
     unit.maxHp=Math.round(spec.maxHp*(1+(TECH_TREE.tank.effect.hpPct||0.08)*power));unit.hp=Math.max(1,Math.round(unit.maxHp*ratio));
     unit.dmg=spec.damage*(1+(TECH_TREE.tank.effect.damagePct||0.07)*power);unit.speed=spec.speed*(1+(TECH_TREE.tank.effect.speedPct||0.025)*power);
-    unit.range=SurvivalSystem.friendlyRangeAtResearchLevel(unit.type,game.tech.tank);
+    unit.range=SurvivalSystem.friendlyRangeAtResearchLevel(unit.type,game.tech.tank)*TILE;applyDoctrineStats(unit);
   }
   renderTech();updateGoldUI();wc3RenderSel();renderCmdCard();
 }
@@ -5568,6 +5676,7 @@ function gateUpCost(kind){
   return Math.round((GATE_UP_COST[kind]||120)*Math.pow(1.45,lv));
 }
 function openGateUp(){
+  if(ACTIVE_MODE.key==='survival'){selectBaseForCommand(false,'root');return;}
   if(ACTIVE_MODE.key!=="survival")return;
   if(state!==STATE.PLAYING&&state!==STATE.PREP&&state!==STATE.BUILD&&state!==STATE.GATE)return;
   gateReturnState=state;
@@ -5595,7 +5704,7 @@ function renderGateUp(){
     row.innerHTML=`<div class="gname">${GATE_UP_NAME[kind]}</div>
       <div class="gdesc">${GATE_UP_DESC[kind]}</div>
       <div class="glv">Lv.${lv}/${max}</div>
-      ${maxed?`<div class="gcost" style="color:#39d98a">✅ 满级</div>`:`<div class="gcost">💰 ${cost}</div>`}
+      ${maxed?`<div class="gcost" style="color:#39d98a"> 满级</div>`:`<div class="gcost"> ${cost}</div>`}
       <button ${maxed?"disabled":""}>${maxed?"已满级":"升级"}</button>`;
     if(!maxed)row.querySelector("button").onclick=()=>upgradeGate(kind);
     wrap.appendChild(row);
@@ -5603,12 +5712,13 @@ function renderGateUp(){
   updateGoldUI();
 }
 function upgradeGate(kind){
+  if(ACTIVE_MODE.key==='survival')return false;
   const f=GATE_UP_FIELD[kind];
   const lv=game[f[0]]||0,g=ACTIVE_MODE.gate||{};
   const max=Math.max(lv,g[f[1]]||5);
   if(lv>=max){toast(`${GATE_UP_NAME[kind]} 已满级`);return;}
   const cost=gateUpCost(kind);
-  if(game.gold<cost){toast("💰 金币不足");return;}
+  if(game.gold<cost){toast(" 金币不足");return;}
   game.gold-=cost;
   game[f[0]]=lv+1;
   sfx.levelup();
@@ -5623,9 +5733,11 @@ function upgradeGate(kind){
   toast(`${GATE_UP_NAME[kind]} 升至 Lv.${game[f[0]]}`);
   renderGateUp();wc3RenderSel();renderCmdCard();
 }
-/* ★ 拆除模式：勾选后点击已建建筑回收 50% 金币并移除 */
+/*  拆除模式：勾选后点击已建建筑回收 50% 金币并移除 */
 let destroyMode=false;
 function attemptDestroy(x,z){
+  const pending=constructionJobs.find(j=>j.phase!=="returning"&&(j.footprintCells||[]).includes(idx(x,z)));
+  if(pending)return cancelConstruction(pending);
   const ci=idx(x,z);
   const ownsCell=record=>record&&(record.footprintCells||[]).includes(ci);
   /* 金矿 / 科技塔 / 住房 */
@@ -5635,14 +5747,14 @@ function attemptDestroy(x,z){
     scene.remove(mine.group);releaseDestroyedFootprint(mine);goldMines.splice(goldMines.indexOf(mine),1);
     game.gold+=refund;updateGoldUI();
     spawnParticles(mine.group.position.clone().setY(1.6),0xffd75e,8,6,.8);
-    toast(`🧹 拆除金矿，回收 ${refund} 金币`);return true;
+    toast(` 拆除金矿，回收 ${refund} 金币`);return true;
   }
   const institute=researchInstitutes.find(t=>ownsCell(t));
   if(institute){
     const refund=Math.round((priceOf(shopList().find(b=>b.id==="research"))||180)*0.5);
     scene.remove(institute.group);releaseDestroyedFootprint(institute);researchInstitutes.splice(researchInstitutes.indexOf(institute),1);
     game.gold+=refund;updateGoldUI();
-    toast(`🧹 拆除研究院，回收 ${refund} 金币`);return true;
+    toast(` 拆除研究院，回收 ${refund} 金币`);return true;
   }
   const factory=heavyFactories.find(t=>ownsCell(t));
   if(factory){
@@ -5653,13 +5765,13 @@ function attemptDestroy(x,z){
     }
     scene.remove(factory.group);releaseDestroyedFootprint(factory);heavyFactories.splice(heavyFactories.indexOf(factory),1);
     game.gold+=refund;updateGoldUI();updateResUI();
-    toast(`🧹 拆除重工厂，回收 ${refund} 金币`);return true;
+    toast(` 拆除重工厂，回收 ${refund} 金币`);return true;
   }
   const beacon=visionBeacons.find((item)=>ownsCell(item));
   if(beacon){
     const refund=Math.round((priceOf(shopList().find((build)=>build.id==="beacon"))||45)*.5);
     scene.remove(beacon.group);removeSurvivalPointLight(beacon.light);releaseDestroyedFootprint(beacon);visionBeacons.splice(visionBeacons.indexOf(beacon),1);
-    game.gold+=refund;game.popUsed=Math.max(0,game.popUsed-(beacon.popUsed||0));updateGoldUI();updateResUI();redrawVisionFog();toast(`🧹 拆除医疗灯塔，回收 ${refund} 金币`);return true;
+    game.gold+=refund;game.popUsed=Math.max(0,game.popUsed-(beacon.popUsed||0));updateGoldUI();updateResUI();redrawVisionFog();toast(` 拆除医疗灯塔，回收 ${refund} 金币`);return true;
   }
   const tur=builtTurrets.find(t=>ownsCell(t)||(t.cx===x&&t.cz===z));
   if(tur){
@@ -5669,7 +5781,7 @@ function attemptDestroy(x,z){
     game.gold+=refund;game.popUsed=Math.max(0,game.popUsed-popBack);
     updateGoldUI();updateResUI();
     spawnParticles(tur.group.position.clone().setY(1.6),0xffd75e,8,6,.8);
-    toast(`🧹 拆除炮塔，回收 ${refund} 金币`);return true;
+    toast(` 拆除炮塔，回收 ${refund} 金币`);return true;
   }
   /* 住房：人口上限回收（-6），不退款（金币已转化为人口） */
   const house=builtHouses.find(h=>ownsCell(h));
@@ -5679,7 +5791,7 @@ function attemptDestroy(x,z){
     game.popMax=Math.max(0,game.popMax-popBack);game.popUsed=Math.min(game.popUsed,game.popMax);
     updateResUI();
     spawnParticles(house.group.position.clone().setY(2),0xffd75e,10,7,.9);
-    toast(`🧹 拆除住房，人口上限 -${popBack}`);return true;
+    toast(` 拆除住房，人口上限 -${popBack}`);return true;
   }
   /* 墙体：T_STEEL + steelHP */
   if(grid[z][x]===T_STEEL&&steelHP.get(ci)>0){
@@ -5703,36 +5815,38 @@ function attemptDestroy(x,z){
     structCells.delete(ci);
     computeFlowField();
     spawnParticles(new THREE.Vector3(cellCenter(x,z).x,heightAt(x,z)+1,cellCenter(x,z).z),0xffd75e,8,6,.8);
-    toast(`🧹 拆除 Lv${lv} 墙，回收 ${refund} 金币`);return true;
+    toast(` 拆除 Lv${lv} 墙，回收 ${refund} 金币`);return true;
   }
   return false;
 }
-/* ★ 生存模式：首波来临前的 30 秒发育期（B 键可随时开商店，倒计时归零自动开波） */
+/*  生存模式：首波来临前的 30 秒发育期（B 键可随时开商店，倒计时归零自动开波） */
 function startPrep(){
   state=STATE.PREP;
   game.endless=false;
   game.prepTime=ACTIVE_MODE.prepTime||30;
   const el=$("prepBar");
-  if(el){el.style.display="block";el.textContent=`⏱ 准备阶段 ${game.prepTime}s · B 键打开商店`;}
-  /* ★ 启动三步新手指引（仅生存模式） */
+  if(el){el.style.display="block";el.textContent=` 准备阶段 ${game.prepTime}s · B 键打开商店`;}
+  /*  启动三步新手指引（仅生存模式） */
   questActive=true;questIdx=0;questShow();
 }
-/* ★ 第 15 波肃清后：弹出【胜利结算 / 无尽模式】选择 */
+/* 战役最终波肃清后：弹出【胜利结算 / 无尽模式】选择。 */
 function showSettle(){
   state=STATE.SETTLE;
+  $("settle").querySelector("h2").textContent=` 第 ${game.wave} 波 荣耀肃清！`;
   $("settle").classList.remove("hidden");
 }
 function endGame(win=false,baseDown=false){
   state=STATE.OVER;
   const title=$("gameover").querySelector("h1");
-  if(title)title.textContent=win?"🏆 胜 利":"GAME OVER";
+  if(title)title.textContent=win?" 胜 利":"GAME OVER";
   $("finalStats").innerHTML=
-    `${baseDown?(win?"":"基地鹰旗陷落……"):""}${win?"🎉 你守住了核心，第 "+game.wave+" 波荣耀肃清！":""}<br>最终得分 <b>${game.score}</b><br>${win?"战绩":"坚持"}到第 <b>${game.wave}</b> 波`;
+    `${baseDown?(win?"":"基地鹰旗陷落……"):""}${win?" 你守住了核心，第 "+game.wave+" 波荣耀肃清！":""}<br>最终得分 <b>${game.score}</b><br>${win?"战绩":"坚持"}到第 <b>${game.wave}</b> 波`;
   $("gameover").classList.remove("hidden");
 }
+let pauseReturnState=STATE.PLAYING;
 function setPause(p){
-  if(p){if(ACTIVE_MODE.key==="survival")saveSurvivalSnapshot();state=STATE.PAUSED;$("pause").classList.remove("hidden");}
-  else{state=STATE.PLAYING;$("pause").classList.add("hidden");lastT=performance.now();}
+  if(p){if(state!==STATE.PAUSED)pauseReturnState=state;if(ACTIVE_MODE.key==="survival")saveSurvivalSnapshot();state=STATE.PAUSED;$("pause").classList.remove("hidden");}
+  else{state=pauseReturnState;$("pause").classList.add("hidden");lastT=performance.now();}
 }
 
 /* ---------------- 更新逻辑 ---------------- */
@@ -5751,7 +5865,7 @@ function updatePlayer(dt){
      必须先绑定 group；旧声明位于分支之后，会触发 const 暂时性死区。 */
   const g=player.group;
   let mx=0,mz=0;
-  /* ★ P3-9 WC3 指令层（仅生存）：右键移动/攻击、A 攻击移动、S 停止。
+  /*  P3-9 WC3 指令层（仅生存）：右键移动/攻击、A 攻击移动、S 停止。
      生存模式下 WASD 已被镜头占用（RTS 惯例），玩家移动完全由指令驱动；
      经典/塔防保留 WASD 直接操控。 */
   const wc3=ACTIVE_MODE.key==="survival";
@@ -5800,7 +5914,7 @@ function updatePlayer(dt){
   const curH=heightAt(g.position.x,g.position.z);
   if(mx||mz){
     const len=Math.hypot(mx,mz);mx/=len;mz/=len;
-    /* ★ 猎杀冲锋：击杀后短时移速加成 */
+    /*  猎杀冲锋：击杀后短时移速加成 */
     const sprintMult=(performance.now()<game.sprintUntil)?1+.35*game.stats.sprintLv:1;
     const spd=player.speed*game.stats.moveSpeed*sprintMult*dt;
     const nx=g.position.x+mx*spd,nz=g.position.z+mz*spd;
@@ -5819,14 +5933,14 @@ function updatePlayer(dt){
     const dx=hitPt.x-g.position.x,dz=hitPt.z-g.position.z;
     player.aim=Math.atan2(dx,dz)+Math.PI;
   }
-  /* ★ 修复：炮塔角度是相对车体的，必须减去车体朝向 */
+  /*  修复：炮塔角度是相对车体的，必须减去车体朝向 */
   const tur=g.userData.turret;
   tur.rotation.y+=shortAngle(player.aim-g.rotation.y-tur.rotation.y)*Math.min(1,dt*18);
 
   player.cd-=dt;
   const rapid=now<game.buffs.rapidUntil;
   const interval=.42/(game.stats.fireRate*(rapid?2:1));
-  /* ★ P3-9：生存=RTS，自动开火（炮塔自索敌+攻击目标追击自动交战）；
+  /*  P3-9：生存=RTS，自动开火（炮塔自索敌+攻击目标追击自动交战）；
      经典/塔防保留左键/空格手动开火 */
   const autoFire=wc3;
   const wantFire=autoFire
@@ -5835,10 +5949,11 @@ function updatePlayer(dt){
   if(wantFire&&player.cd<=0){
     player.cd=interval;
     if(autoFire&&player.attackTarget&&player.attackTarget.alive){
-      const t2=player.attackTarget.group.position;
+      const t2=enemyAimPoint(player.attackTarget);
       player.aim=Math.atan2(t2.x-g.position.x,t2.z-g.position.z)+Math.PI;
-    }
-    shoot("player",new THREE.Vector3(Math.sin(player.aim+Math.PI),0,Math.cos(player.aim+Math.PI)));
+      const shotOrigin=new THREE.Vector3(g.position.x,g.position.y+1.7,g.position.z);
+      shoot("player",t2.sub(shotOrigin).normalize());
+    }else shoot("player",new THREE.Vector3(Math.sin(player.aim+Math.PI),0,Math.cos(player.aim+Math.PI)));
   }
   g.visible=now<player.invulnUntil?(Math.sin(now*.02)>-.3):true;
 }
@@ -5847,7 +5962,7 @@ let _turAim=0;
 function updateAutoTurret(dt){
   if(!baseAlive||!baseGroup||game.stats.autoTurretLv<=0||!autoTurretObj)return;
   const bp=baseGroup.position;
-  const olv=game.stats.overloadLv||0;   // ★ 超载协议
+  const olv=game.stats.overloadLv||0;   //  超载协议
   // 找最近敌人（超载后射程 +40%/级）
   let best=null,bd=36*(1+.4*olv);
   enemies.forEach(e=>{
@@ -5869,7 +5984,7 @@ function updateAutoTurret(dt){
   }
 }
 
-/* ★ 基地装置：EMP 脉冲塔 + 迫击炮阵地 */
+/*  基地装置：EMP 脉冲塔 + 迫击炮阵地 */
 function updateBaseGadgets(dt){
   if(!baseGroup||!baseAlive)return;
   const now=performance.now();
@@ -5890,7 +6005,7 @@ function updateBaseGadgets(dt){
       if(hitAny){
         spawnParticles(bp.clone().setY(2.5),0x7ec8ff,22,13,1.2);
         sfx.levelup();camShake=Math.max(camShake,.3);
-        toast("📡 EMP 脉冲释放");
+        toast(" EMP 脉冲释放");
       }
     }
   }
@@ -5916,60 +6031,71 @@ function updateBaseGadgets(dt){
 }
 
 function applyHordeSeparation(dt){
-  if(ACTIVE_MODE.key!=="survival"||enemies.length<2)return;
+  if(ACTIVE_MODE.key!=="survival"||!Number.isFinite(dt)||dt<=0)return;
   const now=performance.now();
-  const crowd=enemies.length;
-  const stride=crowd>500?3:crowd>240?2:1;
-  const active=enemies.filter(e=>e.alive&&!e.dying&&now>=e.spawnFlash&&now>=(e.separationSuppressedUntil||0));
+  // Waiting, attacking and recovering units all retain their bodies.
+  const active=enemies.filter(e=>e.alive&&!e.dying&&now>=e.spawnFlash);
+  for(const e of active){e.crowdSpeedScale=1;e.crowdContact=false;}
   if(active.length<2)return;
-  const CELL=4.2,buckets=new Map(),pushes=new Map(),mass=new Map();
-  const key=(x,z)=>`${Math.floor(x/CELL)},${Math.floor(z/CELL)}`;
-  active.forEach(e=>{
-    const k=key(e.group.position.x,e.group.position.z);
-    if(!buckets.has(k))buckets.set(k,[]);
-    buckets.get(k).push(e);pushes.set(e,{x:0,z:0});
-    mass.set(e,e.boss||e.giant?3:1);
-  });
-  for(const e of active){
-    if(stride>1&&((e.hordeId+_animFrame)%stride)!==0)continue;
-    const p=e.group.position,bx=Math.floor(p.x/CELL),bz=Math.floor(p.z/CELL);
-    for(let oz=-1;oz<=1;oz++)for(let ox=-1;ox<=1;ox++){
-      const neighbors=buckets.get(`${bx+ox},${bz+oz}`)||[];
-      for(const other of neighbors){
-        if(other.hordeId<=e.hordeId)continue;
-        let dx=p.x-other.group.position.x,dz=p.z-other.group.position.z;
-        let d2=dx*dx+dz*dz;
-        const desired=(e.radius+other.radius)*.94;
-        if(d2>=desired*desired)continue;
-        if(d2<1e-6){
-          const angle=((e.hordeId*37+other.hordeId*101)%360)*Math.PI/180;
-          dx=Math.cos(angle);dz=Math.sin(angle);d2=1;
+  const CELL=2,buckets=new Map();
+  const maxRadius=active.reduce((radius,e)=>Math.max(radius,e.radius),0);
+  const key=(x,z)=>Math.floor(x/CELL)+Math.floor(z/CELL)*512;
+  for(const e of active)e.hordeMass=e.boss||e.giant?3:1;
+  // Two bounded projections allow a rear rank to yield without a per-frame teleport.
+  for(let iteration=0;iteration<2;iteration++){
+    buckets.clear();
+    for(const e of active){
+      const k=key(e.group.position.x,e.group.position.z);
+      if(!buckets.has(k))buckets.set(k,[]);
+      buckets.get(k).push(e);
+      e.hordePushX=0;e.hordePushZ=0;
+      e.hordeX=e.group.position.x;e.hordeZ=e.group.position.z;
+    }
+    for(const e of active){
+      const p=e.group.position,bx=Math.floor(p.x/CELL),bz=Math.floor(p.z/CELL);
+      const reach=Math.max(1,Math.ceil((e.radius+maxRadius+.18)/CELL));
+      for(let oz=-reach;oz<=reach;oz++)for(let ox=-reach;ox<=reach;ox++){
+        const neighbors=buckets.get(bx+ox+(bz+oz)*512);
+        if(!neighbors)continue;
+        for(const other of neighbors){
+          if(other.hordeId<=e.hordeId)continue;
+          let dx=e.hordeX-other.hordeX,dz=e.hordeZ-other.hordeZ;
+          const d2=dx*dx+dz*dz,desired=(e.radius+other.radius)*.96;
+          if(d2>=(desired+.18)*(desired+.18))continue;
+          const distance=Math.sqrt(d2);
+          // Ease incoming movement before contact, so following units queue instead of
+          // continuously advancing into the separation correction of the front rank.
+          if(distance>1e-6){
+            const speedScale=Math.max(.12,Math.min(1,(distance-desired)/.18));
+            if(-(e.dir.x*dx+e.dir.z*dz)>distance*.6){e.crowdSpeedScale=Math.min(e.crowdSpeedScale,speedScale);e.crowdContact=true;}
+            if(other.dir.x*dx+other.dir.z*dz>distance*.6){other.crowdSpeedScale=Math.min(other.crowdSpeedScale,speedScale);other.crowdContact=true;}
+          }
+          if(d2>=desired*desired)continue;
+          if(distance<1e-6){
+            const angle=((e.hordeId*37+other.hordeId*101)%360)*Math.PI/180;
+            dx=Math.cos(angle);dz=Math.sin(angle);
+          }else{dx/=distance;dz/=distance;}
+          // Keep the true zero distance: substituting 1 reverses the force for small bodies.
+          const force=(desired-distance)/(e.hordeMass+other.hordeMass);
+          e.hordePushX+=dx*force*other.hordeMass;e.hordePushZ+=dz*force*other.hordeMass;
+          other.hordePushX-=dx*force*e.hordeMass;other.hordePushZ-=dz*force*e.hordeMass;
+          e.crowdContact=other.crowdContact=true;
         }
-        const distance=Math.sqrt(d2),packed=distance<desired*.5;
-        const force=(desired-distance)*(packed?1.4:1);
-        const nx=dx/distance,nz=dz/distance;
-        const em=mass.get(e),om=mass.get(other),sum=em+om;
-        const ep=pushes.get(e),op=pushes.get(other);
-        ep.x+=nx*force*(om/sum);ep.z+=nz*force*(om/sum);
-        op.x-=nx*force*(em/sum);op.z-=nz*force*(em/sum);
-        if(packed){e._packed=true;other._packed=true;}
       }
     }
-  }
-  for(const e of active){
-    const push=pushes.get(e),length=Math.hypot(push.x,push.z);
-    if(length<1e-5){e._packed=false;continue;}
-    const packed=!!e._packed;
-    e._packed=false;
-    const step=Math.min(packed?24*dt:14*dt,length*.85);
-    const scale=step/length;
-    const p=e.group.position,curH=heightAt(p.x,p.z),dx=push.x*scale,dz=push.z*scale;
-    const probe=packed?TILE*.16:enemyNavigationRadius(e);
-    if(!blockedForTank(p.x+dx,p.z,probe,curH))p.x+=dx;
-    else if(!blockedForTank(p.x+dx*.5,p.z,probe,curH))p.x+=dx*.5;
-    if(!blockedForTank(p.x,p.z+dz,probe,curH))p.z+=dz;
-    else if(!blockedForTank(p.x,p.z+dz*.5,probe,curH))p.z+=dz*.5;
-    p.y=heightAt(p.x,p.z);
+    for(const e of active){
+      const length=Math.hypot(e.hordePushX,e.hordePushZ);
+      if(length<1e-6)continue;
+      const step=Math.min(4*Math.min(dt,.025),length*.7),scale=step/length;
+      const p=e.group.position,curH=heightAt(p.x,p.z),probe=enemyNavigationRadius(e);
+      const dx=e.hordePushX*scale,dz=e.hordePushZ*scale;
+      // Terrain remains solid. Allow backward movement as well as movement along a wall.
+      if(!blockedForTank(p.x+dx,p.z,probe,curH))p.x+=dx;
+      else if(!blockedForTank(p.x+dx*.5,p.z,probe,curH))p.x+=dx*.5;
+      if(!blockedForTank(p.x,p.z+dz,probe,curH))p.z+=dz;
+      else if(!blockedForTank(p.x,p.z+dz*.5,probe,curH))p.z+=dz*.5;
+      p.y=heightAt(p.x,p.z);
+    }
   }
 }
 
@@ -5979,41 +6105,71 @@ function enemyNavigationRadius(enemy){
   return Math.min(enemy.radius,TILE*.34);
 }
 
-function enemyWallAttackSlot(enemy,targetWall){
-  if(!enemy||!targetWall)return false;
-  const cellKey=idx(targetWall.x,targetWall.z);
-  const structure=ownedStructureAtCell(cellKey);
-  const capacity=SurvivalSystem.structureAttackCapacity(structure?.record?.footprintCells?.length||1);
-  const candidates=enemies.filter((other)=>other&&other.alive&&!other.dying&&other.objectiveKind==="wall"&&
-    other.objectiveCell&&idx(other.objectiveCell.x,other.objectiveCell.z)===cellKey&&
-    Math.hypot(other.group.position.x-targetWall.center.x,other.group.position.z-targetWall.center.z)<=other.radius+TILE*.72)
-    .sort((left,right)=>Math.hypot(left.group.position.x-targetWall.center.x,left.group.position.z-targetWall.center.z)-
-      Math.hypot(right.group.position.x-targetWall.center.x,right.group.position.z-targetWall.center.z));
-  return candidates.indexOf(enemy)>=0&&candidates.indexOf(enemy)<capacity;
+/* 丧尸是矮模型，射击目标必须取模型包围盒内部的身体点，不能继续用根节点的地面坐标。 */
+function enemyModelBounds(enemy){
+  const visual=enemy.animationRoot||enemy.visualRoot||enemy.group,p=enemy.group.position;
+  if(!enemy._modelBounds)enemy._modelBounds=new THREE.Box3();
+  if(enemy._modelBoundsFrame!==_animFrame||enemy._modelBoundsX!==p.x||enemy._modelBoundsZ!==p.z||enemy._modelBoundsY!==p.y){
+    visual.updateWorldMatrix(true,true);enemy._modelBounds.setFromObject(visual);
+    enemy._modelBoundsFrame=_animFrame;enemy._modelBoundsX=p.x;enemy._modelBoundsZ=p.z;enemy._modelBoundsY=p.y;
+  }
+  return enemy._modelBounds;
+}
+function enemyAimPoint(enemy,target=new THREE.Vector3()){
+  if(!enemy||!enemy.group)return target.set(0,0,0);
+  const bounds=enemyModelBounds(enemy);
+  if(!bounds.isEmpty()&&Number.isFinite(bounds.min.y)&&Number.isFinite(bounds.max.y)){
+    target.set((bounds.min.x+bounds.max.x)*.5,
+      bounds.min.y+(bounds.max.y-bounds.min.y)*.46,
+      (bounds.min.z+bounds.max.z)*.5);
+    return target;
+  }
+  return target.copy(enemy.group.position).setY(enemy.group.position.y+Math.max(.25,(enemy.radius||.4)*1.4));
 }
 
 let _gateAttackerFrame=-1,_gateAttackerSet=null;
+let _wallAttackerFrame=-1,_wallAttackerSets=new Map();
 function enemyGateAttackSlot(enemy){
   if(!enemy||!baseGroup)return false;
   if(_gateAttackerFrame!==_animFrame){
     _gateAttackerFrame=_animFrame;
-    _gateAttackerSet=new Set(enemies.filter((other)=>other&&other.alive&&!other.dying&&other.atGate)
-      .sort((left,right)=>left.group.position.distanceTo(baseGroup.position)-right.group.position.distanceTo(baseGroup.position))
-      .slice(0,3));
+    _gateAttackerSet=new Set(enemies.filter((other)=>other&&other.alive&&!other.dying&&other.atGate&&
+      baseContactDistance(other)<=.55+(other.radius||0))
+      .sort((left,right)=>baseContactDistance(left)-baseContactDistance(right))
+      .slice(0,Math.ceil(3/SurvivalSystem.ZOMBIE_COMBAT_SCALE)));
   }
   return _gateAttackerSet.has(enemy);
 }
 
+function enemyWallAttackSlot(enemy,targetWall){
+  if(!enemy||!targetWall)return false;
+  const cellKey=idx(targetWall.x,targetWall.z);
+  if(_wallAttackerFrame!==_animFrame){_wallAttackerFrame=_animFrame;_wallAttackerSets=new Map();}
+  let attackers=_wallAttackerSets.get(cellKey);
+  if(!attackers){
+    const structure=ownedStructureAtCell(cellKey);
+    const capacity=SurvivalSystem.structureAttackCapacity(
+      structure?.record?.footprintCells?.length||1,SurvivalSystem.ZOMBIE_COMBAT_SCALE);
+    const candidates=enemies.filter((other)=>other&&other.alive&&!other.dying&&other.objectiveKind==="wall"&&
+      other.objectiveCell&&idx(other.objectiveCell.x,other.objectiveCell.z)===cellKey&&
+      Math.hypot(other.group.position.x-targetWall.center.x,other.group.position.z-targetWall.center.z)<=other.radius+TILE*.72)
+      .sort((left,right)=>Math.hypot(left.group.position.x-targetWall.center.x,left.group.position.z-targetWall.center.z)-
+        Math.hypot(right.group.position.x-targetWall.center.x,right.group.position.z-targetWall.center.z));
+    attackers=new Set(candidates.slice(0,capacity));
+    _wallAttackerSets.set(cellKey,attackers);
+  }
+  return attackers.has(enemy);
+}
+
 function enemyMeleeDamage(enemy){
-  if(enemy.boss)return enemy.bossMechanic==="siege"||enemy.bossMechanic==="doom"?5:3;
-  if(enemy.siege)return 4;
-  return enemy.type==="heavy"||enemy.type==="elite"?2:1;
+  const base=enemy.boss?(enemy.bossMechanic==="siege"||enemy.bossMechanic==="doom"?5:3)
+    :(enemy.siege?4:(enemy.type==="heavy"||enemy.type==="elite"?2:1));
+  return ACTIVE_MODE.key==="survival"?base*SurvivalSystem.ZOMBIE_COMBAT_SCALE*SurvivalSystem.meleeWaveMultiplier(enemy.sourceWave||game.wave)*survivalPressureMultiplier()*(Number(game.difficultyMultiplier)||1):base;
 }
 function enemyWallDamage(enemy){
-  /* 巨岩是拖延与聚怪设施，不是让波次静止数分钟的门禁。大门伤害保持原值；
-     只有玩家巨岩承受四倍破障伤害，使一级墙即便只接触一只普通怪也会在约 41 秒后被打通。 */
-  const waveScale=ACTIVE_MODE.key==="survival"?1+Math.max(0,game.wave-3)*.16:1;
-  return enemyMeleeDamage(enemy)*4*waveScale*(enemy.boss?1.8:1);
+  // 第十波仍以800 DPS为锚点；前期给墙体一个逐波展开的承伤缓冲，避免第五波前发育尚未完成就被打穿。
+  const wave=Math.max(1,Number(enemy?.sourceWave)||game.wave||1),grace=.65+.35*(Math.min(10,wave)-1)/9;
+  return enemyMeleeDamage(enemy)*4*grace*(enemy.boss?1.8:1);
 }
 function applyEnemyLifesteal(enemy,damage){
   if(enemy.lifesteal>0)enemy.hp=Math.min(enemy.maxHp,enemy.hp+damage*enemy.lifesteal);
@@ -6023,13 +6179,13 @@ function updateBossMechanic(enemy,dt,now){
   enemy.specialCd-=dt;if(enemy.specialCd>0)return;
   const aliveNow=enemies.filter((item)=>item.alive).length;
   if(enemy.bossMechanic==="summon"&&aliveNow<64){
-    spawnEnemy("normal",false);spawnEnemy("normal",false);toast("👑 尸王召唤了援军");enemy.specialCd=12;
+    spawnEnemy("normal",false);spawnEnemy("normal",false);toast(" 尸王召唤了援军");enemy.specialCd=12;
   }else if(enemy.bossMechanic==="dash"){
     enemy.hasteUntil=now+2600;enemy.specialCd=8;
   }else if(enemy.bossMechanic==="phase"){
     enemy.phaseUntil=now+2200;enemy.specialCd=9;
   }else if(enemy.bossMechanic==="doom"){
-    if(baseGroup&&enemy.group.position.distanceTo(baseGroup.position)<18)damageGate(12,enemy.group.position);
+    if(baseGroup&&enemy.group.position.distanceTo(baseGroup.position)<18)damageGate(12*survivalPressureMultiplier(),enemy.group.position);
     if(aliveNow<80)spawnEnemy("elite",false);
     enemy.specialCd=10;
   }else enemy.specialCd=10;
@@ -6067,34 +6223,46 @@ function applyZombieReachPose(e){
   reset(bones.LeftArm,"LeftArm");reset(bones.RightArm,"RightArm");
   reset(bones.LeftForeArm,"LeftForeArm");reset(bones.RightForeArm,"RightForeArm");
   reset(bones.Chest,"Chest");
-  const punch=e.attackPose>0?Math.sin(e.attackPose*Math.PI):0;
+  /* 生存尸潮平时保持低角度向前举臂；攻击时只让前臂短促前伸再回收，
+     不旋转身体，也不让远处单位退回 T 姿。attackPose 从 1 衰减到 0，
+     用正弦曲线把一次攻击做成自然的前伸-回收动作。 */
+  const attackProgress=Math.max(0,Math.min(1,Number(e.attackPose)||0));
+  const punch=attackProgress>0?Math.sin((1-attackProgress)*Math.PI):0;
   e.group.getWorldQuaternion(_aimParentQ);
   _aimForward.set(0,0,1).applyQuaternion(_aimParentQ);_aimForward.y=0;
   if(_aimForward.lengthSq()<1e-6)_aimForward.set(0,0,1);
   _aimForward.normalize();
   _aimRight.crossVectors(_aimUp,_aimForward).normalize();
-  const lift=.1-punch*.32,spread=.22*(1-punch*.5);
-  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,-spread);_aimTarget.y+=lift;_aimTarget.normalize();
-  _aimBoneToward(bones.LeftArm,bones.LeftForeArm||bones.LeftHand,_aimTarget);
+  const lift=-.28-punch*.08,spread=0;
   _aimTarget.copy(_aimForward).addScaledVector(_aimRight,spread);_aimTarget.y+=lift;_aimTarget.normalize();
+  _aimBoneToward(bones.LeftArm,bones.LeftForeArm||bones.LeftHand,_aimTarget);
+  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,-spread);_aimTarget.y+=lift;_aimTarget.normalize();
   _aimBoneToward(bones.RightArm,bones.RightForeArm||bones.RightHand,_aimTarget);
-  _aimTarget.copy(_aimForward);_aimTarget.y+=-.2-punch*.38;_aimTarget.addScaledVector(_aimRight,-.05);_aimTarget.normalize();
+  _aimTarget.copy(_aimForward).multiplyScalar(1+punch*.18);_aimTarget.y+=-.2-punch*.38;_aimTarget.addScaledVector(_aimRight,.5);_aimTarget.normalize();
   _aimBoneToward(bones.LeftForeArm,bones.LeftHand,_aimTarget);
-  _aimTarget.copy(_aimForward);_aimTarget.y+=-.2-punch*.38;_aimTarget.addScaledVector(_aimRight,.05);_aimTarget.normalize();
+  _aimTarget.copy(_aimForward).multiplyScalar(1+punch*.18);_aimTarget.y+=-.2-punch*.38;_aimTarget.addScaledVector(_aimRight,-.5);_aimTarget.normalize();
   _aimBoneToward(bones.RightForeArm,bones.RightHand,_aimTarget);
-  if(bones.Chest)bones.Chest.rotateX(.1+punch*.62);
-  if(e.visualRoot&&!e.dying)e.visualRoot.rotation.x=punch*.52;
+  /* 方向目标对短骨骼的角度变化不够稳定，再叠加一段局部前臂推力，
+     确保攻击帧肉眼可见且只影响前臂，不会把整个人物扭倒。 */
+  if(bones.LeftForeArm&&base.LeftForeArm)bones.LeftForeArm.rotation.x=base.LeftForeArm.x+punch*.42;
+  if(bones.RightForeArm&&base.RightForeArm)bones.RightForeArm.rotation.x=base.RightForeArm.x+punch*.42;
+  if(e.visualRoot&&!e.dying)e.visualRoot.rotation.x=0;
 }
 function updateEnemies(dt){
   const now=performance.now();
   const cam=camera.position;
+  const crowd=enemies.length,animationStride=crowd>300?16:4,poseStride=crowd>300?8:crowd>120?2:1;
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
     const previousX=e.group.position.x,previousZ=e.group.position.z;
     const nearDx=previousX-cam.x,nearDz=previousZ-cam.z;
-    const near=nearDx*nearDx+nearDz*nearDz<48*48;
+    const near=!e._crowdLod&&nearDx*nearDx+nearDz*nearDz<48*48;
+    /* 远处尸潮渲染预算：战斗逻辑仍逐个运行，只对超大尸潮的远景模型抽样绘制。 */
+    const renderStride=crowd>800?3:crowd>500?2:1;
+    const farForRender=renderStride>1&&nearDx*nearDx+nearDz*nearDz>58*58;
+    e.group.visible=!e._crowdLod;
     if(e.velocity)e.velocity.set(0,0,0);
-    /* ★ dying 状态：保留在数组里播完死亡动画，到达时长后真正清理 */
+    /*  dying 状态：保留在数组里播完死亡动画，到达时长后真正清理 */
     if(e.dying){
       e.dyingT+=dt;
       if(e.mixer)e.mixer.update(dt);
@@ -6117,7 +6285,7 @@ function updateEnemies(dt){
       }
       if(e.dyingT>=dieDuration+.12){
         if(e.mixer){try{e.mixer.stop();}catch(_){}}
-        scene.remove(e.group);
+        scene.remove(e.group);releaseEnemyResources(e);
         if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);}
         enemies.splice(i,1);
       }
@@ -6125,26 +6293,26 @@ function updateEnemies(dt){
     }
     updateBossMechanic(e,dt,now);
     if(!e.alive){enemies.splice(i,1);continue;}
-    /* ★ AnimationMixer：近处/首领/巨人全量，远处隔 4 帧，避免千人尸潮打满主线程。 */
-    if(e.mixer){
+    /*  AnimationMixer：近处/首领/巨人全量，千人尸潮远处隔 16 帧；固定前举姿态另按 8 帧分摊。 */
+    if(e.mixer&&!e._crowdLod){
       if(e.boss||e.giant||near)e.mixer.update(dt);
-      else if(((_animFrame+e.hordeId)&3)===0)e.mixer.update(dt*4);
+      else if(((_animFrame+e.hordeId)&(animationStride-1))===0)e.mixer.update(dt*animationStride);
     }
-    /* ★ 冰冻减速失效恢复 */
+    /*  冰冻减速失效恢复 */
     if(e.slowUntil&&now>e.slowUntil){e.slowMult=1;e.slowUntil=0;}
     if(e.beam){
       e.beam.material.opacity-=dt*.6;
       if(now>e.spawnFlash||e.beam.material.opacity<=0){scene.remove(e.beam);disposeTransientObject3D(e.beam);e.beam=null;}
       continue;
     }
-    /* ★ EMP 眩晕：被脉冲命中的敌人短时瘫痪 */
+    /*  EMP 眩晕：被脉冲命中的敌人短时瘫痪 */
     if(e.stunUntil&&now<e.stunUntil){
       if(Math.random()<dt*8)spawnParticles(e.group.position.clone().setY(2.2),0x7ec8ff,1,3,.5);
       e.cd=Math.max(e.cd,.5);
       continue;
     }
     e.thinkTimer-=dt;
-    /* ★ P0-3：转向改为「按格边界重算」为主 + 短 thinkTimer 保底
+    /*  P0-3：转向改为「按格边界重算」为主 + 短 thinkTimer 保底
        原缺陷：thinkTimer 1~2.6s 才重算一次方向，而敌人约 1 秒穿 1 格（速度 ~4 / TILE 4），
        必然冲过转角 → 到对面格又收到反向指令 → 在坡口前反复来回（实测 d=15 处 x=17~20 震荡）。 */
     const curCell=cellOf(e.group.position.x,e.group.position.z);
@@ -6152,7 +6320,7 @@ function updateEnemies(dt){
     if(ACTIVE_MODE.key==="survival"&&(cellChanged||e.thinkTimer<=0)){
       if(cellChanged)e._cell=curCell;
       e.thinkTimer=.25+Math.random()*.15;          // 同格内保底刷新，避免长时间不更新
-      /* ★ 流场寻路：朝大门梯度移动（自动绕开不可破围墙） */
+      /*  流场寻路：朝大门梯度移动（自动绕开不可破围墙） */
       const f=flowDirFor(e);
       e.flowHere=f.hereD;
       e.atGate=!!f.atGate;
@@ -6180,18 +6348,19 @@ function updateEnemies(dt){
       }
     }
     let moved=false;
-    /* ★ P0-2：已抵达大门 → 停下正对门槛啃门
+    /*  P0-2：已抵达大门 → 停下正对门槛啃门
        原缺陷：啃门依赖「被挡住才啃」的碰撞判定（要求 !moved），但敌人在流场最小值 d=1 处
        会被梯度推离大门、一直 moved=true，于是啃门分支永不触发 —— 实测大门 600 血 150 秒零掉血，
        游戏不存在失败条件。现在改为显式攻击：抵达即啃，不再依赖是否被挡住。
-       ★ trace7/gate1 实测修复：atGate 分支与 !moved 撞墙分支会双重递减 wallCd（每帧 -2dt）
+        trace7/gate1 实测修复：atGate 分支与 !moved 撞墙分支会双重递减 wallCd（每帧 -2dt）
        且空啃分支把 wallCd 重置为 0.35 → 实际啃门频率约为设计值的 2 倍。
        改为 else-if 互斥：atGate 已判定时跳过撞墙分支，wallCd 只递减一次，节奏回到设计值。 */
     const gateSlot=ACTIVE_MODE.key==="survival"&&e.atGate&&baseAlive&&baseGroup&&enemyGateAttackSlot(e);
+    e._gateAttackSlot=!!gateSlot;
     if(gateSlot){
       e.objectiveKind="base";
       e.dir.set(0,0,0);
-      const bp=baseGroup.position;
+      const bp=baseContactPoint(e.group.position);
       const want=Math.atan2(bp.x-e.group.position.x,bp.z-e.group.position.z);
       e.heading=want;
       e.group.rotation.y+=shortAngle(want-e.group.rotation.y)*Math.min(1,dt*6);
@@ -6199,26 +6368,26 @@ function updateEnemies(dt){
       if(e.wallCd<=0){
         const bite=enemyMeleeDamage(e);damageGate(bite,e.group.position);applyEnemyLifesteal(e,bite);
         e.wallCd=e.boss?.55:.9;
-        e._attackedNow=true;   /* ★ P4-1：驱动 attack-melee 动画 */
-        _wdProgress();      /* ★ P1-1：啃门=波次在推进 */
+        e._attackedNow=true;   /*  P4-1：驱动 attack-melee 动画 */
+        _wdProgress();      /*  P1-1：啃门=波次在推进 */
         spawnParticles(new THREE.Vector3(e.group.position.x,1.4,e.group.position.z),0xff8080,5,5,.6);
       }
     }
     else{
       if(ACTIVE_MODE.key==="survival")updateEnemyObjective(e);
       const effectiveSpeed=Math.min(e.maxSpeed||Infinity,e.speed*(now<e.hasteUntil?1.8:1))*(e.slowMult||1);
-      const spd=effectiveSpeed*dt;
+      const spd=effectiveSpeed*dt*(ACTIVE_MODE.key==="survival"?(e.crowdSpeedScale??1):1);
       const curH=heightAt(e.group.position.x,e.group.position.z);
       const targetWall=e.objectiveKind==="wall"&&e.objectiveCell
         ?{...e.objectiveCell,center:cellCenter(e.objectiveCell.x,e.objectiveCell.z)}:null;
-      const wallInReach=!!(targetWall&&steelHP.get(idx(targetWall.x,targetWall.z))>0
+      const wallInReach=!!(targetWall&&(steelHP.get(idx(targetWall.x,targetWall.z))>0||ownedStructureAtCell(idx(targetWall.x,targetWall.z)))
         &&Math.hypot(targetWall.center.x-e.group.position.x,targetWall.center.z-e.group.position.z)<=e.radius+TILE*.72);
       const wallAttackSlot=wallInReach&&enemyWallAttackSlot(e,targetWall);
       const nx=e.group.position.x+e.dir.x*spd,nz=e.group.position.z+e.dir.z*spd;
       const navigationRadius=enemyNavigationRadius(e);
       if(!wallInReach&&e.dir.x&&!blockedForTank(nx,e.group.position.z,navigationRadius,curH)){e.group.position.x=nx;moved=true;}
       if(!wallInReach&&e.dir.z&&!blockedForTank(e.group.position.x,nz,navigationRadius,curH)){e.group.position.z=nz;moved=true;}
-      /* ★ P0-3 终修（trace7 实测）：单轴推进被挡时沿垂直轴「向本格格心」滑移脱困（仅生存）。
+      /*  P0-3 终修（trace7 实测）：单轴推进被挡时沿垂直轴「向本格格心」滑移脱困（仅生存）。
          楔死场景：敌人贴坡道走廊 row34 行缘（pz=42.0 恰为行边界），南向角点采样落进 (·,33) 平地
          h=0，高差 -1.38 曾超 STEP_DOWN(1.3) → x 轴移动被判挡；且流场方向 [-1,0] 无 z 分量，
          敌人永远滑不回行中心 → 永久冻结。进 col16 时还可能擦到 (16,33) 钢墙实体格，同理被挡。
@@ -6237,7 +6406,7 @@ function updateEnemies(dt){
           else if(sx!==0&&!blockedForTank(e.group.position.x+sx*spd,e.group.position.z,navigationRadius,curH)){e.group.position.x+=sx*spd;moved=true;}
         }
       }
-      /* ★ 撞墙啃咬：被墙挡住时原地持续攻击直至破开（BOSS/重装拆得更快） */
+      /*  撞墙啃咬：被墙挡住时原地持续攻击直至破开（BOSS/重装拆得更快） */
       let attacked=false;
       if(wallInReach||!moved){
         e.wallCd=(e.wallCd||0)-dt;
@@ -6245,12 +6414,13 @@ function updateEnemies(dt){
           if(wallInReach&&!wallAttackSlot){e.wallCd=.18;continue;}
           const fx=e.group.position.x+e.dir.x*(e.radius+.8),fz=e.group.position.z+e.dir.z*(e.radius+.8);
           const c=wallInReach?targetWall:cellOf(fx,fz);
-          /* ★ 生存模式：正前方是大门 → 啃咬大门（唯一入口） */
+          /*  生存模式：正前方是大门 → 啃咬大门（唯一入口） */
           if(ACTIVE_MODE.key==="survival"&&inMap(c.x,c.z)&&grid[c.z][c.x]===T_BASE){
+            if(!enemyGateAttackSlot(e)){e.wallCd=.18;continue;}
             const bite=enemyMeleeDamage(e);damageGate(bite,e.group.position);applyEnemyLifesteal(e,bite);
             attacked=true;e.wallCd=e.boss?.55:.9;
-            e._attackedNow=true;   /* ★ P4-1：驱动 attack-melee 动画 */
-            _wdProgress();   /* ★ P1-1：啃门=波次在推进 */
+            e._attackedNow=true;   /*  P4-1：驱动 attack-melee 动画 */
+            _wdProgress();   /*  P1-1：啃门=波次在推进 */
             spawnParticles(new THREE.Vector3(fx,1.4,fz),0xff8080,5,5,.6);
           }else if(inMap(c.x,c.z)&&damageOwnedStructureAtCell(idx(c.x,c.z),enemyWallDamage(e))){
             attacked=true;e.wallCd=e.boss?.55:.9;e._attackedNow=true;_wdProgress();
@@ -6258,28 +6428,29 @@ function updateEnemies(dt){
           }else if(inMap(c.x,c.z)&&(grid[c.z][c.x]===T_BRICK||grid[c.z][c.x]===T_STEEL)
             &&damageWallCell(c.x,c.z,enemyWallDamage(e))){
             attacked=true;e.wallCd=e.boss?.55:.9;
-            e._attackedNow=true;   /* ★ P4-1：驱动 attack-melee 动画 */
-            _wdProgress();   /* ★ P1-1：拆墙=波次在推进 */
+            e._attackedNow=true;   /*  P4-1：驱动 attack-melee 动画 */
+            _wdProgress();   /*  P1-1：拆墙=波次在推进 */
             spawnParticles(new THREE.Vector3(fx,1.4,fz),0xffcf7a,4,4,.5);
           }else e.wallCd=.35;
         }
       }
+      if(attacked){sfx.zombie(e);sfx.gate();}
       if(!moved&&!attacked)e.thinkTimer=0;
     }
-    /* 大体型尸群在窄路转角可能互相反复推回同一格。连续数秒没有降低流场距离时，
-       暂停该单位的群体分离并把它柔和拉回当前可通行格中心，让流场重新接管；
-       这不是穿墙传送，最多修正半格，且攻击墙体/大门时完全不触发。 */
+    /* 转角长时间没有推进且前方没有同伴排队时，检查地形后柔和回到当前格中线。
+       排队、攻击和脱困期间始终保留实体碰撞，不能把等待的后排拉进前排身体内。 */
     if(ACTIVE_MODE.key==="survival"&&!e.atGate&&e.objectiveKind!=="wall"&&Number.isFinite(e.flowHere)){
       if(!Number.isFinite(e.bestFlowDistance)||e.flowHere<e.bestFlowDistance-.01){
         e.bestFlowDistance=e.flowHere;e.flowStallTime=0;
       }else e.flowStallTime=(e.flowStallTime||0)+dt;
-      if(e.flowStallTime>=2.4){
+      if(e.flowStallTime>=2.4&&(e.crowdSpeedScale??1)>.95){
         const recoveryCell=cellOf(e.group.position.x,e.group.position.z);
         if(inMap(recoveryCell.x,recoveryCell.z)&&passableForFlow(recoveryCell.x,recoveryCell.z)){
           const center=cellCenter(recoveryCell.x,recoveryCell.z),pull=Math.min(1,dt*7);
-          e.group.position.x+=(center.x-e.group.position.x)*pull;
-          e.group.position.z+=(center.z-e.group.position.z)*pull;
-          e.separationSuppressedUntil=now+1200;
+          const rx=pull*(center.x-e.group.position.x),rz=pull*(center.z-e.group.position.z);
+          const h=heightAt(e.group.position.x,e.group.position.z),r=enemyNavigationRadius(e);
+          if(!blockedForTank(e.group.position.x+rx,e.group.position.z,r,h))e.group.position.x+=rx;
+          if(!blockedForTank(e.group.position.x,e.group.position.z+rz,r,h))e.group.position.z+=rz;
           e.thinkTimer=0;
         }
         e.flowStallTime=0;
@@ -6292,10 +6463,10 @@ function updateEnemies(dt){
       e.heading=want;
       e.group.rotation.y+=shortAngle(want-e.group.rotation.y)*Math.min(1,dt*8);
     }
-    /* ★ 角色动画（P4-1）：移动→Walk / 攻击→attack-melee / 待机→Idle
+    /*  角色动画（P4-1）：移动→Walk / 攻击→attack-melee / 待机→Idle
        Kenney GLB 动画名按「含关键字」模糊匹配（attack-melee-up/down/stab 等变体）。 */
     {
-      const atk=(e.atGate||(!moved&&e._attackedNow));
+      const atk=(e._gateAttackSlot||(!moved&&e._attackedNow));
       if(e._attackedNow)e.attackPose=1;
       else e.attackPose=Math.max(0,(e.attackPose||0)-dt*1.85);
       const wantAnim=atk?"@attack":(moved?_ANIM_WALK:_ANIM_IDLE);
@@ -6315,7 +6486,7 @@ function updateEnemies(dt){
               :e.actions[e.currentAnim];
             if(prev)prev.fadeOut(.12);
           }
-          e.currentAnim=wantAnim;
+          e.currentAnim=wantAnim;e.poseDirty=true;
         }
       }
       if(wantAnim===_ANIM_WALK&&e.actions.walk){
@@ -6324,18 +6495,22 @@ function updateEnemies(dt){
       }
       e._attackedNow=false;
     }
-    if(e.characterModel&&e.poseBones&&(e.boss||e.giant||near))applyZombieReachPose(e);
+    if(!e._crowdLod&&e.characterModel&&e.poseBones&&
+      (e.poseDirty||poseStride===1||((_animFrame+e.hordeId)&(poseStride-1))===0||e.attackPose>0)){
+      applyZombieReachPose(e);e.poseDirty=false;
+    }
 
-    /* ★ 炮塔瞄准（P4-1 删）：敌人不再瞄玩家/炮台，目标只有墙与大门 */
+    /*  炮塔瞄准（P4-1 删）：敌人不再瞄玩家/炮台，目标只有墙与大门 */
 
     e.cd-=dt;
-    if((e.type==="sniper"||e.bossMechanic==="phase")&&baseAlive&&baseGroup&&e.cd<=0){
+    if((e.type==="sniper"||e.bossMechanic==="phase")&&e.atGate&&baseAlive&&baseGroup&&e.cd<=0){
       const direction=baseGroup.position.clone().sub(e.group.position).setY(0),distance=direction.length();
       if(distance<34){e.cd=e.fireCd;shoot(e,direction.normalize(),false);}
     }
   }
   applyHordeSeparation(dt);
-  if(survivalCombatRunning()&&game.enemiesToSpawn>0){
+  if(ACTIVE_MODE.key==="survival")spawnPendingSurvivalEnemies(dt);
+  else if(survivalCombatRunning()&&game.enemiesToSpawn>0){
     if(!Number.isFinite(game.spawnTimer))game.spawnTimer=0;
     game.spawnTimer-=dt;
     if(game.spawnTimer<=0){
@@ -6356,7 +6531,7 @@ function updateEnemies(dt){
     game._bossDone=false;waveCleared();
   }
 }
-/* ★ 波次看门狗（无进展语义）：单波 N 秒内无任何「推进事实」→ 重新寻路并提示。
+/*  波次看门狗（无进展语义）：单波 N 秒内无任何「推进事实」→ 重新寻路并提示。
    推进事实 = 任一敌人死亡 / 大门掉血 / 墙被拆 —— 只有这些才真正让波次向前走。
    场景：敌人被物理几何卡进不可达死角、或寻路目标永久不可达时，
    波次条件 `enemiesToSpawn<=0 && enemies.length===0` 永不成立，整局停滞。
@@ -6374,7 +6549,7 @@ function updateWatchdog(dt){
   if(!_wdRerouted&&_wdStallT>=REROUTE_AT){
     _wdRerouted=true;computeFlowField();
     enemies.forEach(enemy=>{if(enemy.alive){enemy.thinkTimer=0;enemy.objectiveCell=null;}});
-    announce("⚠ 尸潮路径重新校准");
+    announce(" 尸潮路径重新校准");
   }
   const LIMIT=isBossWave(game.wave)?75:42;
   if(!_wdHarvesting&&_wdStallT>=LIMIT){
@@ -6382,20 +6557,20 @@ function updateWatchdog(dt){
     _wdKillTimer=0;
     computeFlowField();
     enemies.forEach(enemy=>{if(enemy.alive){enemy.thinkTimer=0;enemy.objectiveCell=null;}});
-    announce(`⚠ 第 ${game.wave} 波检测到寻路停滞，请继续战斗；不会自动清除敌人`);
+    announce(` 第 ${game.wave} 波检测到寻路停滞，请继续战斗；不会自动清除敌人`);
   }
 }
 
 /* 单颗子弹在某位置的碰撞判定：返回 true 表示子弹被消耗 */
 function bulletCollide(b,p){
-  // 墙体（★ P4-3：塔弹 thruWall → 穿透玩家墙/原生钢墙/建筑，不被悬崖和自家构筑挡炮）
+  // 墙体（ P4-3：塔弹 thruWall → 穿透玩家墙/原生钢墙/建筑，不被悬崖和自家构筑挡炮）
   const c=cellOf(p.x,p.z);
   if(inMap(c.x,c.z)){
     const t=grid[c.z][c.x];
     if(b.thruWall&&(t===T_BRICK||t===T_STEEL||t===T_BUILDING)){/* 穿墙：跳过 */}
     else if(t===T_BRICK){destroyBricksAround(p.x,p.z,.5);return true;}
     else if(t===T_STEEL||t===T_BUILDING){
-      /* ★ 弹射装甲弹：玩家炮弹碰钢墙/楼房反弹 */
+      /*  弹射装甲弹：玩家炮弹碰钢墙/楼房反弹 */
       if(b.owner==="player"&&b.bounce>0){
         b.bounce--;
         const prev=p.clone().addScaledVector(b.vel,-1);
@@ -6417,23 +6592,32 @@ function bulletCollide(b,p){
         game.baseShieldHP-=1;sfx.hit();
         spawnParticles(p.clone(),0x4da3ff,8,6,.8);
         updateHpUI();
-        if(game.baseShieldHP<=0)toast("⚠ 基地护盾耗尽！");
+        if(game.baseShieldHP<=0)toast(" 基地护盾耗尽！");
       }else if(ACTIVE_MODE.key==="survival"&&game.gateHp>0){
-        /* ★ 生存模式：子弹命中大门 → 统一走 damageGate（含闪避/护甲/反伤） */
+        /*  生存模式：子弹命中大门 → 统一走 damageGate（含闪避/护甲/反伤） */
         damageGate(Math.max(1,Math.round(b.dmg)),new THREE.Vector3(p.x,0,p.z));
-        if(game.gateHp>0)toast(`💎 大门受创 ${Math.max(0,Math.ceil(game.gateHp))}/${game.gateMaxHp}`);
+        if(game.gateHp>0)toast(` 大门受创 ${Math.max(0,Math.ceil(game.gateHp))}/${game.gateMaxHp}`);
         return true;
       }else baseDestroyed();
       return true;
     }
   }
   const hitR2=(pos,r)=>{const dx=p.x-pos.x,dz=p.z-pos.z;return dx*dx+dz*dz<r*r;};
+  const hitEnemyModel=(enemy)=>{
+    const visual=enemy.animationRoot||enemy.visualRoot;
+    if(!visual)return hitR2(enemy.group.position,enemy.radius+.6);
+    const broadRadius=Math.max(3,(enemy.radius||1)*4,(enemy._lodHeight||0)*1.5);
+    if(!hitR2(enemy.group.position,broadRadius))return false;
+    const bounds=enemyModelBounds(enemy);
+    if(bounds.isEmpty())return hitR2(enemy.group.position,enemy.radius+.6);
+    return p.x>=bounds.min.x-.06&&p.x<=bounds.max.x+.06&&p.y>=bounds.min.y-.06&&p.y<=bounds.max.y+.06&&p.z>=bounds.min.z-.06&&p.z<=bounds.max.z+.06;
+  };
   if(b.owner==="player"){
     for(const e of enemies){
       if(!e.alive||performance.now()<e.spawnFlash||performance.now()<(e.phaseUntil||0)||b.hitSet.has(e))continue;
-      if(hitR2(e.group.position,e.radius+.6)){
+      if(hitEnemyModel(e)){
         b.hitSet.add(e);
-        /* ★ 弱点分析：暴击双倍伤害 */
+        /*  弱点分析：暴击双倍伤害 */
         let dmg=b.dmg;
         if(Math.random()<game.stats.critChance){
           dmg*=2;spawnParticles(p.clone(),0xffd75e,9,7,.9);sfx.levelup();
@@ -6443,7 +6627,9 @@ function bulletCollide(b,p){
              保证它不会被高射速机枪在重装目标上全面替代。 */
           if(b.projectileType==="antitank"&&((e.armor||0)>=.18||e.boss))dmg*=2.8;
         }
-        damageEnemy(e,dmg,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType});
+        damageEnemy(e,dmg,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType,
+          hitDirection:b.vel,hitPoint:p});
+        applyIncendiaryHit(e,b);
         spawnParticles(p.clone(),0xfff2b0,5,5,.7);
         sfx.hit();
         if(b.pierceLeft>0){b.pierceLeft--;return false;}
@@ -6456,6 +6642,7 @@ function bulletCollide(b,p){
       unit.hp-=b.dmg*(1-Math.min(.65,unit.armor||0));spawnParticles(p.clone(),0xff8a6a,5,5,.7);return true;
     }
     const occupiedHit=inMap(c.x,c.z)?ownedStructureAtCell(idx(c.x,c.z)):null;
+    if(occupiedHit?.kind==='construction')return damageConstruction(occupiedHit.record,b.dmg);
     for(const [records,kind] of ownedStructurePools()){
       const structure=(occupiedHit&&occupiedHit.records===records&&occupiedHit.record.hp>0?occupiedHit.record:null)
         ||records.find((item)=>item.hp>0&&hitR2(item.group.position,3));
@@ -6481,7 +6668,8 @@ function updateBullets(dt){
       spawnParticles(b.mesh.position.clone(),trailColor,b.projectileType==="cannon"?2:1,b.projectileType==="emp"?.7:1.25,.18);
       b._trailT=b.projectileType==="machinegun"?.085:.045;
     }
-    /* ★ 子步进移动：每步 ≤1.2 单位，杜绝高速穿墙/穿人 */
+    /*  子步进移动：每步 ≤1.2 单位，杜绝高速穿墙/穿人 */
+    if(b.gravity)b.vel.y-=b.gravity*dt;
     const dist=b.vel.length()*dt;
     const steps=Math.max(1,Math.ceil(dist/1.2));
     const inc=b.vel.clone().multiplyScalar(dt/steps);
@@ -6491,6 +6679,7 @@ function updateBullets(dt){
       const p=b.mesh.position;
       if(Math.abs(p.x)>HALF||Math.abs(p.z)>HALF){dead=true;break;}
       if(bulletCollide(b,p))dead=true;
+      if(b.gravity&&b.vel.y<0&&p.y<=heightAt(p.x,p.z)+.1)dead=true;
     }
     // 子弹贴合地形飞行（视觉）
     const p=b.mesh.position;
@@ -6524,17 +6713,15 @@ function updateParticles(dt){
     const pt=particles[i];
     pt.life-=dt;pt.vel.y-=25*dt;
     pt.position.addScaledVector(pt.vel,dt);
-    if(pt.life<=0)particles.splice(i,1);
+    if(pt.life<=0){particlePool.push(pt);particles[i]=particles[particles.length-1];particles.pop();}
   }
   const count=Math.min(particles.length,PARTICLE_LIMIT);
   for(let i=0;i<count;i++){
-    const pt=particles[i],offset=i*3,fade=Math.max(0,Math.min(1,pt.life*2));
-    particlePositions[offset]=pt.position.x;particlePositions[offset+1]=pt.position.y;particlePositions[offset+2]=pt.position.z;
-    particleColors[offset]=pt.color.r*fade;particleColors[offset+1]=pt.color.g*fade;particleColors[offset+2]=pt.color.b*fade;
+    const pt=particles[i],fade=Math.max(0,Math.min(1,pt.life*2));
+    particleFx.set(i,pt.position,pt.color,Math.max(.12,pt.size)*(.5+(1-pt.life/pt.total)*.6),fade*.9);
   }
-  particleGeometry.setDrawRange(0,count);
-  particleGeometry.attributes.position.needsUpdate=true;particleGeometry.attributes.color.needsUpdate=true;
-  /* ★ 电磁连锁闪电视觉衰减 */
+  particleFx.commit(count);
+  /*  电磁连锁闪电视觉衰减 */
   for(let i=lightningBeams.length-1;i>=0;i--){
     const lb=lightningBeams[i];
     lb.life-=dt;
@@ -6575,6 +6762,7 @@ function updatePowerups(dt){
 
 const camView=new URLSearchParams(location.search).get("view");
 function updateCamera(dt){
+  if(window.Settings&&!Settings.isShake())camShake=0;
   const f=(player&&player.alive)?player.group.position:
     (baseGroup?baseGroup.position:new THREE.Vector3());
   if(camView==="low"){
@@ -6587,7 +6775,7 @@ function updateCamera(dt){
   const rts=ACTIVE_MODE.key==="survival";
   let tx,tz,cy,cz;
   if(rts){
-    /* ★ P4-4 标准 RTS 镜头：固定俯仰角（60°），位置 = 焦点 + 方向 * dist，直接赋值无 lerp。
+    /*  P4-4 标准 RTS 镜头：固定俯仰角（60°），位置 = 焦点 + 方向 * dist，直接赋值无 lerp。
        方向键/边缘滚动平移 camFocus（沿镜头朝向，上=北）；WASD 保留给 WAR3 指令热键；
        滚轮只改 dist（镜头与地面焦点距离），不再同时拉高+后撤产生"扭动感"。 */
     const PITCH=60*Math.PI/180;                 // 固定俯仰
@@ -6598,7 +6786,7 @@ function updateCamera(dt){
     if(keys.ArrowDown)dz+=1;
     if(keys.ArrowLeft)dx-=1;
     if(keys.ArrowRight)dx+=1;
-    if(state!==STATE.BUILD&&document.hasFocus()){
+    if(!rightCameraDrag&&state!==STATE.BUILD&&document.hasFocus()){
       const EDGE=24;
       let ex=0,ez=0;
       if(mouse.x<EDGE)ex-=1; else if(mouse.x>innerWidth-EDGE)ex+=1;
@@ -6652,6 +6840,9 @@ function stepGame(dt,now=performance.now()){
     (state===STATE.BUILD||state===STATE.TECH||state===STATE.GATE||state===STATE.UPGRADE);
   if(state===STATE.PLAYING||state===STATE.UPGRADE||state===STATE.BUILD||state===STATE.PREP||state===STATE.TECH||state===STATE.GATE){
     if(state===STATE.PLAYING||state===STATE.PREP||survivalUiState){
+      updateSurvivalPressure(dt);
+      updateSupportAuras();
+      updateIncendiaryDamage(dt);
       if(player)updatePlayer(dt);
       updateEnemies(dt);
       updateWatchdog(dt);
@@ -6659,10 +6850,12 @@ function stepGame(dt,now=performance.now()){
       updateBaseGadgets(dt);
       updateBuiltTurrets(dt);
       updateFactories(dt);
+      updateConstruction(dt);
       updateMedicalBeacons(dt);
       updateFriendlyUnits(dt);
       applyGameplayCollisions(dt);
       updateBullets(dt);
+      updateWaveDeadline(dt);
       updateDamageHealthBars();
       updatePowerups(dt);
       questTick();
@@ -6693,7 +6886,7 @@ function stepGame(dt,now=performance.now()){
       game.prepTime-=dt;
       const s=Math.max(0,Math.ceil(game.prepTime));
       const el=$("prepBar");
-      if(el)el.textContent=`⏱ 准备阶段 ${s}s · B 键打开商店`;
+      if(el)el.textContent=` 准备阶段 ${s}s · B 键打开商店`;
       if(game.prepTime<=0){
         if(el)el.style.display="none";
         if(buildReturnState===STATE.PREP)buildReturnState=STATE.PLAYING;
@@ -6726,11 +6919,15 @@ function stepGame(dt,now=performance.now()){
 }
 function loop(){
   requestAnimationFrame(loop);
+  updateSurvivalSoundscape();
   const now=performance.now();
   let dt=(now-lastT)/1000;lastT=now;
   dt=Math.min(dt,.05)*FF;
   stepGame(dt,now);
   updateCamera(dt);
+  updateCrowdLod();
+  if(window.BGMBridge)BGMBridge.tick(state, ACTIVE_MODE&&ACTIVE_MODE.key,{wave:game.wave,bossAlive:enemies.some(e=>e.boss&&e.alive&&!e.dying),intensity:Math.min(1,enemies.length/150),hidden:document.hidden});
+  if(window.SurvivalHUD&&ACTIVE_MODE&&ACTIVE_MODE.key==="survival")SurvivalHUD.update(); /*  v6.35.0：生存 HUD 顶部进度/压力条 */
   renderer.render(scene,camera);
   if(location.search.includes("inspect")){
     let acc=[];
@@ -6763,33 +6960,38 @@ function loop(){
 }
 
 /* ---------------- 开始/重开 ---------------- */
-function resetGame(){
+function resetGame(baseLayout=null,terrainPads=[]){
+  mobileHealingLedger=new WeakMap();
+  naturalSupportPads=terrainPads;
+  if(ACTIVE_MODE.key==="survival")ACTIVE_MODE.base={...(baseLayout||DEFAULT_SURVIVAL_BASE)};
+  clearConstruction();
+  clearCrowdLod();
   [...bullets].forEach(b=>{scene.remove(b.mesh);disposeTransientObject3D(b.mesh);});bullets.length=0;
   particles.length=0;particleGeometry.setDrawRange(0,0);
-  corpseDecals.splice(0).forEach((item)=>scene.remove(item.root));
+  corpseDecals.splice(0).forEach((item)=>{scene.remove(item.root);disposeTransientObject3D(item.root);});
   [...powerups].forEach(p=>scene.remove(p.group));powerups.length=0;
-  [...enemies].forEach(e=>{scene.remove(e.group);if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);}});enemies.length=0;
-  /* ★ 清空玩家构筑物 */
-  builtTurrets.forEach(t=>scene.remove(t.group));builtTurrets.length=0;
+  [...enemies].forEach(e=>{scene.remove(e.group);releaseEnemyResources(e);if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);}});enemies.length=0;
+  /*  清空玩家构筑物 */
+  builtTurrets.forEach(t=>{scene.remove(t.group);disposeTransientObject3D(t.group);});builtTurrets.length=0;
   builtMines.forEach(m=>scene.remove(m.group));builtMines.length=0;
   goldMines.forEach(m=>scene.remove(m.group));goldMines.length=0;
   mineIncomePopups.splice(0).forEach((popup)=>popup.element.remove());
   researchInstitutes.forEach(t=>scene.remove(t.group));researchInstitutes.length=0;
   heavyFactories.forEach(t=>scene.remove(t.group));heavyFactories.length=0;
-  friendlyUnits.forEach(t=>scene.remove(t.group));friendlyUnits.length=0;
-  heroTank=null;
+  friendlyUnits.forEach(t=>{scene.remove(t.group);disposeTransientObject3D(t.group);});friendlyUnits.length=0;
+  heroTank=null;clearHeroEffects();clearHeroLogistics();clearFactoryWorkshops();game.upgradeJobs=[];heroHubs.forEach(h=>{scene.remove(h.group);disposeTransientObject3D(h.group);});heroHubs.length=0;
   builtHouses.forEach(h=>scene.remove(h.group));builtHouses.length=0;
   visionBeacons.forEach((beacon)=>{scene.remove(beacon.group);removeSurvivalPointLight(beacon.light);});visionBeacons.length=0;
   medicalHealingLinks.splice(0).forEach((link)=>{scene.remove(link);link.geometry.dispose();link.material.dispose();});
   structCells.clear();
 
-  /* ★ 重置任务三引导状态，避免跨局残留 */
+  /*  重置任务三引导状态，避免跨局残留 */
   if(typeof questReset==="function") questReset();
-  _waveClearing=false;                 /* ★ P0-1：跨局重开时清理清波闸门 */
-  _wdStallT=0;_wdKillTimer=0;_wdHarvesting=false;_wdRerouted=false; /* ★ 跨局重开时清零波次看门狗 */
+  _waveClearing=false;                 /*  P0-1：跨局重开时清理清波闸门 */
+  _wdStallT=0;_wdKillTimer=0;_wdHarvesting=false;_wdRerouted=false; /*  跨局重开时清零波次看门狗 */
 
-  Object.assign(game,{score:0,lives:3,wave:0,bombs:0,upgrades:{},_bossDone:false,_eliteToast:false,
-    baseShieldHP:0,enemiesToSpawn:0,spawnTimer:0,respawnTimer:0,waveTransition:null,_resumeWave:0,
+  Object.assign(game,{score:0,lives:3,wave:0,bombs:0,upgrades:{},hero:HeroSystem.archive(),doctrine:null,doctrineTech:{},upgradeJobs:[],_bossDone:false,_eliteToast:false,
+    baseShieldHP:0,enemiesToSpawn:0,spawnTimer:0,respawnTimer:0,waveTransition:null,_resumeWave:0,spawnPlans:[],waveElapsed:0,survivalElapsed:0,
     playerShieldHP:0,sprintUntil:0,_empTimer:0,_mortarTimer:0,
     tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
     popUsed:0,popMax:(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.startPop)||12,prepTime:0,endless:false,
@@ -6807,7 +7009,7 @@ function resetGame(){
     if(player&&player.group)scene.remove(player.group);
     player=null;wc3ClearSel();wc3RenderSel();
   }else spawnPlayer();
-  /* ★ 大门血量（生存模式）：由 computeGateMaxHp 统一公式，初始满血 */
+  /*  大门血量（生存模式）：由 computeGateMaxHp 统一公式，初始满血 */
   if(ACTIVE_MODE.key==="survival"){
     game.gateMaxHp=computeGateMaxHp();
     game.gateHp=game.gateMaxHp;
@@ -6829,7 +7031,10 @@ function resetGame(){
     camera.lookAt(new THREE.Vector3(f.x*.55,0,f.z*.55));
   }
   $("score").textContent=0;
-  if($("modeName"))$("modeName").textContent=ACTIVE_MODE.name||"巷战";
+  if($("modeName")){
+    const difficultyNames={easy:"简单",normal:"普通",hard:"困难",hell:"地狱"};
+    $("modeName").textContent=ACTIVE_MODE.key==="survival"?`${ACTIVE_MODE.name||"生存"} · ${difficultyNames[game.difficultyId||"normal"]||"普通"}`:(ACTIVE_MODE.name||"巷战");
+  }
   updateHpUI();updateBuffUI();updateGoldUI();
   $("hud").classList.remove("hidden");
   $("hud").classList.toggle("survival",ACTIVE_MODE.key==="survival");
@@ -6837,6 +7042,8 @@ function resetGame(){
   $("tech").classList.add("hidden");
   $("gateUp").classList.add("hidden");
   if(ACTIVE_MODE.key==="survival"){
+    // Prepare the human skinning shader/textures before the preparation clock starts.
+    warmConstructionWorkers();lastT=performance.now();
     state=STATE.PREP;
     startPrep();
   }else{
@@ -6847,16 +7054,16 @@ function resetGame(){
 
 $("restartBtn").onclick=()=>{$("gameover").classList.add("hidden");resetGame();};
 $("resumeBtn").onclick=()=>setPause(false);
-/* ★ 科技树弹窗：完成按钮关闭并回到原状态 */
+/*  科技树弹窗：完成按钮关闭并回到原状态 */
 $("techDoneBtn").onclick=closeTechMenu;
-/* ★ 结算弹窗：胜利收尾 / 进入无尽 */
+/*  结算弹窗：胜利收尾 / 进入无尽 */
 const settleWinBtn=$("settleWinBtn"),settleEndlessBtn=$("settleEndlessBtn");
 if(settleWinBtn)settleWinBtn.onclick=()=>{ $("settle").classList.add("hidden"); endGame(true); };
 if(settleEndlessBtn)settleEndlessBtn.onclick=()=>{
   $("settle").classList.add("hidden");
   game.endless=true;
   state=STATE.PLAYING;
-  announce("♾️ 无尽模式开启！Boss 将周期性降临");
+  announce(" 无尽模式开启！Boss 将周期性降临");
   setTimeout(()=>startWave(game.wave+1),900);
 };
 
@@ -6867,10 +7074,13 @@ Object.assign(window,{get state(){return state;},get game(){return game;},
 /* v5.0.0：自动化、无障碍与诊断共用的权威状态出口。 */
 window.render_game_to_text=()=>JSON.stringify({
   version:GAME_VERSION,
+  construction:serializeConstruction(),
   coordinateSystem:"origin at map center; +x east/right; +z south/down; +y up; world units",
   mode:ACTIVE_MODE.key,
   state,
-  wave:game.wave,
+  wave:game.wave,difficulty:game.difficultyId||"normal",difficultyMultiplier:game.difficultyMultiplier||1,
+  timeDifficulty:{elapsed:game.survivalElapsed||0,damage:survivalPressureMultiplier(),health:survivalPressureMultiplier()},
+  waveDeadline:{elapsed:game.waveElapsed||0,remaining:Math.max(0,120-(game.waveElapsed||0)),activeLimit:SURVIVAL_ACTIVE_LIMIT},
   waveCounts:{remaining:Math.max(0,game.enemiesToSpawn||0)+activeEnemyCount(),active:activeEnemyCount(),queued:Math.max(0,game.enemiesToSpawn||0)},
   waveTransition:game.waveTransition?{nextWave:game.waveTransition.nextWave,remaining:+game.waveTransition.remaining.toFixed(3),ready:game.waveTransition.ready}:null,
   waveProfile:game.wave>0?SurvivalSystem.waveProfile(game.wave):null,
@@ -6890,6 +7100,7 @@ window.render_game_to_text=()=>JSON.stringify({
     command:unit.command,x:+unit.group.position.x.toFixed(3),y:+unit.group.position.y.toFixed(3),z:+unit.group.position.z.toFixed(3),
     moveTarget:unit.moveTarget?{x:+unit.moveTarget.x.toFixed(3),z:+unit.moveTarget.z.toFixed(3)}:null,
     route:{available:!!unit.routeAvailable,remaining:(unit.routeWaypoints||[]).length}})),
+  upgradeJobs:game.upgradeJobs||[],heroArchive:heroArchive(),doctrine:game.doctrine||null,doctrineTech:game.doctrineTech||{},heroHubs:heroHubs.map(h=>({x:h.x,z:h.z,hp:h.hp})),
   heroTank:heroTank&&heroTank.alive?{type:heroTank.type,hp:+heroTank.hp.toFixed(2),maxHp:heroTank.maxHp}:null,
   structures:{research:researchInstitutes.length,factories:heavyFactories.map(factory=>({queue:factory.queue.map(item=>item.typeId),progress:+factory.progress.toFixed(3)})),turrets:builtTurrets.length,beacons:visionBeacons.length,walls:wallMeta.size,
     mines:goldMines.map((mine)=>({level:mine.level,income:SurvivalSystem.mineIncome(mine.level)})),incomePopups:mineIncomePopups.map((popup)=>popup.element.textContent)},

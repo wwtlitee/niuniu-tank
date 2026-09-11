@@ -37,10 +37,10 @@ function turretBranchUpgradeSteps(id, stats) {
       { dmg: 4.2, fireRate: .5, pierce: .88 },
     ],
     emp: [
-      { dmg: 1.05, fireRate: .82, splash: 3, slow: .34, stun: .24 },
-      { dmg: 1.22, fireRate: .87, splash: 3.25, slow: .39, stun: .27 },
-      { dmg: 1.45, fireRate: .92, splash: 3.55, slow: .44, stun: .31 },
-      { dmg: 1.8, fireRate: 1, splash: 3.9, slow: .5, stun: .36 },
+      { dmg: 1.45, fireRate: .85 },
+      { dmg: 1.75, fireRate: .9 },
+      { dmg: 2.15, fireRate: .95 },
+      { dmg: 2.65, fireRate: 1 },
     ],
   };
   return steps[id] || [
@@ -53,7 +53,7 @@ function turretBranchUpgradeSteps(id, stats) {
 for (const [id, branch] of Object.entries(SurvivalSystem.TURRET_BRANCHES)) {
   const stats = branch.stats;
   TURRET_TYPES[id] = {
-    id, name: branch.name, desc: `标准炮台专精：${branch.name}`, cost: 70, color: branch.color,
+    id, name: branch.name, desc: id==="antitank"?"远程单体 · 基础忽略65%护甲 · 对重甲(≥18%护甲)/Boss命中伤害×2.8":id==="emp"?"贯穿射线 · 命中射线沿途所有敌人":id==="cannon"?"低射速范围爆炸 · 压制密集尸群":"高速单体射击 · 持续输出", cost: 70, color: branch.color,
     stats: { dmg: stats.damage, fireRate: stats.fireRate, range: SurvivalSystem.rangeAtResearchLevel(id,0), splash: stats.splash,
       slow: stats.slow, stun: stats.stun, pierce: stats.armorPierce },
     upgrade: turretBranchUpgradeSteps(id, stats),
@@ -66,7 +66,7 @@ for (const [id, branch] of Object.entries(SurvivalSystem.TURRET_BRANCHES)) {
  *  - baseCost × growth^level 即下一档成本
  *  - requires：前置依赖（其它分支需达到的最低档位）
  * ------------------------------------------------------------------- */
-const TECH_ICONS = { defense: "🛡", turret: "🎯", tank: "⚙", economy: "💰" };
+const TECH_ICONS = { defense: "shield", turret: "turret", tank: "tank", economy: "coin" };
 const TECH_DESCRIPTIONS = {
   defense: "墙体与大门生命、护甲", turret: "炮台伤害、射速与射程",
   tank: "坦克伤害、生命与移速", economy: "金矿收入、建造折扣与人口",
@@ -249,7 +249,7 @@ const GAME_MODES = {
     key: "classic",
     name: "经典巷战",
     tagline: "坦克肉鸽 · 全局俯视 · 守护鹰旗",
-    icon: "🏙",
+    icon: "base",
     color: "#ffd75e",
     mapType: "city",
     GRID: 15,                       /* BC 原版 13×13 布局 + 1 格钢边框，1:1 复刻 */
@@ -274,14 +274,14 @@ const GAME_MODES = {
     key: "survival",
     name: "基地防守",
     tagline: "RTS 建造 · 单门死守 · 科技解锁",
-    icon: "🏰",
+    icon: "base",
     color: "#7ec8ff",
     mapType: "survival",
     GRID: 24,
     buildEnabled: true,
     cameraY: 36, cameraZ: 28,
     /* 开场看向高台东沿/谷口，基地在画面左上，不贴着司令部。 */
-    startFocus: { col: 8, row: 16 },
+    startFocus: { col: 8, row: 17 },
     fogFar: 110,
     prepTime: 30,
     victoryWave: 10,
@@ -293,12 +293,12 @@ const GAME_MODES = {
     endlessScale: wave => wave <= 10 ? 1 : Math.pow(1.1, wave - 10),
     goldStart: 460,
     buildTimer: 0,
-    // GRID=24。峡谷只切进高台 1 格宽 × 3 格长；外面是平地。刷怪点左上 / 右上 / 右下。
-    base: { col: 3, row: 13, gateCol: 3, gateRow: 13 },
+    // GRID=24。峡谷只切进高台 1 格宽 × 3 格长；外面是平地。尸潮统一从上方进入。
+    base: { col: 6, row: 15, gateCol: 6, gateRow: 15 },
     ramp: { col: 10, row: 18 },
     enclosure: { x0: 1, x1: 13, z0: 11, z1: 22 },
     canyon: { x0: 11, x1: 13, z0: 18, z1: 18 },
-    spawns: [ {x: 3, z: 3}, {x: 20, z: 3}, {x: 20, z: 20} ],
+    spawns: [ {x: 3, z: 3}, {x: 20, z: 3} ],
     economy: {
       /* v6.2.2：基础矿固定70；五次升级价格×4、收益×5。 */
       mineCost: SurvivalSystem.MINE_ECONOMY.baseCost,
@@ -325,13 +325,14 @@ const GAME_MODES = {
     /* ---- 生存模式建筑表（WAR3 式建造面板）：金币建造，人口限制部队规模 ---- */
     // kind: econ / wall / turret / research / factory；pop 为占用人口。
     SURVIVAL_BUILDS: [
-      {id:"goldmine",  icon:"💰", name:"金矿",   price:70,  pop:0, kind:"econ", footprint:[1,1], desc:"每秒产金 · 可升级 Lv1~6"},
-      {id:"house",     icon:"🏠", name:"人口房", price:50,  pop:0, kind:"econ", footprint:[1,1], desc:"+6 人口上限"},
-      {id:"research",  icon:"🏛", name:"研究院", price:180, pop:0, kind:"research", footprint:[2,2], maxCount:1, desc:"集中升级防御、炮台、坦克和经济科技"},
-      {id:"factory",   icon:"🏭", name:"重工厂", price:240, pop:0, kind:"factory", footprint:[2,2], maxCount:1, desc:"生产轻型、中型、重型坦克与维修车"},
-      {id:"beacon",    icon:"🟢", name:"医疗灯塔", price:45,  pop:2, kind:"beacon", footprint:[1,1], desc:"占2人口 · 按墙体最大生命百分比远程修补 · 多塔叠加封顶10%/秒 · 可升至Lv5"},
-      {id:"turret",    icon:"🔫", name:"标准炮台", price:90, pop:2, kind:"turret", footprint:[1,1], turret:"turret", desc:"阵地支援火力 · 需与坦克和巨岩墙协同"},
-      {id:"wall",      icon:"🚪", name:"闸门墙", price:12, pop:0, kind:"wall", footprint:[1,1], desc:"共50级 · 门模型拉宽堵住 1 格峡谷口"},
+      {id:"goldmine",  icon:"mine", name:"金矿",   price:70,  pop:0, kind:"econ", footprint:[1,1], desc:"每秒产金 · 可升级 Lv1~6"},
+      {id:"house",     icon:"house", name:"人口房", price:50,  pop:0, kind:"econ", footprint:[1,1], desc:"+6 人口上限"},
+      {id:"research",  icon:"research", name:"研究院", price:180, pop:0, kind:"research", footprint:[2,2], maxCount:1, desc:"集中升级防御、炮台、坦克和经济科技"},
+      {id:"heroHub", icon:"base", name:"英雄枢纽",price:800,pop:0,kind:"heroHub",footprint:[2,2],maxCount:1,desc:"生产唯一英雄，学习九种自动武器与支援技能"},
+      {id:"factory",   icon:"factory", name:"重工厂", price:240, pop:0, kind:"factory", footprint:[2,2], maxCount:1, desc:"生产轻型、中型、重型常规坦克"},
+      {id:"beacon",    icon:"health", name:"医疗灯塔", price:45,  pop:2, kind:"beacon", footprint:[1,1], desc:"占2人口 · 修复范围内所有友方建筑、坦克、英雄和基地 · 多塔叠加封顶10%/秒 · 可升至Lv5"},
+      {id:"turret",    icon:"turret", name:"标准炮台", price:90, pop:2, kind:"turret", footprint:[1,1], turret:"turret", desc:"阵地支援火力 · 需与坦克和巨岩墙协同"},
+      {id:"wall",      icon:"wall", name:"闸门墙", price:12, pop:0, kind:"wall", footprint:[1,1], desc:"共50级 · 门模型拉宽堵住 1 格峡谷口"},
     ],
   },
 
@@ -340,7 +341,7 @@ const GAME_MODES = {
     key: "td",
     name: "塔防阵地",
     tagline: "固定路径 · 摆塔设伏 · 坦克位升级",
-    icon: "🗼",
+    icon: "turret",
     color: "#39d98a",
     mapType: "td",
     GRID: 31,

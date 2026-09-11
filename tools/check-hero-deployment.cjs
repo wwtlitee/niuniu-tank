@@ -1,0 +1,15 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/strict');
+(async()=>{const b=await chromium.launch({headless:true,args:['--use-angle=d3d11']});const out='output/hero-deployment-v7.2.0';fs.mkdirSync(out,{recursive:true});try{const p=await b.newPage({viewport:{width:1440,height:900}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:8001/play/niuniu-tank/index.html?mode=survival&autotest=1');await p.waitForFunction(()=>typeof assetsReady==='function'&&assetsReady()&&state===7,null,{timeout:120000});const result=await p.evaluate(()=>{
+state=STATE.PAUSED;game.gold=1e8;game.popMax=100;
+function place(id,c){const item=shopList().find(b=>b.id===id);selectBuild(shopList().indexOf(item));ghostCell=c;ghost.visible=true;placeBuildingImmediately(null,null,null,true);selectBuild(null);}
+const hubSpec=shopList().find(b=>b.id==='heroHub');let site;
+for(let z=3;z<GRID-4&&!site;z++)for(let x=3;x<GRID-4;x++)if(footprintPlaceable({x,z},hubSpec)){site={x,z};break;}if(!site)throw Error('no hub site');place('heroHub',site);
+const h=heroHub(),front={x:h.group.position.x,z:h.group.position.z+TILE*1.6},factorySpec=shopList().find(b=>b.id==='factory'),choices=[];
+for(let z=1;z<GRID-3;z++)for(let x=1;x<GRID-3;x++)if(footprintPlaceable({x,z},factorySpec)){const c=cellCenter(x,z);choices.push({x,z,d:Math.hypot(c.x-front.x,c.z-front.z)});}choices.sort((a,b)=>a.d-b.d);if(!choices.length)throw Error('no factory site');place('factory',choices[0]);
+if(navigationPositionClear(front,1.62))throw Error('fixture did not block front');
+if(!produceHero())throw Error('queue');const paid=game.gold,pop=game.popUsed;let previous=null,maxStep=0;
+for(let i=0;i<1800;i++){updateHeroProduction(1/60);if(heroWorkshop){const now=heroWorkshop.tank.getWorldPosition(new THREE.Vector3());if(previous)maxStep=Math.max(maxStep,now.distanceTo(previous));previous=now;if(now.y<heightAt(now.x,now.z)-.01)throw Error('below terrain');}}
+const waitingBeforeClear=!heroTank;if(waitingBeforeClear&&(!heroWorkshop||heroArchive().status!=='producing'||heroArchive().remaining!==0))throw Error('lost assembly');if(game.gold!==paid||game.popUsed!==pop)throw Error('double charge');
+const factory=heavyFactories[0];destroyOwnedStructure(factory,heavyFactories,'factory');for(let i=0;i<1200&&!heroTank;i++)updateHeroProduction(1/60);
+if(!heroTank)throw Error('clearing factory did not release hero');if(maxStep>.12)throw Error('teleport '+maxStep);if(!navigationPositionClear(heroTank.group.position,heroTank.radius))throw Error('spawn collision');
+camFocus.set(h.group.position.x,0,h.group.position.z);camHeight=38;updateCamera(1);renderer.render(scene,camera);return {frontBlocked:true,waitingBeforeClear,maxStep,heroReleased:true,paid,pop};});await p.screenshot({path:out+'/alternate-exit.png'});assert.deepEqual(errors,[]);fs.writeFileSync(out+'/results.json',JSON.stringify({result,errors},null,2));console.log(result);}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1});
