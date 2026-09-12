@@ -13,9 +13,10 @@ function makeOriginalCrowdBatch(enemy){
   const mixer=new THREE.AnimationMixer(animationRoot),clip=enemy.actions?.walk?.getClip();
   if(clip)mixer.clipAction(clip).play();
   const bones={};for(const [key,bone] of Object.entries(enemy.poseBones||{}))bones[key]=root.getObjectByName(bone.name);
-  const proxy={group:root,poseBones:bones,baseBoneRotations:enemy.baseBoneRotations,visualRoot:root.children[0],attackPose:0};
+  const proxy={group:root,poseBones:bones,baseBoneRotations:enemy.baseBoneRotations,visualRoot:root.children[0],attackPose:0,currentAnim:_ANIM_WALK,type:enemy.type};
   const poses=[],vertex=new THREE.Vector3();
   for(let frame=0;frame<4;frame++){
+    proxy.poseTime=frame*Math.PI/2/(enemy.type==='fast'?10:7);
     if(clip)mixer.setTime(clip.duration*frame/4);
     applyZombieReachPose(proxy);root.updateMatrixWorld(true);
     root.traverse(o=>{if(o.skeleton)o.skeleton.update();});
@@ -71,7 +72,7 @@ function updateCrowdLod(){
     enemy.group.userData.crowdLodHidden=far;enemy.group.visible=!far;enemy._crowdLod=far;
     if(!far)continue;
     const moving=enemy.currentAnim===_ANIM_WALK;
-    const phase=moving?(Math.floor(performance.now()/125)+enemy.hordeId)%4:0;
+    const phase=moving?(Math.floor((enemy.poseTime||0)*8)+enemy.hordeId)%4:0;
     const pose=batch.poses[phase];
     crowdLodTransform.position.copy(enemy.group.position);crowdLodTransform.rotation.copy(enemy.group.rotation);crowdLodTransform.scale.copy(enemy.group.scale);crowdLodTransform.updateMatrix();
     for(const mesh of pose.meshes)mesh.setMatrixAt(pose.count,crowdLodTransform.matrix);

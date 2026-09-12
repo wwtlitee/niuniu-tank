@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.8.0";
+const GAME_VERSION="8.9.0";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -5045,6 +5045,7 @@ function damageEnemy(enemy,rawDamage,options={}){
   const pressurePierce=pressure+(1-pressure)*pierce;
   const amount=raw*armorFactor*pressurePierce*Math.max(0,Number(options.multiplier)||1);
   enemy.hp-=amount;
+  if(amount>0){enemy.hitReaction=Math.min(1,.25+amount/Math.max(1,enemy.maxHp)*3);enemy.poseDirty=true;}
   if(enemy.hp<=0){if(options.source==='hero')heroArchive().kills++;killEnemy(enemy);}
   return amount;
 }
@@ -6262,7 +6263,7 @@ function hordeLaneBlocked(enemy,dir){
   if(ACTIVE_MODE.key!=="survival"||!dir)return false;
   const p=enemy.group.position;
   for(const other of enemies){
-    if(!other||other===enemy||other.dead||other.atGate)continue;
+    if(!other||other===enemy||!other.alive||other.dying)continue;
     const dx=other.group.position.x-p.x,dz=other.group.position.z-p.z;
     const forward=dx*dir.x+dz*dir.z;
     if(forward<=0||forward>enemy.radius+other.radius+.16)continue;
@@ -6272,13 +6273,26 @@ function hordeLaneBlocked(enemy,dir){
   return false;
 }
 function hordeLaneDetour(enemy,dir,spd,curH,radius){
-  if(!hordeLaneBlocked(enemy,dir))return false;
-  const side=enemy.hordeId%2?1:-1,sx=-dir.z*side,sz=dir.x*side;
-  const distance=Math.max(spd*1.5,.12);
-  const nx=enemy.group.position.x+sx*distance,nz=enemy.group.position.z+sz*distance;
-  if(blockedForTank(nx,nz,radius,curH))return false;
-  enemy.group.position.x=nx;enemy.group.position.z=nz;enemy.thinkTimer=.08;
-  return true;
+  if(!(spd>0)||!hordeLaneBlocked(enemy,dir))return false;
+  const length=Math.hypot(dir.x,dir.z);if(length<1e-6)return false;
+  const fx=dir.x/length,fz=dir.z/length,p=enemy.group.position;
+  const preferred=enemy.hordeLaneSide||(enemy.hordeId%2?1:-1);
+  for(const side of [preferred,-preferred]){
+    // 斜向前进只消耗本帧移动距离，减速和帧率不会被横移保底绕过。
+    const dx=(fx*.4-fz*side*.9165)*spd,dz=(fz*.4+fx*side*.9165)*spd;
+    const nx=p.x+dx,nz=p.z+dz;
+    if(blockedForTank(nx,nz,radius,curH))continue;
+    let occupied=false;
+    for(const other of enemies){
+      if(other===enemy||!other.alive||other.dying)continue;
+      const q=other.group.position,min=(enemy.radius+other.radius)*.9;
+      const before=Math.hypot(p.x-q.x,p.z-q.z),after=Math.hypot(nx-q.x,nz-q.z);
+      if(after<min&&after<before-1e-5){occupied=true;break;}
+    }
+    if(occupied)continue;
+    p.x=nx;p.z=nz;enemy.hordeLaneSide=side;enemy.thinkTimer=.08;return true;
+  }
+  return false;
 }
 
 /* 丧尸是矮模型，射击目标必须取模型包围盒内部的身体点，不能继续用根节点的地面坐标。 */
@@ -6406,9 +6420,8 @@ function applyZombieReachPose(e){
   reset(bones.LeftArm,"LeftArm");reset(bones.RightArm,"RightArm");
   reset(bones.LeftForeArm,"LeftForeArm");reset(bones.RightForeArm,"RightForeArm");
   reset(bones.Chest,"Chest");
-  /* 生存尸潮平时保持低角度向前举臂；攻击时只让前臂短促前伸再回收，
-     不旋转身体，也不让远处单位退回 T 姿。attackPose 从 1 衰减到 0，
-     用正弦曲线把一次攻击做成自然的前伸-回收动作。 */
+  /* 在原生腿部动画上叠加交替摆臂、攀爬抬手和短促攻击；所有偏移从
+     基准姿态计算，避免逐帧累积。远景烘焙也复用此函数。 */
   const attackProgress=Math.max(0,Math.min(1,Number(e.attackPose)||0));
   const punch=attackProgress>0?Math.sin((1-attackProgress)*Math.PI):0;
   e.group.getWorldQuaternion(_aimParentQ);
@@ -6416,10 +6429,14 @@ function applyZombieReachPose(e){
   if(_aimForward.lengthSq()<1e-6)_aimForward.set(0,0,1);
   _aimForward.normalize();
   _aimRight.crossVectors(_aimUp,_aimForward).normalize();
-  const lift=-.28-punch*.08,spread=0;
-  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,spread);_aimTarget.y+=lift;_aimTarget.normalize();
+  const phase=(e.poseTime||0)*(e.type==='fast'?10:7)+(e.hordeId||0)*2.399;
+  const moving=e.currentAnim===_ANIM_WALK;
+  const climb=Math.min(1,(e.hordeLift||0)/.6);
+  const stride=moving?Math.sin(phase)*.18:Math.sin(phase*.35)*.025;
+  const lift=-.4-punch*.08+climb*.65,spread=.05;
+  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,spread);_aimTarget.y+=lift+stride;_aimTarget.normalize();
   _aimBoneToward(bones.LeftArm,bones.LeftForeArm||bones.LeftHand,_aimTarget);
-  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,-spread);_aimTarget.y+=lift;_aimTarget.normalize();
+  _aimTarget.copy(_aimForward).addScaledVector(_aimRight,-spread);_aimTarget.y+=lift-stride;_aimTarget.normalize();
   _aimBoneToward(bones.RightArm,bones.RightForeArm||bones.RightHand,_aimTarget);
   _aimTarget.copy(_aimForward).multiplyScalar(1+punch*.18);_aimTarget.y+=-.2-punch*.38;_aimTarget.addScaledVector(_aimRight,.5);_aimTarget.normalize();
   _aimBoneToward(bones.LeftForeArm,bones.LeftHand,_aimTarget);
@@ -6429,7 +6446,10 @@ function applyZombieReachPose(e){
      确保攻击帧肉眼可见且只影响前臂，不会把整个人物扭倒。 */
   if(bones.LeftForeArm&&base.LeftForeArm)bones.LeftForeArm.rotation.x=base.LeftForeArm.x+punch*.42;
   if(bones.RightForeArm&&base.RightForeArm)bones.RightForeArm.rotation.x=base.RightForeArm.x+punch*.42;
-  if(e.visualRoot&&!e.dying)e.visualRoot.rotation.x=0;
+  if(e.visualRoot&&!e.dying){
+    e.visualRoot.rotation.x=(moving?.06:0)+punch*.12-(e.hitReaction||0)*.22;
+    e.visualRoot.rotation.z=(moving?Math.sin(phase)*.035:0)+(e.hitReaction||0)*.08*((e.hordeId||0)%2?1:-1);
+  }
 }
 function updateEnemies(dt){
   const now=performance.now();
@@ -6437,6 +6457,8 @@ function updateEnemies(dt){
   const crowd=enemies.length,animationStride=crowd>300?16:4,poseStride=crowd>300?8:crowd>120?2:1;
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
+    e.poseTime=(e.poseTime||0)+dt;
+    e.hitReaction=Math.max(0,(e.hitReaction||0)-dt*3.5);
     const previousX=e.group.position.x,previousZ=e.group.position.z;
     const nearDx=previousX-cam.x,nearDz=previousZ-cam.z;
     const near=!e._crowdLod&&nearDx*nearDx+nearDz*nearDz<48*48;
@@ -6672,6 +6694,7 @@ function updateEnemies(dt){
         }else a=e.actions[wantAnim];
         if(a){
           a.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(.12).play();
+          if(!atk&&wantAnim===_ANIM_WALK)a.time=a.getClip().duration*((e.hordeId*.61803398875)%1);
           if(e.currentAnim){
             const prev=e.currentAnim==="@attack"
               ?(function(){for(const k in e.actions){if(k.indexOf("attack")>=0&&e.actions[k])return e.actions[k];}})()

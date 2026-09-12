@@ -100,7 +100,7 @@ test('加高坡口的200只尸群形成支撑层，散开落地，俯射遵守�
       _animFrame++;updateEnemies(1/60);
       raised=Math.max(raised,enemies.filter(e=>e.hordeLift>.15).length);
     }
-    for(const e of enemies){if(e.mixer)e.mixer.update(.1);e.group.updateWorldMatrix(true,true);}
+    for(const e of enemies){if(e.mixer)e.mixer.update(.1);applyZombieReachPose(e);e.group.updateWorldMatrix(true,true);}
     renderer.render(scene,camera);
     return {raised,crossed:enemies.filter(e=>e.group.position.x<r.x-TILE*.5).length};
   });
@@ -122,6 +122,53 @@ test('基地前等待攻击的尸群仍然占据空间，完全重叠可以恢�
   assert.equal(result.severe,0,JSON.stringify(result));
   assert.ok(result.minRatio>=.89,JSON.stringify(result));
   assert.equal(result.solid,0);
+});
+
+test('绕行遵守移动预算、尝试另一侧，死亡单位不再挡路',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(2,false);
+    const [rear,front]=enemies,p=rear.group.position;
+    rear.radius=front.radius=.3;rear.hordeLaneSide=1;rear.dir.set(0,0,-1);
+    front.group.position.copy(p);front.group.position.z-=.65;front.atGate=true;
+    const original=blockedForTank,start=p.clone();
+    try{
+      blockedForTank=(x)=>x>start.x;
+      const stopped=hordeLaneDetour(rear,rear.dir,0,0,.3);
+      const moved=hordeLaneDetour(rear,rear.dir,.02,0,.3),distance=p.distanceTo(start);
+      const opposite=p.x<start.x;
+      front.alive=false;const deadBlocks=hordeLaneBlocked(rear,rear.dir);
+      front.alive=true;front.dying=true;const dyingBlocks=hordeLaneBlocked(rear,rear.dir);front.dying=false;
+      return {stopped,moved,distance,opposite,deadBlocks,dyingBlocks};
+    }finally{blockedForTank=original;}
+  });
+  assert.equal(result.stopped,false);assert.equal(result.moved,true);
+  assert.ok(result.distance<=.020001,JSON.stringify(result));assert.equal(result.opposite,true);
+  assert.equal(result.deadBlocks,false);assert.equal(result.dyingBlocks,false);
+});
+
+test('奔跑攀爬与受击姿态有区别且受击后能恢复',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(3,false);
+    const b=baseGroup.position;
+    for(let i=0;i<3;i++){
+      const e=enemies[i];e.group.position.set(b.x+(i-1)*2.2,b.y,b.z+10);
+      e.group.rotation.set(0,0,0);e.currentAnim=_ANIM_WALK;e.poseTime=i*.15;
+      if(e.actions.walk){e.actions.walk.reset().play();e.mixer.update(i*.1+.1);}
+    }
+    enemies[1].hordeLift=.6;enemies[2].maxHp=100;enemies[2].hp=100;
+    damageEnemy(enemies[2],10);
+    for(const e of enemies)applyZombieReachPose(e);
+    const injured=enemies[2],kick=injured.visualRoot.rotation.x;
+    const arms=enemies.map(e=>e.poseBones.LeftArm.quaternion.toArray());
+    camera.position.set(b.x+3,b.y+4,b.z+17);camera.lookAt(b.x,b.y+1,b.z+10);renderer.render(scene,camera);
+    window.behaviorRecovery=()=>{injured.hitReaction=0;applyZombieReachPose(injured);return injured.visualRoot.rotation.x;};
+    return {kick,arms};
+  });
+  await page.screenshot({path:path.join(output,'behavior-poses.png')});
+  assert.notDeepEqual(result.arms[0],result.arms[1]);
+  assert.ok(result.kick<0,JSON.stringify(result));
+  assert.ok(await page.evaluate(()=>behaviorRecovery())>result.kick);
+  assert.deepEqual(errors,[]);
 });
 
 test('坡顶炮台真实俯射能命中坡下敌人',async()=>{
