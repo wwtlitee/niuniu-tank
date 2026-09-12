@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.4.2";
+const GAME_VERSION="8.4.5";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -5358,6 +5358,20 @@ function wc3PickAt(px,py){
         return{kind:"wall",ref:{x:cx,z:cz}};
     }
   }
+  /* 模型可能只有子网格或被特效遮挡；用屏幕空间命中半径兜底，保证英雄和小型单位可点选。 */
+  const candidates=[];
+  for(const entry of wc3SelectableEntriesFor({kind:'unit'}))candidates.push(entry);
+  if(player&&player.alive)candidates.push({kind:'player',ref:player});
+  for(const entry of [{kind:'heroHub',ref:heroHubs[0]},{kind:'factory',ref:heavyFactories[0]}])if(entry.ref)candidates.push(entry);
+  let closest=null,best=Infinity;
+  for(const entry of candidates){
+    const position=wc3SelectionWorldPosition(entry);if(!position)continue;
+    const projected=position.clone().project(camera);if(projected.z<-1||projected.z>1)continue;
+    const sx=(projected.x+1)*innerWidth/2,sy=(-projected.y+1)*innerHeight/2;
+    const radius=entry.kind==='player'||entry.ref.type==='hero'?58:entry.kind==='unit'?42:48;
+    const distance=Math.hypot(px-sx,py-sy);if(distance<=radius&&distance<best){best=distance;closest=entry;}
+  }
+  if(closest)return closest;
   return null;
 }
 

@@ -19,6 +19,17 @@ function startAutoUpgrade(type,id,owner){
   game.autoUpgrades||(game.autoUpgrades={});game.autoUpgrades[upgradeAutoKey(type,id,owner)]=true;
   renderCmdCard();return true;
 }
+function resumeAutoUpgrades(){
+  if(ACTIVE_MODE.key!=='survival'||!game.autoUpgrades)return;
+  if(game._autoUpgradeGoldSnapshot!=null&&game.gold<=game._autoUpgradeGoldSnapshot)return;
+  game._autoUpgradeGoldSnapshot=game.gold;
+  for(const key of Object.keys(game.autoUpgrades)){
+    const parts=key.split(':'),type=parts[0],id=parts[1],owner={kind:parts[2],x:Number(parts[3]),z:Number(parts[4])};
+    if(!AUTO_UPGRADE_TYPES.has(type)||pendingUpgrade(type,id,owner)||!resolveUpgradeOwner(owner))continue;
+    const ref=resolveUpgradeOwner(owner),run={goldmine:()=>upgradeGoldMine(ref),house:()=>upgradeHouse(ref),beacon:()=>upgradeMedicalBeacon(ref),turret:()=>upgradeTurretAt(owner.x,owner.z),wall:()=>upgradeWallAt(owner.x,owner.z),tech:()=>upgradeTech(id),breakthrough:()=>upgradeBreakthrough(id),doctrine:()=>buyDoctrineTech(id)}[type];
+    if(run)run();
+  }
+}
 function resolveUpgradeOwner(o){
   if(o.kind==='base')return baseAlive&&baseGroup?{group:baseGroup}:null;
   if(o.kind==='wall'){const ci=idx(o.x,o.z);return wallMeta.has(ci)&&steelHP.get(ci)>0?{x:o.x,z:o.z}:null;}
@@ -89,6 +100,7 @@ function updateUpgradeJobs(dt){
     if(jobs.includes(j))j.remaining-=budget;
   }
   updateBaseDoctrineVisual();
+  resumeAutoUpgrades();
 }
 function validUpgradeDescriptor(j){
   const expected={goldmine:'goldmine',house:'house',beacon:'beacon',turret:'turret',wall:'wall',branch:'turret',tech:'research',breakthrough:'research',doctrine:'research',base:'base',academy:'research'};
