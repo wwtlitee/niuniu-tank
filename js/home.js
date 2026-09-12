@@ -134,7 +134,14 @@ function enterMode(key, continueGame = false) {
 /* 返回主菜单（游戏结束/暂停时） */
 function backToMenu() {
   /* 清空场上实体，回到菜单背景 */
-  [...enemies].forEach(e => { scene.remove(e.group); if (e.beam) { scene.remove(e.beam); disposeTransientObject3D(e.beam); } });
+  clearCrowdLod();
+  if (zombieDeathEffects) zombieDeathEffects.clear();
+  clearHeroEffects();
+  clearHeroLogistics();
+  flushEnemyDisposals(true);
+  hordeKillUiDirty = false;
+  // Release only enemy-owned resources through the same guarded path as resetGame.
+  [...enemies].forEach(e => { scene.remove(e.group); releaseEnemyResources(e); if (e.beam) { scene.remove(e.beam); disposeTransientObject3D(e.beam); e.beam = null; } });
   enemies.length = 0;
   [...bullets].forEach(b => { scene.remove(b.mesh); disposeTransientObject3D(b.mesh); }); bullets.length = 0;
   [...particles].forEach(p => scene.remove(p.mesh)); particles.length = 0;

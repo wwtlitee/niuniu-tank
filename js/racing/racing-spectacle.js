@@ -14,12 +14,29 @@
  function reserved(x,z,padding=0){return sites.some(p=>Math.hypot(x-p.x,z-p.z)<p.radius+padding);}
  function timeline(time){const t=Number.isFinite(time)?Math.max(0,time):0;return {cowX:Math.sin(t*.045)*12,fleetAngle:t*.024,dishAngle:Math.sin(t*.04)*.28,headAngle:Math.sin(t*.065)*.18};}
  function normalize(object,size){object.updateMatrixWorld(true);const box=new T.Box3().setFromObject(object),dimensions=box.getSize(new T.Vector3()),center=box.getCenter(new T.Vector3()),extent=Math.max(dimensions.x,dimensions.y,dimensions.z);if(!Number.isFinite(extent)||extent<=0)throw new Error('巨物模型尺寸无效');object.position.sub(new T.Vector3(center.x,box.min.y,center.z));const group=new T.Group();group.add(object);group.scale.setScalar(size/extent);return group;}
+ // Quantized attributes must become floats before CPU transforms. Integer writes
+ // otherwise overflow positions and truncate normals; WebGL normally decodes them.
+ function floatGeometry(source){
+  const g=source.clone();
+  for(const name of ['position','normal','color','uv']){
+   const a=g.attributes[name];if(!a)continue;
+   const storage=a.array||a.data?.array,kind=storage.constructor.name;
+   const divisor=a.normalized?({Int8Array:127,Uint8Array:255,Int16Array:32767,Uint16Array:65535,Int32Array:2147483647,Uint32Array:4294967295}[kind]||1):1;
+   const values=new Float32Array(a.count*a.itemSize),get=['getX','getY','getZ','getW'];
+   for(let i=0;i<a.count;i++)for(let j=0;j<a.itemSize;j++)values[i*a.itemSize+j]=Math.max(a.normalized?-1:-Infinity,a[get[j]](i)/divisor);
+   g.setAttribute(name,new T.BufferAttribute(values,a.itemSize));
+  }
+  // This bundled Three.js cannot deindex interleaved buffers correctly. Expand
+  // via accessors first, preserving byte stride/offset, then remove the index.
+  if(g.index){const expanded=g.toNonIndexed();g.dispose();return expanded;}
+  return g;
+ }
  // 静态素材合并为一个绘制批次；保留原色与原始贴图 UV。
  function bakeStatic(object){
   object.updateMatrixWorld(true);const parts=[],maps=new Set();object.traverse(o=>{if(o.isMesh){if(o.isSkinnedMesh)throw new Error('静态合批不能用于骨骼模型');const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>{if(m.map)maps.add(m.map);});parts.push({o,materials});}});
   if(maps.size>1)return object;
   const positions=[],normals=[],colors=[],uvs=[];
-  for(const {o,materials} of parts){const g=(o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone()).applyMatrix4(o.matrixWorld),a=g.attributes;
+  for(const {o,materials} of parts){const g=floatGeometry(o.geometry).applyMatrix4(o.matrixWorld),a=g.attributes;
    for(let i=0;i<a.position.count;i++){const group=g.groups.find(v=>i>=v.start&&i<v.start+v.count),m=materials[group?.materialIndex||0]||materials[0],c=m.color||new T.Color(1,1,1);positions.push(a.position.getX(i),a.position.getY(i),a.position.getZ(i));normals.push(a.normal.getX(i),a.normal.getY(i),a.normal.getZ(i));colors.push(c.r*(a.color?a.color.getX(i):1),c.g*(a.color?a.color.getY(i):1),c.b*(a.color?a.color.getZ(i):1));uvs.push(a.uv?a.uv.getX(i):0,a.uv?a.uv.getY(i):0);}g.dispose();
   }
   const geometry=new T.BufferGeometry();for(const [name,values,size] of [['position',positions,3],['normal',normals,3],['color',colors,3],['uv',uvs,2]])geometry.setAttribute(name,new T.Float32BufferAttribute(values,size));geometry.computeBoundingSphere();return new T.Mesh(geometry,new T.MeshStandardMaterial({vertexColors:true,map:[...maps][0]||null,roughness:.66,metalness:.14}));
@@ -48,5 +65,5 @@
   }
   return {update,sites,dispose(){mixer.stopAllAction();mixer.uncacheRoot(assets.cow.scene);dispose();}};
  }
- return {CATALOG,create,timeline,reserved,sites};
+ return {CATALOG,create,timeline,reserved,sites,bakeStatic};
 });

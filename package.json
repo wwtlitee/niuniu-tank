@@ -1,8 +1,8 @@
 {
   "name": "tank-battle-3d",
-  "version": "8.10.0",
+  "version": "10.1.0",
   "private": true,
-  "description": "坦克大战 3D：经典巷战、生存基地防守与第一人称装甲竞速",
+  "description": "坦克大战 3D：经典巷战、生存基地防守与双视角装甲竞速",
   "scripts": {
     "check:classic": "node --check js/classic/classic-audio.js && node --check js/classic/classic-feedback.js && node --check js/classic/classic-visuals.js && node --test tests/classic-contract.test.cjs tests/classic-audio.test.cjs",
     "test:classic-release": "node tools/check-classic-release.cjs",
@@ -11,14 +11,14 @@
     "assets:sheets": "node tools/generate-asset-contact-sheets.cjs",
     "build:play": "node tools/sync-play.cjs",
     "capture:survival": "node tools/capture-survival.cjs",
-    "check": "node --check js/upgrade-runtime.js && node --check js/factory-workshop.js && node --check js/hero-system.js && node --check js/hero-runtime.js && node --check js/hero-models.js && node --check js/ui-icons.js && node --check js/survival-sound-bank.js && node --check js/battle-effects.js && node --check js/audio-mixer.js && node --check js/bgm-system.js && node --check js/bgm-controller.js && node --check js/settings-ui.js && node --check js/survival-hud.js && node --check js/survival-audio.js && node --check js/natural-terrain.js && node --check js/combat-specializations.js && node --check js/medical-balance.js && node --check js/turret-veteran.js && node --check js/building-models.js && node --check js/wave-pressure.js && node --check js/construction-system.js && node --check js/construction-workers.js && node --check js/construction-runtime.js && node --check js/crowd-lod.js && node --check js/survival-system.js && node --check js/config.js && node --check js/engine.js && node --check js/home.js && node --check js/survival-assets.js && node --check js/terrain-surface.js && node --check js/flow-field.js && node --check js/classic/classic-config.js && node --check js/classic/classic-rules.js && node --check js/classic/classic-upgrades.js && node --check js/classic/classic-engine.js && node tools/sync-play.cjs --check",
+    "check": "node --check js/upgrade-runtime.js && node --check js/factory-workshop.js && node --check js/hero-system.js && node --check js/hero-runtime.js && node --check js/hero-models.js && node --check js/ui-icons.js && node --check js/survival-sound-bank.js && node --check js/battle-effects.js && node --check js/audio-mixer.js && node --check js/bgm-system.js && node --check js/bgm-controller.js && node --check js/settings-ui.js && node --check js/survival-hud.js && node --check js/survival-audio.js && node --check js/natural-terrain.js && node --check js/combat-specializations.js && node --check js/medical-balance.js && node --check js/turret-veteran.js && node --check js/building-models.js && node --check js/wave-pressure.js && node --check js/construction-system.js && node --check js/construction-workers.js && node --check js/construction-runtime.js && node --check js/crowd-lod.js && node --check js/zombie-death-effects.js && node --check js/survival-system.js && node --check js/config.js && node --check js/engine.js && node --check js/home.js && node --check js/survival-assets.js && node --check js/terrain-surface.js && node --check js/flow-field.js && node --check js/classic/classic-config.js && node --check js/classic/classic-rules.js && node --check js/classic/classic-upgrades.js && node --check js/classic/classic-engine.js && node tools/sync-play.cjs --check",
     "test": "node --test tests/*.test.cjs",
     "test:terrain": "node --test tests/terrain-surface.test.cjs",
     "test:construction": "node --test tests/construction-system.test.cjs tests/construction-runtime.test.cjs",
     "profile:survival": "node tools/profile-construction.cjs hardware",
     "test:presentation": "node tools/check-presentation.cjs",
     "profile:presentation": "node tools/verify-av-polish.cjs",
-    "check:racing": "node --check js/racing/racing-spectacle.js && node --check js/racing/racing-models.js && node --check js/racing/racing-game.js && node --check js/racing/racing-network.js && node --check js/racing/racing-ui.js && node --test tests/racing-*.test.cjs",
+    "check:racing": "node --check js/racing/racing-circuits.js && node --check js/racing/racing-city.js && node --check js/racing/racing-camera.js && node --check js/racing/racing-track.js && node --check js/racing/racing-legacy-models.js && node --check js/racing/racing-spectacle.js && node --check js/racing/racing-models.js && node --check js/racing/racing-game.js && node --check js/racing/racing-network.js && node --check js/racing/racing-ui.js && node --test tests/racing-*.test.cjs",
     "test:racing-runtime": "node tools/check-racing-runtime.cjs",
     "test:racing-network": "node tools/check-racing-network.cjs",
     "check:hero": "node --check js/hero-module-models.js && node --check js/hero-assembly-motion.js && node --check js/hero-workshop-rig.js && node --check js/hero-system.js && node --check js/hero-runtime.js && node --check js/hero-logistics.js && node --check js/hero-models.js && node --test tests/hero-system.test.cjs tests/hero-deployment.test.cjs tests/hero-logistics.test.cjs tests/hero-assembly-motion.test.cjs",
@@ -29,7 +29,9 @@
     "test:mobile": "node tools/check-mobile.cjs",
     "test:hero-deployment": "node tools/check-hero-deployment.cjs",
     "test:hero-workshop": "node tools/check-hero-workshop.cjs",
-    "test:production": "node tools/check-production-upgrades.cjs"
+    "test:production": "node tools/check-production-upgrades.cjs",
+    "test:racing-garage": "node tools/check-racing-garage.cjs",
+    "build:racing-models": "node tools/generate-racing-legacy.cjs"
   },
   "devDependencies": {
     "peer": "1.0.2",

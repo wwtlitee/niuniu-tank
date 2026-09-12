@@ -44,7 +44,7 @@
     spawnInterval: (wave) => Math.max(1.15, 2.8 - wave * 0.12),
     playerLives: 3,
     eagleHp: 8,
-    version: "6.22.0",
+    version: "10.1.0",
   });
 
   if (typeof module !== "undefined" && module.exports) module.exports = ClassicConfig;

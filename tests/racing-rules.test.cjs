@@ -33,7 +33,7 @@ if (fs.existsSync(file)) {
  });
  test('高速道具拾取走线段检测、子弹和效果有上限',()=>{
   const g=R.create();tick(g,4);const c=g.cars[0],p=g.pickups[0];
-  const s=R.sample(p.s-1);Object.assign(c,{x:s.x,z:s.z,heading:s.heading,speed:42,item:null});R.step(g,1/60,{throttle:1});assert.ok(c.item);
+  const s=R.sample(p.s-1);Object.assign(c,{x:s.x,z:s.z,heading:s.heading,speed:42,item:null,lastS:s.s,progress:s.s,safe:s.s,seg:-1});R.step(g,1/60,{throttle:1});assert.ok(c.item);
   for(let i=0;i<500;i++){c.cooldown=0;R.fire(g,c);R.hit(g,c);}assert.ok(g.shots.length<=R.LIMITS.shots);assert.ok(g.events.length<=R.LIMITS.events);
  });
  test('大时间步与非数值输入不会破坏状态',()=>{

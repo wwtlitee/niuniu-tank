@@ -44,6 +44,11 @@ const FILES = [
   "js/racing/racing-game.js",
   "js/racing/racing-ui.js",
   "js/racing/racing-models.js",
+  "js/racing/racing-legacy-models.js",
+  "js/racing/racing-track.js",
+  "js/racing/racing-camera.js",
+  "js/racing/racing-circuits.js",
+  "js/racing/racing-city.js",
   "js/racing/racing-spectacle.js",
   "js/racing/racing-network.js",
   "js/racing/racing-network-config.js",
@@ -70,6 +75,7 @@ const FILES = [
   "js/engine.js",
   "js/wave-pressure.js",
   "js/crowd-lod.js",
+  "js/zombie-death-effects.js",
   "js/construction-system.js",
   "js/construction-runtime.js",
   "js/construction-workers.js",
@@ -138,6 +144,9 @@ for(const dir of ['assets/audio/music','assets/audio/sfx']) for(const name of fs
 function digest(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
+
+function cityFiles(directory,relative="assets/racing-city") { for (const entry of fs.readdirSync(directory,{withFileTypes:true})) { const next=relative+"/"+entry.name;if(entry.isDirectory())cityFiles(path.join(directory,entry.name),next);else FILES.push(next); } }
+cityFiles(path.join(ROOT,"assets/racing-city"));
 
 const checkOnly = process.argv.includes("--check");
 const mismatches = [];

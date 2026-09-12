@@ -24,3 +24,34 @@ kbd{display:inline-grid;place-items:center;min-width:20px;padding:2px 5px;border
 @media(max-width:700px){.itemPanel{min-width:210px;max-width:240px}.itemSlots{gap:8px}.itemSlots>span{width:88px;height:95px;flex-basis:88px;padding-bottom:20px}.itemSlots>span.selected{width:98px;height:105px;flex-basis:98px}.itemSlots .itemModel{width:78px;height:78px}.itemSlots .selected .itemModel{width:88px;height:88px}.itemSlots .slotHint{font-size:10px;bottom:7px}.itemCaption #item{font-size:12px}#itemTip{font-size:9px}}
 
 #spectacleCaption{position:absolute;right:32px;top:100px;padding:9px 13px;border-right:2px solid #b9cec1;color:#d8e3d6;background:linear-gradient(90deg,transparent,#14201bb0);font-size:12px;letter-spacing:2px;text-shadow:0 2px 5px #000;pointer-events:none}@media(max-width:700px){#spectacleCaption{top:105px;right:15px;font-size:9px;letter-spacing:1px}}
+
+/* v9.0.0: seven original chassis, independent livery, live 3D preview. */
+#lobby{overflow-y:auto;padding-top:24px;padding-bottom:22px}
+#lobby .intro{width:min(480px,46vw);padding:16px 0}
+#lobby .eyebrow{margin-bottom:12px}#lobby h1{font-size:clamp(36px,4vw,62px);margin-bottom:12px}
+#lobby h1 span{font-size:17px;margin-top:10px}#lobby .summary{font-size:12px;margin:8px 0}
+#lobby .trackFacts{margin:16px 0;gap:24px}#lobby .trackFacts b{font-size:24px}
+.driverIdentity{margin:12px 0;grid-template-columns:44px minmax(0,1fr);gap:9px}
+.bodyPicker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;min-width:0}
+.bodyPicker button{min-width:0;padding:8px 4px;border:1px solid #9baca530;background:#172124df;color:#d6dbd9;text-align:left;border-radius:2px}
+.bodyPicker b{display:block;font-size:11px;font-weight:600;white-space:nowrap}.bodyPicker small{display:block;font-size:9px;color:#9fa9a8;margin-top:4px;white-space:nowrap}
+.bodyPicker button[aria-pressed="true"]{border-color:#e0b76d;background:#64503470;color:#fff4d8;box-shadow:inset 0 -2px #e0b76d}
+.bodyPicker button:hover{border-color:#e0b76d}.bodyPicker button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.driverIdentity .colorPicker,.roomCustomization .colorPicker{grid-column:2;gap:12px}
+#lobby .playActions button{padding:12px;font-size:12px}.roomCustomization{margin-top:140px;grid-template-columns:36px minmax(0,1fr);max-width:480px;padding:14px}
+.previewBadge{bottom:21%;right:7vw}.previewBadge b{font-size:32px;letter-spacing:2px}
+@media(max-height:760px) and (min-width:701px){#lobby{padding-top:16px}#lobby h1{font-size:40px}#lobby .summary{display:none}#lobby .trackFacts{margin:10px 0}#lobby .intro{padding:10px 0}.roomCustomization{margin-top:65px}}
+@media(max-width:700px){#lobby .intro{width:min(420px,100%);max-width:100%;padding-top:16px}#lobby h1{font-size:36px}#lobby .summary{display:none}.previewBadge{display:none}.bodyPicker b{font-size:10px}.bodyPicker small{font-size:8px}.roomCustomization{margin-top:12px;max-width:100%}.driverIdentity{grid-template-columns:34px minmax(0,1fr)}#lobby footer{font-size:9px;margin-top:10px}#lobby .trackFacts{gap:14px}#lobby .trackFacts small{font-size:9px}}
+
+/* v9.2.0: keep both the player tank and first-person barrel clear of the loadout. */
+#cameraButton{pointer-events:auto;font-size:11px;white-space:nowrap;padding:9px 12px;margin-left:auto;background:#172329b8;border-color:#bdd2c34d}
+#driftMeter{--drift-color:#a5b8b4;position:absolute;left:50%;bottom:28px;transform:translateX(-50%);width:222px;text-align:center;pointer-events:none;text-shadow:0 1px 4px #000}
+#driftLabel{display:block;font-size:11px;letter-spacing:1px;margin-bottom:8px;color:#e1e9e5}.driftTrack{height:6px;background:#0f191bba;border:1px solid #b2c2bd40;position:relative;overflow:hidden;border-radius:2px}.driftTrack i{display:block;height:100%;width:0;background:var(--drift-color);box-shadow:0 0 12px var(--drift-color)}.driftTrack em{position:absolute;left:30%;top:0;height:100%;border-left:2px solid #101918}.driftTrack em+em{left:65%}
+#driftMeter[data-tier="1"] #driftLabel,#driftMeter[data-tier="2"] #driftLabel,#driftMeter[data-tier="3"] #driftLabel{color:var(--drift-color)}
+.itemPanel{min-width:220px;max-width:245px;margin-left:auto;margin-right:28px}.itemSlots>span{width:92px;height:100px;flex-basis:92px}.itemSlots>span.selected{width:104px;height:112px;flex-basis:104px}.itemSlots .itemModel{width:80px;height:80px}.itemSlots .selected .itemModel{width:91px;height:91px}.itemSlots .slotHint{font-size:10px;bottom:7px}#item{font-size:13px}
+@media(max-width:700px){#cameraButton{pointer-events:auto;font-size:9px;padding:8px;margin-left:4px}#driftMeter{width:155px;bottom:14px}#driftLabel{font-size:9px;letter-spacing:0}.itemPanel{min-width:140px;max-width:150px;margin-right:5px}.itemSlots>span{width:59px;height:68px;flex-basis:59px}.itemSlots>span.selected{width:65px;height:75px;flex-basis:65px}.itemSlots .itemModel{width:52px;height:52px}.itemSlots .selected .itemModel{width:58px;height:58px}.itemSlots .slotHint{font-size:8px}#item{font-size:10px}}
+
+/* Circuit choice shares the garage's restrained racing presentation. */
+.circuitPicker{display:flex;gap:10px;margin:0 0 20px;max-width:470px}.circuitPicker a{flex:1;padding:11px 14px;border:1px solid #ffffff30;background:#172026b8;border-left:3px solid transparent}.circuitPicker a[aria-current="page"]{border-left-color:#e74836;background:#283239e8}.circuitPicker b{display:block;font-size:15px;font-weight:500}.circuitPicker small{display:block;color:#b1bdc2;font-size:10px;margin-top:5px}.circuitPicker a:hover{background:#38474f}
+@media(max-height:800px){.intro{padding:12px 0}.eyebrow{margin-bottom:12px}.circuitPicker{margin-bottom:12px}h1{font-size:58px;margin-bottom:14px}.trackFacts{margin:16px 0}}
+@media(max-width:700px){.circuitPicker{max-width:100%;gap:6px}.circuitPicker a{padding:8px}.circuitPicker b{font-size:13px}.circuitPicker small{font-size:9px}}

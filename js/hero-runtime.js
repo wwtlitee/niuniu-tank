@@ -13,8 +13,8 @@ function launchHeroProjectile(origin,shot){
 }
 function updateHeroEffects(dt){
   for(let i=heroProjectiles.length-1;i>=0;i--){const s=heroProjectiles[i];s.t-=dt;const p=heroTarget(s.target)?enemyAimPoint(s.target):s.point,progress=Math.min(1,1-s.t/s.total);s.mesh.position.copy(s.origin).lerp(p,progress);if(!s.target)s.mesh.position.y+=Math.sin(progress*Math.PI)*5;
-    if(s.t<=0){heroSplash(p,s.damage,s.radius);scene.remove(s.mesh);disposeTransientObject3D(s.mesh);heroProjectiles.splice(i,1);}}
-  for(const [e,b] of heroBurns){if(!isEnemyCombatTarget(e)){heroBurns.delete(e);continue;}const elapsed=Math.min(dt,b.t);b.t-=elapsed;heroHit(e,b.damage*elapsed);if(b.t<=0)heroBurns.delete(e);}
+    if(s.t<=0){heroSplash(p,s.damage,s.radius,s.weapon||'mortar');scene.remove(s.mesh);disposeTransientObject3D(s.mesh);heroProjectiles.splice(i,1);}}
+  for(const [e,b] of heroBurns){if(!isEnemyCombatTarget(e)){heroBurns.delete(e);continue;}const elapsed=Math.min(dt,b.t);b.t-=elapsed;heroHit(e,b.damage*elapsed,0,{projectileType:'flame'});if(b.t<=0)heroBurns.delete(e);}
 }
 function heroArchive(){return game.hero||(game.hero=HeroSystem.archive());}
 function doctrineLevel(id){return HeroSystem.level(game.doctrineTech?.[id],5);}
@@ -112,9 +112,9 @@ function updateHeroProduction(dt){
 }
 function heroDied(u){if(u.type!=='hero')return;heroArchive().status='dead';heroArchive().remaining=0;heroTank=null;}
 function heroDamage(u){return u.dmg*(1+.04*researchPowerLevel(game.tech.heroCore||0))*HeroSystem.growth(heroArchive().kills)*(1+.02*heroArchive().skills.command);}
-function heroHit(enemy,damage,pierce=0){
+function heroHit(enemy,damage,pierce=0,options={}){
   if(!heroTarget(enemy))return;
-  damageEnemy(enemy,damage,{source:'hero',armorPierce:pierce});
+  damageEnemy(enemy,damage,{...options,source:'hero',armorPierce:pierce});
 }
 function heroBeam(from,to,color,width=.06){
   if(lightningBeams.length>=64)return;
@@ -123,8 +123,8 @@ function heroBeam(from,to,color,width=.06){
   mesh.position.copy(from).add(to).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),to.clone().sub(from).normalize());
   scene.add(mesh);lightningBeams.push({line:mesh,life:.12});
 }
-function heroSplash(point,damage,radius){
-  for(const e of enemies){if(!isEnemyCombatTarget(e))continue;const d=e.group.position.distanceTo(point);if(d<=radius)heroHit(e,damage*Math.max(.4,1-d/radius));}
+function heroSplash(point,damage,radius,weapon='mortar'){
+  for(const e of enemies){if(!isEnemyCombatTarget(e))continue;const d=e.group.position.distanceTo(point);if(d<=radius)heroHit(e,damage*Math.max(.4,1-d/radius),0,{projectileType:weapon,explosionOrigin:point});}
   spawnParticles(point,0xffa654,10,4,.3);
 }
 function updateHeroCombat(u,dt){
@@ -151,11 +151,11 @@ function updateHeroCombat(u,dt){
   const tur=u.group.userData.turret;if(tur)tur.rotation.y=Math.atan2(dir.x,dir.z)+Math.PI-u.group.rotation.y;
   if(u.heroChannel){
     const ch=u.heroChannel,lv=skills[ch.id];ch.t-=dt;
-    if(ch.id==='frost'){target.slowMult=Math.min(target.slowMult||1,1-(.2+.01*(lv-1))*(target.boss?.5:1));target.slowUntil=performance.now()+400;heroHit(target,damage*.4*(1+.08*(lv-1))*dt);}
-    else{let hits=0;for(const e of enemies){if(!heroTarget(e))continue;const delta=e.group.position.clone().sub(u.group.position);if(delta.length()>3*TILE||delta.normalize().dot(dir)<.65)continue;heroHit(e,damage*1.5*(1+.08*(lv-1))*dt);heroBurns.set(e,{t:2,damage:damage*.3*(1+.08*(lv-1))});if(++hits>=12)break;}}
+    if(ch.id==='frost'){target.slowMult=Math.min(target.slowMult||1,1-(.2+.01*(lv-1))*(target.boss?.5:1));target.slowUntil=performance.now()+400;heroHit(target,damage*.4*(1+.08*(lv-1))*dt,0,{projectileType:'frost',hitDirection:dir});}
+    else{let hits=0;for(const e of enemies){if(!heroTarget(e))continue;const delta=e.group.position.clone().sub(u.group.position);if(delta.length()>3*TILE||delta.normalize().dot(dir)<.65)continue;heroHit(e,damage*1.5*(1+.08*(lv-1))*dt,0,{projectileType:'flame',hitDirection:dir});if(e.alive)heroBurns.set(e,{t:2,damage:damage*.3*(1+.08*(lv-1))});if(++hits>=12)break;}}
     ch.visual=(ch.visual||0)-dt;if(ch.visual<=0){heroBeam(origin,point,ch.id==='frost'?0x9deeff:0xff8535,.1);ch.visual=.12;}if(ch.t<=0)u.heroChannel=null;
   }else{
-    u.cd-=dt;if(u.cd<=0){heroHit(target,damage*(1+.06*doctrineLevel('cannon')));heroBeam(origin,point,0xffdc9e,.035);u.cd=1/(1+.02*skills.haste);playSpecialWeapon('grenade');}
+    u.cd-=dt;if(u.cd<=0){heroHit(target,damage*(1+.06*doctrineLevel('cannon')),0,{projectileType:'cannon',hitDirection:dir});heroBeam(origin,point,0xffdc9e,.035);u.cd=1/(1+.02*skills.haste);playSpecialWeapon('grenade');}
   }
   for(const id of ['rail','frost','missile','flame','arc','mortar']){
     const lv=skills[id];if(!lv||u.heroCooldowns[id]>0||!isEnemyCombatTarget(target))continue;
@@ -165,9 +165,9 @@ function updateHeroCombat(u,dt){
     if(id==='frost'||id==='flame'){u.heroChannel={id,t:id==='frost'?3:2};continue;}
     if(id==='rail'){
       const hits=[];for(const e of enemies){if(!isEnemyCombatTarget(e))continue;const v=enemyAimPoint(e).sub(origin),d=v.dot(dir);if(d>=0&&d<=u.range&&v.addScaledVector(dir,-d).length()<Math.max(.5,e.radius||0))hits.push({e,d});}
-      hits.sort((a,b)=>a.d-b.d);hits.slice(0,6).forEach((h,i)=>heroHit(h.e,damage*(6+.4*(lv-1))*.8**i,.5));heroBeam(origin,origin.clone().addScaledVector(dir,u.range),0x80fff1,.13);playSpecialWeapon('laser');
+      hits.sort((a,b)=>a.d-b.d);hits.slice(0,6).forEach((h,i)=>heroHit(h.e,damage*(6+.4*(lv-1))*.8**i,.5,{projectileType:'rail',hitDirection:dir}));heroBeam(origin,origin.clone().addScaledVector(dir,u.range),0x80fff1,.13);playSpecialWeapon('laser');
     }else if(id==='arc'){
-      const used=new Set();let current=target,from=origin;for(let hop=0;hop<5&&current;hop++){const p=enemyAimPoint(current);heroBeam(from,p,0xb9b3ff);heroHit(current,damage*2*(1+.1*(lv-1))*.8**hop);used.add(current);from=p;current=enemies.find(e=>!used.has(e)&&isEnemyCombatTarget(e)&&e.group.position.distanceTo(p)<=2*TILE);}
+      const used=new Set();let current=target,from=origin;for(let hop=0;hop<5&&current;hop++){const p=enemyAimPoint(current);heroBeam(from,p,0xb9b3ff);heroHit(current,damage*2*(1+.1*(lv-1))*.8**hop,0,{projectileType:'arc'});used.add(current);from=p;current=enemies.find(e=>!used.has(e)&&isEnemyCombatTarget(e)&&e.group.position.distanceTo(p)<=2*TILE);}
       playSpecialWeapon('laser');
     }else if(id==='missile'){
       const candidates=enemies.filter(e=>isEnemyCombatTarget(e)&&u.group.position.distanceToSquared(e.group.position)<=u.range*u.range);

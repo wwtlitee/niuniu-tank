@@ -57,3 +57,15 @@ test('等候室改昵称与颜色会取消准备，资料随比赛同步',async(
 test('飞碟威胁与浮空、新道具队列能通过快照传给客人',()=>{
  const g=R.create({humans:[0,1]});g.phase='racing';g.cars[0].inventory=['ufo','leader'];g.cars[0].lift=4;g.cars[0].color=3;g.threats=[{id:1,kind:'ufo',owner:1,target:0,age:2,grabbed:true,origin:100}];const decoded=N.unpack(N.pack(g));assert.ok(decoded);assert.equal(decoded.cars[0].item,'ufo');assert.equal(decoded.cars[0].lift,4);assert.equal(decoded.cars[0].color,3);assert.equal(decoded.threats[0].target,0);
 });
+
+test('外形在创建、加入、换装、开赛与重赛间保持，准备状态随换装重置',async()=>{
+ const host=new N.Session({Peer}),guest=new N.Session({Peer});
+ try{
+  host.host('英雄',5,6);await flush();guest.join(host.code,'经典',3,1);await flush();
+  assert.equal(host.members[0].body,6);assert.equal(host.members[1].body,1);guest.ready(true);await flush();
+  guest.profile('重锤',4,4);await flush();assert.equal(host.members[1].body,4);assert.equal(host.members[1].ready,false);
+  guest.ready(true);await flush();host.start();await flush();assert.equal(guest.game.cars[0].body,6);assert.equal(guest.game.cars[1].body,4);
+  guest.profile('作弊换装',0,2);await flush();assert.equal(host.game.cars[1].body,4);
+  host.game.phase='finished';host.returnLobby();await flush();guest.ready(true);await flush();host.start();await flush();assert.equal(guest.game.cars[1].body,4);
+ }finally{guest.leave();host.leave();}
+});

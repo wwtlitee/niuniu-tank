@@ -63,13 +63,45 @@
   u.cylinder(.025,.04,1.75,dark,-.9,1.68,-.73,0,0,6);
   return {body:b.finish(),turret:u.finish()};
  }
- function cockpit(color){
+ function cockpit(color,body=0){
   const b=builder(),u=builder();
   b.box(2.7,.45,1.6,color,0,-1.4,-1.1,true);b.box(.7,.14,.5,dark,-.72,-1.12,-1.25);
   for(const x of [-1.04,1.04]){b.box(.08,.12,.9,edge,x,-1.11,-1.05);b.cylinder(.055,.055,.035,steel,x,-1.04,-.8);}
   u.cylinder(.13,.17,2.1,color,0,-.83,-2,Math.PI/2,0,16,true);u.box(.4,.37,.5,steel,0,-.83,-3.05);
   for(const z of [-1.25,-2.65])u.cylinder(.19,.19,.12,edge,0,-.83,z,Math.PI/2);
-  return {body:b.finish(),gun:u.finish()};
+  if(body===6){u.box(.46,.13,1.25,0xd6b66b,0,-.67,-2.05);u.box(.15,.09,.7,0x6bc8d0,.25,-.76,-1.75);}
+  else if(body>0){u.ring(body===4?.27:.2,.045,edge,0,-.83,-2.6);if(body===3)for(const x of [-.9,.9])b.cylinder(.17,.17,.5,steel,x,-1.05,-1.35,Math.PI/2);}
+  const gun=u.finish();if(body===2)gun.scale(1.15,1,.8);if(body===4)gun.scale(1.6,1,.9);
+  return {body:b.finish(),gun};
+ }
+ // Copy complete triangles from the source model, retaining its original paint
+ // ranges. First person now uses the same barrel and muzzle as the chosen tank.
+ function selectGeometry(source,keep){
+  const g=source.index?source.toNonIndexed():source,attributes={position:[],normal:[],color:[]},ranges=[];
+  let paintStart=-1,count=0;
+  for(let i=0;i<g.attributes.position.count;i+=3){
+   if(!keep(g.attributes.position,i))continue;
+   for(let j=0;j<3;j++){
+    const index=i+j,painted=(g.userData.paintRanges||source.userData.paintRanges||[]).some(([start,n])=>index>=start&&index<start+n);
+    if(painted&&paintStart<0)paintStart=count;
+    if(!painted&&paintStart>=0){ranges.push([paintStart,count-paintStart]);paintStart=-1;}
+    for(const name of Object.keys(attributes)){const a=g.attributes[name];attributes[name].push(a.getX(index),a.getY(index),a.getZ(index));}count++;
+   }
+  }
+  if(paintStart>=0)ranges.push([paintStart,count-paintStart]);
+  const result=new T.BufferGeometry();for(const [name,values] of Object.entries(attributes))result.setAttribute(name,new T.Float32BufferAttribute(values,3));result.userData.paintRanges=ranges;result.computeBoundingSphere();
+  if(g!==source)g.dispose();return result;
+ }
+ function cockpitFromTank(model){
+  const turret=model.turret,p=turret.attributes.position;
+  let front=-Infinity;for(let i=0;i<p.count;i++)front=Math.max(front,p.getZ(i));
+  let low=Infinity,high=-Infinity;for(let i=0;i<p.count;i++)if(p.getZ(i)>front-.15){low=Math.min(low,p.getY(i));high=Math.max(high,p.getY(i));}
+  const boreY=(low+high)/2;
+  const gun=selectGeometry(turret,(a,i)=>[0,1,2].every(j=>a.getZ(i+j)>=.78&&Math.abs(a.getX(i+j))<=.85));
+  gun.translate(0,-boreY,0);gun.rotateY(Math.PI);
+  const body=selectGeometry(model.body,(a,i)=>[0,1,2].every(j=>a.getZ(i+j)>.7&&a.getY(i+j)<2.15));
+  body.rotateY(Math.PI);body.translate(0,-3.25,-.6);
+  return {body,gun,pivot:{x:0,y:-1.55,z:-.15},source:'selected-tank'};
  }
  function item(type){
   const b=builder();
@@ -107,5 +139,5 @@
   }finally{material.dispose();renderer.setClearColor(clear,alpha);renderer.setPixelRatio(ratio);renderer.setSize(size.x,size.y,false);}
   return images;
  }
- return {bevelBox,builder,paint,tank,cockpit,item,thumbnails};
+ return {bevelBox,builder,paint,tank,cockpit,cockpitFromTank,item,thumbnails};
 });

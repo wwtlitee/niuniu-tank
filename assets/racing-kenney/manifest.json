@@ -10,8 +10,8 @@
     {
       "file": "pets/animal-cow.glb",
       "pack": "pets",
-      "bytes": 128084,
-      "sha256": "57213ad1b06c1b6959c334215b4473039a7cd47c8500b65977df923e2e3e7929",
+      "bytes": 57948,
+      "sha256": "3f92fe18b63486a78586a38f870514047d19256ce9c154fb114af45b0416bfaf",
       "animations": [
         "static",
         "idle",
@@ -21,49 +21,63 @@
         "dance",
         "gesture-positive",
         "gesture-negative"
-      ]
+      ],
+      "sha256Original": "57213ad1b06c1b6959c334215b4473039a7cd47c8500b65977df923e2e3e7929",
+      "optimization": "gltf-transform optimize (KHR_mesh_quantization, POSITION/TEXCOORD kept float for r128 GLTFLoader), derived from official asset sha256Original"
     },
     {
       "file": "space/craft_cargoB.glb",
       "pack": "space",
-      "bytes": 26308,
-      "sha256": "8da33a720ed3b208938a969864d6b0a64a51b7715f71d102ecad0a5f71412b8c",
-      "animations": []
+      "bytes": 14684,
+      "sha256": "b042606316a9832a2890433f12e842ef3f1af4f2745f1b4b44ebd985a27dfded",
+      "animations": [],
+      "sha256Original": "8da33a720ed3b208938a969864d6b0a64a51b7715f71d102ecad0a5f71412b8c",
+      "optimization": "gltf-transform optimize --compress quantize (KHR_mesh_quantization), derived from official asset sha256Original"
     },
     {
       "file": "space/craft_speederD.glb",
       "pack": "space",
-      "bytes": 22876,
-      "sha256": "a5780b9f6cc40d6f348f4211bb43c9501fa199729197361be6bfb522a42c56ad",
-      "animations": []
+      "bytes": 13184,
+      "sha256": "34550f863a207a79639c5406271047323151383569cb82d6f33fbb9232b12b3f",
+      "animations": [],
+      "sha256Original": "a5780b9f6cc40d6f348f4211bb43c9501fa199729197361be6bfb522a42c56ad",
+      "optimization": "gltf-transform optimize --compress quantize (KHR_mesh_quantization), derived from official asset sha256Original"
     },
     {
       "file": "space/satelliteDish_detailed.glb",
       "pack": "space",
-      "bytes": 26044,
-      "sha256": "143dd36b2c427e3201110967a18fd836bc7aa8002dbf3e44efa42c75fbb44ae5",
-      "animations": []
+      "bytes": 15676,
+      "sha256": "73ecbdee25cc2ff31057a655de9775d09903cfd75384ef73bc5c8b1b29599211",
+      "animations": [],
+      "sha256Original": "143dd36b2c427e3201110967a18fd836bc7aa8002dbf3e44efa42c75fbb44ae5",
+      "optimization": "gltf-transform optimize --compress quantize (KHR_mesh_quantization), derived from official asset sha256Original"
     },
     {
       "file": "space/astronautB.glb",
       "pack": "space",
-      "bytes": 27824,
-      "sha256": "6fa5b3e11cb3d117b28a0794b261ad9107f16ca6ce886b288493e22493d74d2d",
-      "animations": []
+      "bytes": 13852,
+      "sha256": "ea254566fa4b540eeb1894316b7338f8fb2f1f636fcf2a700ac164ff2a2dc308",
+      "animations": [],
+      "sha256Original": "6fa5b3e11cb3d117b28a0794b261ad9107f16ca6ce886b288493e22493d74d2d",
+      "optimization": "gltf-transform optimize --compress quantize (KHR_mesh_quantization), derived from official asset sha256Original"
     },
     {
       "file": "food/burger-cheese-double.glb",
       "pack": "food",
-      "bytes": 44420,
-      "sha256": "d82a5ac064d8c4afa696aea945c94ab6f74b419f589703f902b01c1cc0fdd757",
-      "animations": []
+      "bytes": 27216,
+      "sha256": "17581bf35cab6f0a4d8a4a211aea0b2a9e7bc81612c587da1e147510b6404080",
+      "animations": [],
+      "sha256Original": "d82a5ac064d8c4afa696aea945c94ab6f74b419f589703f902b01c1cc0fdd757",
+      "optimization": "gltf-transform optimize --compress quantize (KHR_mesh_quantization), derived from official asset sha256Original"
     },
     {
       "file": "food/donut-sprinkles.glb",
       "pack": "food",
       "bytes": 20008,
       "sha256": "f45946b7e81221e9d45fdfab45ee89eeb095ff0d7fb6a3ad9988919cf587d3b7",
-      "animations": []
+      "animations": [],
+      "sha256Original": "f45946b7e81221e9d45fdfab45ee89eeb095ff0d7fb6a3ad9988919cf587d3b7",
+      "optimization": "unchanged official asset (quantized variant was larger)"
     }
   ]
 }

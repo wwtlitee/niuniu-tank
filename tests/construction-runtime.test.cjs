@@ -166,14 +166,16 @@ test('远离炮弹的敌人不逐弹重算模型包围盒',async()=>{
 });
 test('密集尸潮远景使用连续可见的批量模型',async()=>{
  const page=await openSurvival();
- const result=await page.evaluate(()=>{
+ const result=await page.evaluate(async()=>{
   state=STATE.PAUSED;
   for(let i=0;i<130;i++){spawnEnemy('normal',false);const e=enemies.at(-1);e.spawnFlash=0;e.group.position.set(70+i%10,0,-70);}
   if(typeof updateCrowdLod!=='function')return {missing:true};
-  updateCrowdLod();const count=crowdLodMesh.count;
-  updateCrowdLod();return {count,stable:crowdLodMesh.count===count,instances:crowdLodMesh.children.some(m=>m.isInstancedMesh)};
+  for(let i=0;i<80;i++)updateCrowdLod();
+  await new Promise(resolve=>setTimeout(resolve,220));updateCrowdLod();
+  const count=crowdLodMesh.count,stats=getCrowdLodStats();
+  updateCrowdLod();return {count,total:enemies.length,unique:stats.renderedUniqueCount,pending:stats.pendingBuilds,stable:crowdLodMesh.count===count,instances:crowdLodMesh.children.some(m=>m.isInstancedMesh&&m.count>0)};
  });
- await page.close();assert.ok(result.count>0);assert.equal(result.stable,true);assert.equal(result.instances,true);
+ await page.close();assert.equal(result.count,result.total);assert.equal(result.unique,result.total);assert.equal(result.pending,0);assert.equal(result.stable,true);assert.equal(result.instances,true);
 });
 test('死亡角色释放独占骨骼和材质，保留共享模型几何',async()=>{
  const page=await openSurvival();const result=await page.evaluate(()=>{
@@ -185,10 +187,13 @@ test('死亡角色释放独占骨骼和材质，保留共享模型几何',async(
  });await page.close();assert.ok(result);assert.equal(result.skeleton,result.expected);assert.equal(result.geometry,0);
 });
 test('镜头正对密集尸潮时详细角色也有预算，全部敌人仍有模型',async()=>{
- const page=await openSurvival();const result=await page.evaluate(()=>{
-  state=STATE.PAUSED;for(let i=0;i<130;i++){spawnEnemy('normal',false);const e=enemies.at(-1);e.group.position.set(camFocus.x+i*.01,0,camFocus.z);e.giant=false;e.boss=false;}
-  updateCrowdLod();return {detailed:enemies.filter(e=>e.group.visible).length,lod:crowdLodMesh.count,total:enemies.length};
- });await page.close();assert.ok(result.detailed<=80);assert.equal(result.detailed+result.lod,result.total);
+ const page=await openSurvival();const result=await page.evaluate(async()=>{
+  state=STATE.PAUSED;updateCamera=()=>{};
+  for(let i=0;i<320;i++){spawnEnemy('normal',false);const e=enemies.at(-1);e.group.position.set(camFocus.x+(i%20-10)*.5,0,camFocus.z+(Math.floor(i/20)-8)*.5);e.giant=false;e.boss=false;}
+  camera.position.set(camFocus.x,12,camFocus.z+15);camera.lookAt(camFocus.x,0,camFocus.z);
+  for(let i=0;i<80;i++)updateCrowdLod();await new Promise(resolve=>setTimeout(resolve,220));updateCrowdLod();
+  return {stats:getCrowdLodStats(),visible:enemies.filter(e=>e.group.visible).length,lod:crowdLodMesh.count,total:enemies.length};
+ });await page.close();assert.ok(result.stats.detailCount<=192);assert.ok(result.stats.tierCounts[0]>192,'预算外的近景角色仍须使用完整几何实例');assert.equal(result.stats.renderedUniqueCount,result.total);assert.equal(result.visible+result.lod,result.total);
 });
 test('重复指令不重复扣费，在建研究院占用唯一名额，暂停不计时',async()=>{
  const page=await openSurvival();const result=await page.evaluate(()=>{
@@ -247,7 +252,7 @@ test('在场上限保留待刷量，腾出空间按原波次刷出且不覆盖�
     startWave(6,true);enemies.pop();spawnPendingSurvivalEnemies(1);
     return {capped,count:enemies.length,call:calls[0],pending:game.enemiesToSpawn,expected:queued+SurvivalSystem.waveProfile(6).count-1};
   }finally{spawnEnemy=originalSpawn;enemies.splice(0);enemies.push(...original);}
- });await page.close();assert.equal(result.capped,true);assert.equal(result.count,600);assert.equal(result.call.wave,5);assert.equal(result.call.boss,true);assert.equal(result.pending,result.expected);
+ });await page.close();assert.equal(result.capped,true);assert.equal(result.count,4000);assert.equal(result.call.wave,5);assert.equal(result.call.boss,true);assert.equal(result.pending,result.expected);
 });
 
 test('清波优先于超时，短暂休息后开波，最终波等待清场通关',async()=>{
@@ -308,11 +313,18 @@ test('时间压力同时提升新旧敌人的生命，保留受伤比例且不�
 });
 
 test('远景保持原僵尸几何与材质，没有方块替身',async()=>{
- const page=await openSurvival();const result=await page.evaluate(()=>{
-  state=STATE.PAUSED;for(let i=0;i<130;i++)spawnEnemy('normal',false);updateCrowdLod();
+ const page=await openSurvival();const result=await page.evaluate(async()=>{
+  state=STATE.PAUSED;for(let i=0;i<130;i++)spawnEnemy('normal',false);
+  for(let i=0;i<80;i++)updateCrowdLod();await new Promise(resolve=>setTimeout(resolve,220));updateCrowdLod();
+  const sourceNames=new Set(),textures=new Set();let sourceTriangles=0;
+  for(const enemy of enemies)enemy.animationRoot.traverse(o=>{if(o.isMesh){sourceNames.add(o.name);if(o.material.map)textures.add(o.material.map.uuid);sourceTriangles=Math.max(sourceTriangles,(o.geometry.index?.count||o.geometry.attributes.position.count)/3);}});
   const meshes=[];crowdLodMesh.traverse(o=>{if(o.isInstancedMesh)meshes.push(o);});
-  return {original:meshes.length>0&&meshes.every(m=>m.geometry.userData.sourceZombieMesh),textured:meshes.some(m=>m.material.map),nonbox:meshes.every(m=>m.geometry.attributes.position.count>100)};
- });await page.close();assert.deepEqual(result,{original:true,textured:true,nonbox:true});
+  const reduced=meshes.filter(m=>m.geometry.userData.lodTier===3);
+  return {original:meshes.length>0&&meshes.every(m=>sourceNames.has(m.geometry.userData.sourceZombieMesh)),
+   textured:meshes.every(m=>m.material.map&&textures.has(m.material.map.uuid)&&m.geometry.attributes.uv.count===m.geometry.attributes.position.count),
+   reduced:reduced.length>0&&reduced.every(m=>m.geometry.index.count/3>24&&m.geometry.index.count/3<sourceTriangles*.1),
+   silhouette:reduced.every(m=>{m.geometry.computeBoundingBox();const size=m.geometry.boundingBox.getSize(new THREE.Vector3());return size.y>.8&&size.y<1.2&&size.x>.15&&size.x<size.y;})};
+ });await page.close();assert.deepEqual(result,{original:true,textured:true,reduced:true,silhouette:true});
 });
 
 test('建筑分三段施工且新主楼使用独立自建模型',async()=>{

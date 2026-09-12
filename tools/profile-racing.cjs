@@ -7,5 +7,13 @@ const {chromium}=require('playwright'),{createStaticServer}=require('./asset-run
  // 重赛复用静态几何，避免每一局堆积 GPU 资源。
  const before=await page.evaluate(()=>RacingTest.inspect().memory);await page.evaluate(()=>{for(let i=0;i<15;i++){RacingTest.start();RacingTest.autodrive(20);}});const after=await page.evaluate(()=>RacingTest.inspect().memory);assert.equal(after.geometries,before.geometries);assert.equal(after.textures,before.textures);
  const sizes=[];for(const scale of [.75,2]){const p=await browser.newPage({viewport:{width:960,height:540},deviceScaleFactor:scale});await p.goto(`http://127.0.0.1:${server.address().port}/racing.html?autotest=1`);await p.waitForFunction(()=>window.racingReady);await p.click('#start');await p.setViewportSize({width:1100,height:650});await p.waitForFunction(expected=>RacingTest.inspect().size.width===expected,Math.floor(1100*Math.min(scale,1.5)));const info=await p.evaluate(()=>RacingTest.inspect());assert.equal(info.size.width,Math.floor(1100*Math.min(scale,1.5)));sizes.push({scale,...info});await p.close();}
- assert.deepEqual(errors,[]);const report={perf,restarts:15,before,after,sizes,errors};fs.writeFileSync('output/racing-v7.0.0/performance.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+ // 移动端回归：粗指针设备 pixelRatio 必须封顶 1，并给出低端帧率样本。
+ const mobilePage=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true});
+ await mobilePage.goto(`http://127.0.0.1:${server.address().port}/racing.html?autotest=1`);await mobilePage.waitForFunction(()=>window.racingReady);
+ const mobileRatio=await mobilePage.evaluate(()=>RacingTest.inspect().ratio);assert.equal(mobileRatio,1,'移动端 pixelRatio 必须封顶 1');
+ await mobilePage.click('#start');await mobilePage.evaluate(()=>{advanceTime(3100);RacingTest.realtime(true);});
+ const mobilePerf=await mobilePage.evaluate(()=>new Promise(resolve=>{const rows=[];let last=performance.now();function next(t){rows.push(t-last);last=t;if(rows.length<600)requestAnimationFrame(next);else{rows.sort((a,b)=>a-b);resolve({frames:rows.length,median:rows[Math.floor(rows.length*.5)],p95:rows[Math.floor(rows.length*.95)]});}}requestAnimationFrame(next);}));
+ const mobileQuality=await mobilePage.evaluate(()=>JSON.parse(render_game_to_text()).quality);
+ await mobilePage.close();
+ assert.deepEqual(errors,[]);const report={perf,restarts:15,before,after,sizes,mobile:{ratio:mobileRatio,quality:mobileQuality,...mobilePerf},errors};fs.writeFileSync('output/racing-v7.0.0/performance.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

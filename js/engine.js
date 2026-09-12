@@ -37,7 +37,9 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.10.0";
+const GAME_VERSION="10.1.0";
+// This visual release keeps the 8.10 survival save schema unchanged.
+function isCompatibleSurvivalSaveVersion(version){return version===GAME_VERSION||version==="10.0.0"||version==="9.2.0"||version==="9.1.0"||version==="9.0.0"||version==="8.10.0";}
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -322,6 +324,7 @@ addEventListener("resize",()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
   if(window.Settings)applyPresentationSettings();
+  if(typeof survivalOverview!=="undefined"&&survivalOverview&&ACTIVE_MODE.key==="survival")frameSurvivalHighland();
 });
 function applyPresentationSettings(){
   if(!window.Settings)return;
@@ -1772,7 +1775,24 @@ const structCells=new Set();   // 生存：所有已放置构筑物（墙/炮塔
 let camShake=0;
 /*  生存 RTS 自由镜头：焦点（lookAt 中心）+ 高度/后撤距离，WASD/方向键平移、滚轮缩放 */
 const camFocus=new THREE.Vector3(0,0,0);
-let camHeight=66,camBack=54;
+let camHeight=66,camBack=54,survivalOverview=true;
+// Fit the actual highland and its eastern approach, respecting viewport aspect.
+function frameSurvivalHighland(){
+  if(ACTIVE_MODE.key!=="survival")return;
+  const area=ACTIVE_MODE.enclosure;
+  if(!area)return;
+  const low=cellCenter(area.x0,area.z0),high=cellCenter(Math.min(GRID-2,area.x1+5),area.z1);
+  const focus=new THREE.Vector3((low.x+high.x)*.5,0,(low.z+high.z)*.5);
+  const pitch=Math.PI/3,tan=Math.tan(camera.fov*Math.PI/360),aspect=camera.aspect||1;
+  const extentX=(high.x-low.x+TILE*2)*.5,extentZ=(high.z-low.z+TILE*2)*.5;
+  // Near corners consume more projected height than the flat center plane.
+  const vertical=(extentZ*Math.sin(pitch)+PH)/tan+extentZ*Math.cos(pitch);
+  const horizontal=extentX/(tan*aspect)+extentZ*Math.cos(pitch);
+  camHeight=Math.max(70,Math.min(240,Math.max(vertical,horizontal)*1.18));
+  survivalOverview=true;camFocus.copy(focus);
+  camera.position.set(focus.x,camHeight*Math.sin(pitch),focus.z+camHeight*Math.cos(pitch));
+  camera.lookAt(focus);camera.updateMatrixWorld(true);
+}
 
 function warmEmissiveMaterial(color=SurvivalSystem.NIGHT_VISUALS.lampColor,intensity=1.8){
   return new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:intensity,roughness:.28,metalness:.12});
@@ -2063,7 +2083,7 @@ function readSurvivalSnapshot(){
   try{
     const raw=localStorage.getItem(SURVIVAL_SAVE_KEY);if(!raw)return null;
     const snapshot=JSON.parse(raw);
-    if(snapshot?.version!==GAME_VERSION){localStorage.removeItem(SURVIVAL_SAVE_KEY);return null;}
+    if(!isCompatibleSurvivalSaveVersion(snapshot?.version)){localStorage.removeItem(SURVIVAL_SAVE_KEY);return null;}
     return snapshot;
   }catch(_){try{localStorage.removeItem(SURVIVAL_SAVE_KEY);}catch{}return null;}
 }
@@ -2465,7 +2485,7 @@ function applyGameplayCollisions(dt){
     }
     const er=enemyNavigationRadius(enemy),eh=heightAt(ep.x,ep.z);
     if(!blockedForTank(ep.x+nx*enemyPush,ep.z+nz*enemyPush,er,eh)){
-      ep.x+=nx*enemyPush;ep.z+=nz*enemyPush;ep.y=heightAt(ep.x,ep.z);
+      hordeSeparationNeeded=true;ep.x+=nx*enemyPush;ep.z+=nz*enemyPush;ep.y=heightAt(ep.x,ep.z);
     }
     damageFriendlyFromContact(enemy,body.ref,dt);
   }
@@ -2720,10 +2740,21 @@ function _variantAnimations(variant){
   add(variant.idle,_ANIM_IDLE);add(variant.walk,_ANIM_WALK);
   return clips;
 }
+function createZombieMaterial(material,{texture=null,skin=false,boss=false}={}){
+  const palette=ZombieDeathEffects.PALETTE,copy=material.clone();
+  if(texture)copy.map=texture;
+  // Keep the authored eyes, mouth, hair and clothing damage; textured color multiplies the map.
+  const tint=boss?(copy.map?palette.bossTint:palette.bossSkin):skin?(copy.map?palette.skinTint:palette.skin):(copy.map?palette.clothTint:palette.cloth);
+  if(copy.color)copy.color.setHex(tint);
+  copy.roughness=.92;copy.metalness=0;
+  if(copy.emissive){copy.emissive.setHex(boss?0x260b0d:0x000000);copy.emissiveIntensity=boss?.12:0;}
+  copy.needsUpdate=true;
+  return copy;
+}
 /* 用角色模型构建敌人 group；失败回退 makeTank() */
-function _buildEnemyGroup(typeKey,isBoss,t){
+function _buildEnemyGroup(typeKey,isBoss,t,variantOverride=null){
   const survivalCharacter=ACTIVE_MODE.key==="survival";
-  const variant=survivalCharacter?_survivalZombieVariant(typeKey,_enemySerial+1):null;
+  const variant=survivalCharacter?(variantOverride||_survivalZombieVariant(typeKey,_enemySerial+1)):null;
   /* 生存模式所有敌人（含 Boss）统一使用新 Survivors 骨架，避免普通尸潮与巨型僵尸风格割裂。 */
   const charName=variant?variant.model:(survivalCharacter?"survivor-zombie":(ENEMY_CHAR_MAP[typeKey]||ENEMY_CHAR_MAP.normal));
   const src=ASSETS[charName];
@@ -2742,11 +2773,10 @@ function _buildEnemyGroup(typeKey,isBoss,t){
       if(o.material&&(variantTexture||SURVIVAL_MONSTER_TINTS[typeKey]||survivalCharacter)){
         const meshName=String(o.name||"").toLowerCase();
         const zombieSkinMesh=survivalCharacter&&(meshName==="head"||meshName.includes("arm"));
-        const applyMaterial=material=>{const copy=material.clone();if(variantTexture)copy.map=variantTexture;
+        const applyMaterial=material=>{
+          if(survivalCharacter&&typeof ZombieDeathEffects!=='undefined')return createZombieMaterial(material,{texture:variantTexture,skin:zombieSkinMesh,boss:isBoss});
+          const copy=material.clone();if(variantTexture)copy.map=variantTexture;
           const zombieTint=isBoss?0x4b3032:0x294b43;
-          /* 头部与手臂包含肤色像素，去掉共享 colormap 后才能真正压住人类肤色；
-             躯干、腿部继续保留贴图，确保衣物、裤子和头发细节不丢失。 */
-          if(zombieSkinMesh)copy.map=null;
           copy.color&&copy.color.setHex(zombieTint);
           if(isBoss&&copy.emissive){copy.emissive.setHex(0x3a0808);copy.emissiveIntensity=.28;}
           copy.roughness=.92;copy.metalness=0;
@@ -2822,6 +2852,20 @@ function _spreadEnemySpawn(origin,index){
   }
   return {x:origin.x+(Math.random()*2-1)*.5,z:origin.z+(Math.random()*2-1)*.5};
 }
+function findHordeSpawnSpot(origin,radius,serial){
+  const minZ=-HALF+radius+1,maxZ=cellCenter(1,ACTIVE_MODE.enclosure.z0-2).z;
+  for(let attempt=0;attempt<160;attempt++){
+    const sample=(serial+attempt*47)%4500,angle=sample*2.399963229728653;
+    const distance=Math.sqrt(sample)*.69;
+    const x=origin.x+Math.cos(angle)*distance,z=origin.z+Math.sin(angle)*distance;
+    if(z<minZ||z>maxZ||x<-HALF+radius+1||x>HALF-radius-1)continue;
+    if(blockedForTank(x,z,radius,heightAt(x,z)))continue;
+    const occupied=hordeNeighbors(x,z,radius).some(e=>Math.hypot(e.group.position.x-x,e.group.position.z-z)<e.radius+radius+.015);
+    if(!occupied)return {x,z};
+  }
+  return null;
+}
+const zombieHullTemplates=new Map();
 function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   const waveSpec=SurvivalSystem.waveProfile(Math.max(1,sourceWave));
   const bossSpec=isBoss?SurvivalSystem.bossProfile(Math.max(1,sourceWave)):null;
@@ -2833,7 +2877,8 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
               :ENEMY_TYPES[typeKey];
   const movementType=isBoss?"boss":(SurvivalSystem.ENEMY_MOVEMENT[typeKey]?typeKey:"normal");
   const selectedDifficulty=ACTIVE_MODE.key==="survival"?Math.max(.1,Number(game.difficultyMultiplier)||1):1;
-  t=Object.assign({},t,{hp:Math.ceil(t.hp*diff*selectedDifficulty),dmg:t.dmg*damageDiff*selectedDifficulty,
+  const densityScale=ACTIVE_MODE.key==="survival"&&!isBoss?waveSpec.densityBudgetScale:1;
+  t=Object.assign({},t,{hp:Math.max(.25,t.hp*diff*selectedDifficulty*densityScale),dmg:t.dmg*damageDiff*selectedDifficulty,
     speed:SurvivalSystem.enemyMoveSpeed(movementType,waveSpec.speedMultiplier)});
   /*  角色模型克隆（含 AnimationMixer 启动）；模型未就绪时回退 makeTank() */
   const built=_buildEnemyGroup(typeKey,isBoss,t);
@@ -2880,6 +2925,7 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   if(!isBoss){
     const crowdSize=.88+Math.random()*.24;
     group.scale.multiplyScalar(crowdSize);bodyScale*=crowdSize;
+    if(ACTIVE_MODE.key==='survival'){group.scale.multiplyScalar(SurvivalSystem.HORDE_PRESENTATION.modelScale);bodyScale*=SurvivalSystem.HORDE_PRESENTATION.modelScale;}
   }
   scene.add(group);
   /*  角色模型需要面向镜头（默认朝 +Z），转向 +X 朝向战场内侧 */
@@ -2887,7 +2933,13 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   /* 视觉尺寸只供表现使用，躯干碰撞从实际网格单独提取。 */
   const visualRadius=.65*t.scale*bodyScale;
   /* 手臂不撑开躯干碰撞；外接半径只负责邻域粗筛，接触使用凸轮廓。 */
-  const collisionHull=zombieBodyHull(built.animationRoot||group,group);
+  const hullKey=built.variantId?`${built.variantId}:${typeKey}:${isBoss}`:null;
+  let template=hullKey&&zombieHullTemplates.get(hullKey);
+  if(!template){
+    template=zombieBodyHull(built.animationRoot||group,group).map(p=>({x:p.x/group.scale.x,z:p.z/group.scale.z}));
+    if(hullKey&&template.length>=3)zombieHullTemplates.set(hullKey,template);
+  }
+  const collisionHull=template.map(p=>({x:p.x*group.scale.x,z:p.z*group.scale.z}));
   const modelRadius=collisionHull.length>=3?Math.max(...collisionHull.map(p=>Math.hypot(p.x,p.z))):modelFootprintRadius(built.visualRoot||group,visualRadius*.58);
   const e={sourceWave,group,visualRoot:built.visualRoot||group,animationRoot:built.animationRoot||group,
     _lodHeight:(built.lodHeight||3.2)*bodyScale,hordeId:++_enemySerial,variantId:built.variantId||null,variantPack:built.variantPack||null,
@@ -2898,10 +2950,15 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
     fireCd:t.fireCd,dmg:t.dmg,visualRadius,
     radius:modelRadius,collisionHull,collisionHullRadius:modelRadius,heading:Math.PI,
     cd:1+Math.random()*1.5,thinkTimer:0,dir:new THREE.Vector3(0,0,1),
-    score:t.score,alive:true,spawnFlash:performance.now()+(isBoss||elite?700:0),beam:null,objectiveKind:"base",objectiveCell:null,
+    rewardScale:densityScale,score:t.score,alive:true,spawnFlash:performance.now()+(isBoss||elite?700:0),beam:null,objectiveKind:"base",objectiveCell:null,
     slowMult:1,slowUntil:0,velocity:new THREE.Vector3(),
     mixer,characterModel:!built.fallback,currentAnim:_ANIM_IDLE,actions:built.actions||{},poseBones:built.poseBones||{},baseBoneRotations:built.baseBoneRotations||{},attackPose:0,poseDirty:true,
     dying:false,dyingT:0,specialCd:isBoss?7:0,hasteUntil:0,phaseUntil:0};
+  if(ACTIVE_MODE.key==='survival'){
+    const spot=findHordeSpawnSpot(c,e.radius,e.hordeId);
+    if(!spot){scene.remove(group);releaseEnemyResources(e);return false;}
+    group.position.set(spot.x,heightAt(spot.x,spot.z),spot.z);
+  }
   if(isBoss||elite){
     const beam=new THREE.Mesh(new THREE.CylinderGeometry(e.radius*.9,e.radius*.9,14,12,1,true),
       new THREE.MeshBasicMaterial({color:isBoss?0xffb02e:0xffd75e,transparent:true,opacity:.4,
@@ -2911,7 +2968,17 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   }else e.beam=null;
   applyEnemyHealthPressure(e);
   enemies.push(e);
+  if(hordeSpatialFrame===_animFrame){
+    if(e.radius>HORDE_LARGE_RADIUS)hordeSpatialLarge.push(e);
+    else{
+      const k=Math.floor(group.position.x/HORDE_SPATIAL_CELL)+Math.floor(group.position.z/HORDE_SPATIAL_CELL)*512;
+      let bucket=hordeSpatialBuckets.get(k);if(!bucket)hordeSpatialBuckets.set(k,bucket=[]);bucket.push(e);
+      hordeSpatialMaxRadius=Math.max(hordeSpatialMaxRadius,e.radius);
+    }
+    hordeSpatialCount=enemies.length;
+  }
   game.aliveThisWave++;
+  return e;
 }
 
 /* 释放仅由运行时临时创建、且不与资产源共享的对象（弹体、出生光柱等）。 */
@@ -2965,6 +3032,15 @@ function makeProjectileMesh(type,dirVec){
   }else if(spec.shape==="round-shell"){
     body=new THREE.Mesh(new THREE.SphereGeometry(spec.radius,12,10),material(.7,.32,.75));root.add(body);
     const band=new THREE.Mesh(new THREE.TorusGeometry(spec.radius*.92,spec.radius*.08,6,16),material(1.4,.25,.6));band.rotation.y=Math.PI/2;root.add(band);
+  }else if(spec.shape==="tank-shell"){
+    body=new THREE.Mesh(new THREE.CylinderGeometry(spec.radius,spec.radius,spec.length*.62,7),material(.1,.55,.6));
+    body.rotation.x=Math.PI/2;body.position.z=-spec.length*.12;root.add(body);
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(spec.radius*.9,spec.length*.34,7),
+      new THREE.MeshStandardMaterial({color:0x4b5353,roughness:.6,metalness:.7,emissive:0x080a09,emissiveIntensity:.1}));
+    tip.rotation.x=Math.PI/2;tip.position.z=spec.length*.34;root.add(tip);
+    const tail=new THREE.Mesh(new THREE.ConeGeometry(spec.radius*.38,spec.length*.22,5),
+      new THREE.MeshBasicMaterial({color:0xd79947,transparent:true,opacity:.65,depthWrite:false,toneMapped:false}));
+    tail.rotation.x=-Math.PI/2;tail.position.z=-spec.length*.49;root.add(tail);
   }else if(spec.shape==="fire-shell"){
     body=new THREE.Mesh(new THREE.ConeGeometry(spec.radius,spec.length,8),material(2.2,.22,.35));body.rotation.x=-Math.PI/2;root.add(body);
     const glow=new THREE.Mesh(new THREE.SphereGeometry(spec.radius*.72,8,6),new THREE.MeshBasicMaterial({color:0xffd36a,transparent:true,opacity:.8}));glow.position.z=-spec.length*.22;root.add(glow);
@@ -3031,12 +3107,13 @@ const PARTICLE_LIMIT=1400;
 const particleFx=BattleEffects.createBatch(PARTICLE_LIMIT),particleBatch=particleFx.mesh,particleGeometry=particleBatch.geometry;
 const particlePool=[];
 scene.add(particleBatch);
-function spawnParticles(pos,color,count,power,size=1){
+function spawnParticles(pos,color,count,power,size=1,lifetime=0){
   if(window.Settings&&!Settings.isParticles())return;
   for(let i=0;i<count;i++){
     if(particles.length>=PARTICLE_LIMIT)break;
     const p=particlePool.pop()||{position:new THREE.Vector3(),color:new THREE.Color(),vel:new THREE.Vector3()};
-    p.position.copy(pos);p.color.setHex(color);p.size=size;p.life=p.total=.5+Math.random()*.4;
+    p.position.copy(pos);p.color.setHex(color);p.size=size;
+    p.life=p.total=Number.isFinite(lifetime)&&lifetime>0?Math.max(.02,Math.min(10,lifetime)):.5+Math.random()*.4;
     p.vel.set((Math.random()-.5)*power,(Math.random()*.8+.2)*power,(Math.random()-.5)*power);particles.push(p);
   }
 }
@@ -3085,11 +3162,17 @@ function spawnCorpseRemains(pos,big=false,scale=1){
   while(corpseDecals.length>180){const old=corpseDecals.shift();if(old){scene.remove(old.root);disposeTransientObject3D(old.root);}}
 }
 function spawnGoreBurst(enemy,hitPoint,hitDirection,intensity=1){
+  if(!enemy||enemy.alive===false||enemy.dying)return;
+  if(ACTIVE_MODE.key==='survival'&&typeof ZombieDeathEffects!=='undefined'){
+    zombieDeathEffects||(zombieDeathEffects=ZombieDeathEffects.create({THREE,scene,heightAt}));
+    zombieDeathEffects.hit(enemy,{hitPoint,hitDirection,projectileType:'bullet'});
+    return;
+  }
   if(!enemy||enemies.length>260)return;
   const now=performance.now();if(now<(enemy._goreCooldown||0))return;
   enemy._goreCooldown=now+(enemy.boss?90:135);
   const shared=corpseSharedAssets(),root=new THREE.Group(),pieces=[];
-  const origin=hitPoint?.clone?.()||enemy.group.position.clone().setY(1.1);
+  const origin=hitPoint?.clone?.()||enemy.group.position.clone().add(new THREE.Vector3(0,1.1,0));
   const forward=hitDirection?.clone?.()||new THREE.Vector3((Math.random()-.5),.3,(Math.random()-.5));
   if(forward.lengthSq()<1e-5)forward.set(0,.3,1);forward.normalize();
   const count=enemy.boss?7:3+Math.floor(Math.random()*3),mats=[shared.flesh,shared.bloods[1],shared.bloods[3]];
@@ -3435,10 +3518,12 @@ function baseContactPoint(position){
   return new THREE.Vector3(Math.max(p.x-TILE,Math.min(p.x+TILE,position.x)),p.y,Math.max(p.z-TILE,Math.min(p.z+TILE,position.z)));
 }
 function baseContactDistance(enemy){
+  if(!baseGroup)return Infinity;
   const p=enemy.group.position,b=baseGroup.position;
   return Math.hypot(Math.max(0,Math.abs(p.x-b.x)-TILE),Math.max(0,Math.abs(p.z-b.z)-TILE));
 }
 function flowDirFor(e){
+  if(!baseGroup)return {best:null,bestD:Infinity,hereD:-1,atGate:false};
   const p=e.group.position, here=cellOf(p.x,p.z);
   if(!inMap(here.x,here.z))return {best:null,bestD:Infinity,hereD:-1,atGate:false};
   const hereD=flowField?flowField.distanceAt(here.x,here.z):Infinity;
@@ -3568,7 +3653,8 @@ function updateRightCameraDrag(event){
   if(!(event.buttons&2)||![STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state)){clearRightCameraDrag();return;}
   if(!drag.dragged&&Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<7)return;
   drag.dragged=true;renderer.domElement.style.cursor='grabbing';
-  const scale=2*Math.tan(camera.fov*Math.PI/360)*Math.max(24,Math.min(120,camHeight))/innerHeight;
+  survivalOverview=false;
+  const scale=2*Math.tan(camera.fov*Math.PI/360)*Math.max(24,Math.min(240,camHeight))/innerHeight;
   const limit=HALF-4;
   camFocus.x=Math.max(-limit,Math.min(limit,camFocus.x-(event.clientX-drag.lastX)*scale));
   camFocus.z=Math.max(-limit,Math.min(limit,camFocus.z-(event.clientY-drag.lastY)*scale/Math.sin(Math.PI/3)));
@@ -3767,12 +3853,12 @@ addEventListener("wheel",e=>{
   if(!(state===STATE.PLAYING||state===STATE.PREP||state===STATE.BUILD))return;
   e.preventDefault();
   const step=e.deltaY>0?1:-1;
-  camHeight=Math.max(24,Math.min(120,camHeight+step*7));
+  survivalOverview=false;camHeight=Math.max(24,Math.min(240,camHeight+step*7));
 },{passive:false});
 function useBomb(){
   if(game.bombs<=0)return;
   game.bombs--;toast(" 空袭轰炸！");sfx.bigboom();camShake=1.2;
-  [...enemies].forEach(e=>{if(performance.now()>=e.spawnFlash)killEnemy(e,false);});
+  [...enemies].forEach(e=>{if(performance.now()>=e.spawnFlash)killEnemy(e,false,{projectileType:"bomb",explosionOrigin:e.group.position});});
   updateBuffUI();
 }
 
@@ -4886,7 +4972,7 @@ function updateBuiltTurrets(dt){
             if(!e.alive||now<e.spawnFlash||!isPositionVisible(e.group.position))continue;
             const ex=e.group.position.x-t.group.position.x,ez=e.group.position.z-t.group.position.z;
             if(ex*ex+ez*ez<R*R){
-              damageEnemy(e,dmg,{source:"turret",armorPierce:t.pierce});
+              damageEnemy(e,dmg,{source:"turret",armorPierce:t.pierce,projectileType:"emp"});
               e.stunUntil=now+(t.stun||0)*1000;
               spawnParticles(e.group.position.clone().setY(2.2),0xc084fc,3,4,.6);
               if(e.hp<=0)killEnemy(e);
@@ -4911,7 +4997,7 @@ function updateBuiltTurrets(dt){
           }
           hitList.forEach((e,i)=>{
             const f=1-i*0.15;
-            damageEnemy(e,dmg*f,{source:"turret",armorPierce:t.pierce});
+            damageEnemy(e,dmg*f,{source:"turret",armorPierce:t.pierce,projectileType:"arc"});
             lightningBeam(t.group.position.clone().setY(1.8),e.group.position.clone().setY(1.6),0x8be9fd);
             if(e.hp<=0)killEnemy(e);
           });
@@ -4938,7 +5024,7 @@ function updateBuiltTurrets(dt){
       enemies.forEach(e=>{
         if(!e.alive)return;
         const dx=e.group.position.x-pos.x,dz=e.group.position.z-pos.z;
-        if(dx*dx+dz*dz<36)damageEnemy(e,6,{source:"turret"});
+        if(dx*dx+dz*dz<36)damageEnemy(e,6,{source:"turret",projectileType:"bomb",explosionOrigin:pos});
       });
       destroyBricksAround(pos.x,pos.z,1.8);
       scene.remove(mn.group);
@@ -4961,20 +5047,36 @@ function finishBuild(){
 $("buildDoneBtn").onclick=finishBuild;
 
 /* ---------------- 击杀/死亡/结算 ---------------- */
-function killEnemy(e,giveScore=true){
+let zombieDeathEffects=null,hordeKillUiDirty=false;
+const pendingEnemyDisposals=[];
+function flushHordeKillUI(){
+  if(!hordeKillUiDirty)return;hordeKillUiDirty=false;
+  updateEnemyLeftUI();updateGoldUI();
+}
+function flushEnemyDisposals(all=false){
+  const start=performance.now();
+  while(pendingEnemyDisposals.length){releaseEnemyResources(pendingEnemyDisposals.pop());if(!all&&performance.now()-start>3)break;}
+}
+function killEnemy(e,giveScore=true,damageOptions={}){
   if(!e.alive)return;
   e.alive=false;
   clearEnemyTargetReferences(e);
   if(typeof _wdProgress==="function")_wdProgress();   /*  P1-1：敌人死亡=波次推进事实 */
   const horde=enemies.length;
-  const skipDeathAnim=!e.boss&&!e.giant&&horde>220;
-  if(ACTIVE_MODE.key==="survival"&&(e.boss||e.giant||e.elite||horde<180||Math.random()<.18))
+  const weaponDeaths=ACTIVE_MODE.key==='survival'&&typeof ZombieDeathEffects!=='undefined';
+  if(weaponDeaths){
+    zombieDeathEffects||(zombieDeathEffects=ZombieDeathEffects.create({THREE,scene,heightAt}));
+    zombieDeathEffects.spawn(e,damageOptions);
+  }
+  const skipDeathAnim=weaponDeaths||(!e.boss&&!e.giant&&horde>220);
+  if(!weaponDeaths&&ACTIVE_MODE.key==="survival"&&(e.boss||e.giant||e.elite||horde<180||Math.random()<.18))
     spawnCorpseRemains(e.group.position.clone().setY(0),e.boss||e.elite,(e.visualRadius||1.5)/1.5);
-  if(!skipDeathAnim||e.boss)explode(e.group.position.clone().setY(1.4),e.boss);
+  if(!weaponDeaths&&(!skipDeathAnim||e.boss))explode(e.group.position.clone().setY(1.4),e.boss);
   /*  角色模型：保留 mesh 播放 die 骨骼动画，1.05s 后由 updateEnemies 真正清理 */
   if(skipDeathAnim){
-    if(e.mixer){try{e.mixer.stop();}catch(_){}}
-    scene.remove(e.group);releaseEnemyResources(e);
+    if(e.mixer)e.mixer.stopAllAction();
+    scene.remove(e.group);
+    if(horde>400)pendingEnemyDisposals.push(e);else releaseEnemyResources(e);
     if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);e.beam=null;}
   }else if(e.characterModel&&e.actions&&e.actions.die){
     e.dying=true;
@@ -4999,7 +5101,7 @@ function killEnemy(e,giveScore=true){
     if(e.beam)scene.remove(e.beam);
   }
   if(giveScore){
-    game.score+=e.score;$("score").textContent=game.score;
+    game.score+=Math.max(1,Math.round(e.score*(e.rewardScale||1)));$("score").textContent=game.score;
     /* 生存模式与经典玩法完全隔离：生存不生成经典道具掉落。 */
     if(ACTIVE_MODE.key!=="survival")dropPowerup(e.group.position,!!e.elite);
     /*  金币掉落：仅构筑模式生效（经典/塔防不产金币） */
@@ -5017,8 +5119,12 @@ function killEnemy(e,giveScore=true){
         if(e.frenzy)g+=8;
       }
       g=Math.round(g*(1+.3*(game.stats.incomeLv||0)));
-      game.gold+=g;updateGoldUI();
-      spawnParticles(e.group.position.clone().setY(2),0xffd75e,4,5,.5);
+      if(ACTIVE_MODE.key==="survival"&&!e.boss){
+        const reward=g*(e.rewardScale||1)+(game.hordeGoldRemainder||0);g=Math.floor(reward+1e-9);game.hordeGoldRemainder=reward-g;
+      }
+      game.gold+=g;
+      if(weaponDeaths)hordeKillUiDirty=true;else updateGoldUI();
+      if(!weaponDeaths)spawnParticles(e.group.position.clone().setY(2),0xffd75e,4,5,.5);
     }
     /*  猎杀冲锋：击杀后短时提速 */
     if(game.stats.sprintLv>0)game.sprintUntil=performance.now()+game.stats.sprintDur;
@@ -5029,7 +5135,7 @@ function killEnemy(e,giveScore=true){
       spawnParticles(player.group.position.clone().setY(1.8),0x39d98a,6,4,.7);
     }
   }
-  updateEnemyLeftUI();
+  if(weaponDeaths)hordeKillUiDirty=true;else updateEnemyLeftUI();
 }
 function damagePlayer(dmg){
   const now=performance.now();
@@ -5061,7 +5167,7 @@ function damageEnemy(enemy,rawDamage,options={}){
   const amount=raw*armorFactor*pressurePierce*Math.max(0,Number(options.multiplier)||1);
   enemy.hp-=amount;
   if(amount>0){enemy.hitReaction=Math.min(1,.25+amount/Math.max(1,enemy.maxHp)*3);enemy.poseDirty=true;}
-  if(enemy.hp<=0){if(options.source==='hero')heroArchive().kills++;killEnemy(enemy);}
+  if(enemy.hp<=0){if(options.source==='hero')heroArchive().kills++;killEnemy(enemy,true,options);}
   return amount;
 }
 function playerDie(){
@@ -5219,6 +5325,7 @@ function wc3SetSelection(entries){
   wc3Selection=(entries||[]).filter((entry)=>entry&&entry.ref);
   wc3Sel=wc3Selection[0]||null;
   if(!wc3Sel){wc3ClearSel();return;}
+  if(wc3BuildMode&&wc3Sel.kind!=="base")closeWc3Build();
   if(wc3Sel.kind!==previousKind)wc3CommandPage="root";
   wc3UpdateSelectionRing();
   wc3ExtraRings.forEach((ring)=>ring.visible=false);
@@ -5423,7 +5530,18 @@ function wc3PickAt(px,py){
   if(closest)return closest;
   return null;
 }
-function projectileImpactFx(type,pos){
+function projectileImpactFx(type,pos,surface='world'){
+  if(type==='frost'){
+    spawnParticles(pos,0x86dbea,12,4,.22,.28);
+    spawnParticles(pos,0xc4f8ff,6,2,.14,.22);
+    return;
+  }
+  // Blood comes from the struck body. An ordinary round only sparks against a hard surface.
+  if(ACTIVE_MODE.key==='survival'&&['tank','machinegun','antitank','shotgun'].includes(type)){
+    if(surface==='flesh')return;
+    spawnParticles(pos,surface==='armor'?0xc69c61:0x716d59,surface==='armor'?3:2,2.8,.14,.14);
+    return;
+  }
   const fx={
     machinegun:[0xffd56b,4,4,.22],cannon:[0xff8d42,18,11,.65],antitank:[0xf7e5b7,11,10,.42],
     emp:[0x8deaff,22,6,.82],shotgun:[0xffe2a0,9,8,.28],incendiary:[0xff5428,24,12,.75],
@@ -5612,6 +5730,8 @@ function renderCmdCard(){
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
   const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.heroSkill&&!!game.autoHeroSkills?.[it.heroSkill],it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
+  // Replaced buttons cannot reliably dispatch mouseleave; never retain their old tooltip.
+  const previousTip=$("wc3tip");if(previousTip)previousTip.style.display="none";
   _cmdCardSignature=signature;wrap.innerHTML="";
   items.forEach(it=>{
     if(it.empty){const slot=document.createElement("div");slot.className="cmdSlot";wrap.appendChild(slot);return;}
@@ -6127,7 +6247,7 @@ function updateBaseGadgets(dt){
         if(!e.alive||performance.now()<e.spawnFlash||!isPositionVisible(e.group.position))return;
         const dx=e.group.position.x-bp.x,dz=e.group.position.z-bp.z;
         if(dx*dx+dz*dz<R*R){
-          e.stunUntil=now+1500;damageEnemy(e,1,{source:"turret"});hitAny=true;
+          e.stunUntil=now+1500;damageEnemy(e,1,{source:"turret",projectileType:"emp"});hitAny=true;
         }
       });
       if(hitAny){
@@ -6150,7 +6270,7 @@ function updateBaseGadgets(dt){
         const R=4.5+game.stats.mortarLv*1.2,dmg=2+game.stats.mortarLv;
         alive.forEach(e=>{
           const dx=e.group.position.x-tp.x,dz=e.group.position.z-tp.z;
-          if(dx*dx+dz*dz<R*R)damageEnemy(e,dmg,{source:"turret"});
+          if(dx*dx+dz*dz<R*R)damageEnemy(e,dmg,{source:"turret",projectileType:"mortar",explosionOrigin:tp});
         });
         destroyBricksAround(tp.x,tp.z,1.8);
       }
@@ -6165,53 +6285,54 @@ function applyHordeSeparation(dt){
   const active=enemies.filter(e=>e.alive&&!e.dying&&now>=e.spawnFlash);
   for(const e of active){e.crowdSpeedScale=1;e.crowdContact=false;}
   if(active.length<2)return;
-  const CELL=2,buckets=new Map();
-  const maxRadius=active.reduce((radius,e)=>Math.max(radius,e.radius),0);
+  const CELL=.75,buckets=new Map();
+  const large=active.filter(e=>e.radius>HORDE_LARGE_RADIUS);
+  const maxRadius=active.reduce((radius,e)=>e.radius>HORDE_LARGE_RADIUS?radius:Math.max(radius,e.radius),0);
   const key=(x,z)=>Math.floor(x/CELL)+Math.floor(z/CELL)*512;
   for(const e of active)e.hordeMass=e.boss||e.giant?3:1;
-  // Two bounded projections allow a rear rank to yield without a per-frame teleport.
-  for(let iteration=0;iteration<3;iteration++){
+  // Resolve each contact immediately: summed forces cancel inside a packed crowd.
+  const moveBody=(e,dx,dz)=>{
+    const p=e.group.position,h=heightAt(p.x,p.z),probe=enemyNavigationRadius(e),x=p.x,z=p.z;
+    if(!blockedForTank(p.x+dx,p.z,probe,h))p.x+=dx;
+    if(!blockedForTank(p.x,p.z+dz,probe,h))p.z+=dz;
+    p.y=heightAt(p.x,p.z);
+    return {x:p.x-x,z:p.z-z};
+  };
+  for(let iteration=0;iteration<8;iteration++){
     buckets.clear();
     for(const e of active){
+      if(e.radius>HORDE_LARGE_RADIUS)continue;
       const k=key(e.group.position.x,e.group.position.z);
       if(!buckets.has(k))buckets.set(k,[]);
       buckets.get(k).push(e);
-      e.hordePushX=0;e.hordePushZ=0;
-      e.hordeX=e.group.position.x;e.hordeZ=e.group.position.z;
     }
+    let deepest=0;
+    const separatePair=(e,other)=>{
+          if(other.hordeId<=e.hordeId)return;
+          const contact=zombieBodyContact(e,other);
+          if(!contact||contact.depth<.0005)return;
+          deepest=Math.max(deepest,contact.depth);
+          const depth=Math.min(contact.depth+.0005,4*Math.min(dt,.025));
+          const share=other.hordeMass/(e.hordeMass+other.hordeMass);
+          const first=moveBody(e,contact.x*depth*share,contact.z*depth*share);
+          // A wall absorbs no body displacement: the remaining correction goes backwards.
+          const done=first.x*contact.x+first.z*contact.z;
+          const second=moveBody(other,-contact.x*(depth-done),-contact.z*(depth-done));
+          const residual=depth-done+second.x*contact.x+second.z*contact.z;
+          if(residual>.0005)moveBody(e,contact.x*residual,contact.z*residual);
+          e.crowdContact=other.crowdContact=true;
+    };
     for(const e of active){
       const p=e.group.position,bx=Math.floor(p.x/CELL),bz=Math.floor(p.z/CELL);
       const reach=Math.max(1,Math.ceil((e.radius+maxRadius+.18)/CELL));
       for(let oz=-reach;oz<=reach;oz++)for(let ox=-reach;ox<=reach;ox++){
         const neighbors=buckets.get(bx+ox+(bz+oz)*512);
         if(!neighbors)continue;
-        for(const other of neighbors){
-          if(other.hordeId<=e.hordeId)continue;
-          let dx=e.hordeX-other.hordeX,dz=e.hordeZ-other.hordeZ;
-          if(dx*dx+dz*dz>(e.radius+other.radius)**2)continue;
-          const contact=zombieBodyContact(e,other);
-          if(!contact)continue;
-          dx=contact.x;dz=contact.z;
-          const force=contact.depth/(e.hordeMass+other.hordeMass);
-          e.hordePushX+=dx*force*other.hordeMass;e.hordePushZ+=dz*force*other.hordeMass;
-          other.hordePushX-=dx*force*e.hordeMass;other.hordePushZ-=dz*force*e.hordeMass;
-          e.crowdContact=other.crowdContact=true;
-        }
+        for(const other of neighbors)separatePair(e,other);
       }
+      for(const other of large)separatePair(e,other);
     }
-    for(const e of active){
-      const length=Math.hypot(e.hordePushX,e.hordePushZ);
-      if(length<1e-6)continue;
-      const step=Math.min(4*Math.min(dt,.025),length*.9),scale=step/length;
-      const p=e.group.position,curH=heightAt(p.x,p.z),probe=enemyNavigationRadius(e);
-      const dx=e.hordePushX*scale,dz=e.hordePushZ*scale;
-      // Terrain remains solid. Allow backward movement as well as movement along a wall.
-      if(!blockedForTank(p.x+dx,p.z,probe,curH))p.x+=dx;
-      else if(!blockedForTank(p.x+dx*.5,p.z,probe,curH))p.x+=dx*.5;
-      if(!blockedForTank(p.x,p.z+dz,probe,curH))p.z+=dz;
-      else if(!blockedForTank(p.x,p.z+dz*.5,probe,curH))p.z+=dz*.5;
-      p.y=heightAt(p.x,p.z);
-    }
+    if(deepest<.001)break;
   }
 }
 
@@ -6268,10 +6389,32 @@ function enemyNavigationRadius(enemy){
 }
 
 /* 尸群遇到前排实体时切换到相邻车道，后排保持自身速度继续推进。 */
-function hordeLaneBlocked(enemy,dir){
+let hordeSpatialFrame=-1,hordeSpatialCount=-1,hordeSpatialMaxRadius=0;
+const hordeSpatialBuckets=new Map(),hordeSpatialLarge=[],HORDE_SPATIAL_CELL=.75,HORDE_LARGE_RADIUS=1;
+function rebuildHordeSpatial(){
+  hordeSpatialBuckets.clear();hordeSpatialLarge.length=0;hordeSpatialMaxRadius=0;
+  for(const e of enemies){
+    if(!e.alive||e.dying)continue;
+    if(e.radius>HORDE_LARGE_RADIUS){hordeSpatialLarge.push(e);continue;}
+    const p=e.group.position,k=Math.floor(p.x/HORDE_SPATIAL_CELL)+Math.floor(p.z/HORDE_SPATIAL_CELL)*512;
+    let bucket=hordeSpatialBuckets.get(k);if(!bucket)hordeSpatialBuckets.set(k,bucket=[]);bucket.push(e);
+    hordeSpatialMaxRadius=Math.max(hordeSpatialMaxRadius,e.radius);
+  }
+  hordeSpatialFrame=_animFrame;hordeSpatialCount=enemies.length;
+}
+function hordeNeighbors(x,z,radius){
+  if(hordeSpatialFrame!==_animFrame||hordeSpatialCount!==enemies.length)rebuildHordeSpatial();
+  const result=[],reach=radius+hordeSpatialMaxRadius+.3;
+  for(let bz=Math.floor((z-reach)/HORDE_SPATIAL_CELL);bz<=Math.floor((z+reach)/HORDE_SPATIAL_CELL);bz++)
+    for(let bx=Math.floor((x-reach)/HORDE_SPATIAL_CELL);bx<=Math.floor((x+reach)/HORDE_SPATIAL_CELL);bx++)
+      for(const e of hordeSpatialBuckets.get(bx+bz*512)||[])if(e.alive&&!e.dying)result.push(e);
+  for(const e of hordeSpatialLarge)if(e.alive&&!e.dying&&Math.hypot(e.group.position.x-x,e.group.position.z-z)<radius+e.radius+.3)result.push(e);
+  return result;
+}
+function hordeLaneBlocked(enemy,dir,candidates=null){
   if(ACTIVE_MODE.key!=="survival"||!dir)return false;
   const p=enemy.group.position;
-  for(const other of enemies){
+  for(const other of candidates||hordeNeighbors(p.x,p.z,enemy.radius+.3)){
     if(!other||other===enemy||!other.alive||other.dying)continue;
     const dx=other.group.position.x-p.x,dz=other.group.position.z-p.z;
     const forward=dx*dir.x+dz*dir.z;
@@ -6282,9 +6425,33 @@ function hordeLaneBlocked(enemy,dir){
   return false;
 }
 function hordeLaneDetour(enemy,dir,spd,curH,radius){
-  if(!(spd>0)||!hordeLaneBlocked(enemy,dir))return false;
+  if(!(spd>0)||!dir)return false;
+  const lod=enemy._crowdLod&&!enemy.boss&&enemy._simulationDt>0;
+  const p=enemy.group.position;
+  if(lod){
+    enemy._avoidRemaining=(enemy._avoidRemaining||0)-enemy._simulationDt;
+    if(enemy._avoidRemaining>0&&enemy._avoidForwardX===dir.x&&enemy._avoidForwardZ===dir.z){
+      if(!enemy._avoidSideStep)return false;
+      const x=p.x+enemy._avoidStepX*spd,z=p.z+enemy._avoidStepZ*spd;
+      if(blockedForTank(x,z,radius,curH))return false;
+      // Every cached decision still passes the authoritative movement/body test.
+      p.x=x;p.z=z;return true;
+    }
+  }
+  const x=p.x,z=p.z,moved=solveHordeLaneDetour(enemy,dir,spd,curH,radius);
+  if(lod){
+    enemy._avoidRemaining=enemy._crowdScreenPixels<12?.16:.1;
+    enemy._avoidForwardX=dir.x;enemy._avoidForwardZ=dir.z;enemy._avoidSideStep=moved;
+    if(moved){enemy._avoidStepX=(p.x-x)/spd;enemy._avoidStepZ=(p.z-z)/spd;}
+  }
+  return moved;
+}
+function solveHordeLaneDetour(enemy,dir,spd,curH,radius){
+  if(!(spd>0)||!dir)return false;
+  const p=enemy.group.position,candidates=hordeNeighbors(p.x,p.z,enemy.radius+.3+spd);
+  if(!hordeLaneBlocked(enemy,dir,candidates))return false;
   const length=Math.hypot(dir.x,dir.z);if(length<1e-6)return false;
-  const fx=dir.x/length,fz=dir.z/length,p=enemy.group.position;
+  const fx=dir.x/length,fz=dir.z/length;
   const preferred=enemy.hordeLaneSide||(enemy.hordeId%2?1:-1);
   for(const side of [preferred,-preferred]){
     // 斜向前进只消耗本帧移动距离，减速和帧率不会被横移保底绕过。
@@ -6292,11 +6459,13 @@ function hordeLaneDetour(enemy,dir,spd,curH,radius){
     const nx=p.x+dx,nz=p.z+dz;
     if(blockedForTank(nx,nz,radius,curH))continue;
     let occupied=false;
-    for(const other of enemies){
+    for(const other of candidates){
       if(other===enemy||!other.alive||other.dying)continue;
       const q=other.group.position,min=(enemy.radius+other.radius)*.9;
-      const before=Math.hypot(p.x-q.x,p.z-q.z),after=Math.hypot(nx-q.x,nz-q.z);
-      if(after<min&&after<before-1e-5){occupied=true;break;}
+      const ax=nx-q.x,az=nz-q.z,afterSq=ax*ax+az*az;
+      if(afterSq>=min*min)continue;
+      const bx=p.x-q.x,bz=p.z-q.z,beforeSq=bx*bx+bz*bz;
+      if(beforeSq>1e-10&&afterSq<beforeSq-2e-5*Math.sqrt(beforeSq)+1e-10){occupied=true;break;}
     }
     if(occupied)continue;
     p.x=nx;p.z=nz;enemy.hordeLaneSide=side;enemy.thinkTimer=.08;return true;
@@ -6314,7 +6483,7 @@ function enemyModelBounds(enemy){
   }
   return enemy._modelBounds;
 }
-/* 用受躯干骨骼驱动的实际网格顶点建立水平轮廓，不把伸展手臂计为一圈空气。
+/* 用受头部与躯干骨骼驱动的实际网格顶点建立水平轮廓，不把伸展手臂计为一圈空气。
    轮廓按模型朝向旋转，圆形半径仅用于快速排除不相邻单位。 */
 function zombieBodyHull(visual,group){
   group.updateMatrixWorld(true);
@@ -6323,7 +6492,7 @@ function zombieBodyHull(visual,group){
   visual.traverse(mesh=>{
     if(!mesh.isSkinnedMesh||!mesh.geometry?.attributes.skinIndex)return;
     const a=mesh.geometry.attributes,torso=new Set();
-    mesh.skeleton.bones.forEach((bone,i)=>{if(/hips|pelvis|spine|chest/i.test(bone.name))torso.add(i);});
+    mesh.skeleton.bones.forEach((bone,i)=>{if(/hips|pelvis|spine|chest|neck|head/i.test(bone.name))torso.add(i);});
     mesh.skeleton.update();
     for(let i=0;i<a.position.count;i++){
       let weight=0;
@@ -6342,35 +6511,85 @@ function zombieBodyHull(visual,group){
   for(let i=points.length-1;i>=0;i--){const p=points[i];while(upper.length>1&&cross(upper.at(-2),upper.at(-1),p)<=0)upper.pop();upper.push(p);}
   return lower.slice(0,-1).concat(upper.slice(0,-1));
 }
+function zombieCollisionShape(enemy){
+  const hull=enemy.collisionHull,angle=enemy.group.rotation.y,scale=enemy.radius/(enemy.collisionHullRadius||enemy.radius);
+  let shape=enemy._collisionShape;
+  if(!shape||shape.hull!==hull){
+    const normals=[];
+    for(let i=0;i<hull.length;i++){
+      const p=hull[i],q=hull[(i+1)%hull.length],length=Math.hypot(q.x-p.x,q.z-p.z);
+      if(length<1e-8)continue;
+      let x=-(q.z-p.z)/length,z=(q.x-p.x)/length;
+      if(x<0||(Math.abs(x)<1e-10&&z<0)){x=-x;z=-z;}
+      if(normals.some(n=>Math.abs(n.x*x+n.z*z)>1-1e-10))continue;
+      let min=Infinity,max=-Infinity;
+      for(const v of hull){const d=v.x*x+v.z*z;min=Math.min(min,d);max=Math.max(max,d);}
+      normals.push({x,z,min,max});
+    }
+    shape=enemy._collisionShape={hull,normals,vertices:new Float64Array(hull.length*2),axes:new Float64Array(normals.length*4)};
+  }
+  if(shape.angle===angle&&shape.scale===scale)return shape;
+  const c=Math.cos(angle),sin=Math.sin(angle),v=shape.vertices,axes=shape.axes;
+  shape.minX=shape.minZ=Infinity;shape.maxX=shape.maxZ=-Infinity;
+  for(let i=0;i<hull.length;i++){
+    const x=(hull[i].x*c+hull[i].z*sin)*scale,z=(-hull[i].x*sin+hull[i].z*c)*scale;
+    v[i*2]=x;v[i*2+1]=z;shape.minX=Math.min(shape.minX,x);shape.maxX=Math.max(shape.maxX,x);shape.minZ=Math.min(shape.minZ,z);shape.maxZ=Math.max(shape.maxZ,z);
+  }
+  for(let i=0;i<shape.normals.length;i++){
+    const n=shape.normals[i];axes[i*4]=n.x*c+n.z*sin;axes[i*4+1]=-n.x*sin+n.z*c;axes[i*4+2]=n.min*scale;axes[i*4+3]=n.max*scale;
+  }
+  shape.angle=angle;shape.scale=scale;return shape;
+}
 function zombieWorldHull(enemy){
-  const p=enemy.group.position,angle=enemy.group.rotation.y,c=Math.cos(angle),s=Math.sin(angle);
-  const cached=enemy._collisionWorld;
-  if(cached&&cached.x===p.x&&cached.z===p.z&&cached.angle===angle&&cached.radius===enemy.radius)return cached.points;
-  const scale=enemy.radius/(enemy.collisionHullRadius||enemy.radius);
-  const points=enemy.collisionHull.map(v=>({x:p.x+(v.x*c+v.z*s)*scale,z:p.z+(-v.x*s+v.z*c)*scale}));
-  enemy._collisionWorld={x:p.x,z:p.z,angle,radius:enemy.radius,points};return points;
+  const shape=zombieCollisionShape(enemy),p=enemy.group.position,points=[];
+  for(let i=0;i<shape.vertices.length;i+=2)points.push({x:p.x+shape.vertices[i],z:p.z+shape.vertices[i+1]});
+  return points;
 }
 function zombieBodyContact(a,b){
   const dx=a.group.position.x-b.group.position.x,dz=a.group.position.z-b.group.position.z;
   if(dx*dx+dz*dz>=(a.radius+b.radius)**2)return null;
   if(a.collisionHull?.length>=3&&b.collisionHull?.length>=3){
-    const first=zombieWorldHull(a),second=zombieWorldHull(b);
+    const first=zombieCollisionShape(a),second=zombieCollisionShape(b);
+    if(first.maxX+dx<=second.minX||second.maxX<=first.minX+dx||first.maxZ+dz<=second.minZ||second.maxZ<=first.minZ+dz)return null;
     let depth=Infinity,nx=0,nz=0;
-    for(const hull of [first,second])for(let i=0;i<hull.length;i++){
-      const p=hull[i],q=hull[(i+1)%hull.length],length=Math.hypot(q.x-p.x,q.z-p.z);
-      if(length<1e-8)continue;
-      let x=-(q.z-p.z)/length,z=(q.x-p.x)/length;
-      let lowA=Infinity,highA=-Infinity,lowB=Infinity,highB=-Infinity;
-      for(const v of first){const n=v.x*x+v.z*z;lowA=Math.min(lowA,n);highA=Math.max(highA,n);}
-      for(const v of second){const n=v.x*x+v.z*z;lowB=Math.min(lowB,n);highB=Math.max(highB,n);}
-      const overlap=Math.min(highA-lowB,highB-lowA);
-      if(overlap<=0)return null;
-      if(overlap<depth){if(x*dx+z*dz<0){x=-x;z=-z;}depth=overlap;nx=x;nz=z;}
+    for(let side=0;side<2;side++){
+      const own=side?second:first,other=side?first:second,shiftX=side?dx:-dx,shiftZ=side?dz:-dz;
+      const axes=own.axes,vertices=other.vertices;
+      for(let i=0;i<axes.length;i+=4){
+        const x=axes[i],z=axes[i+1];let min=Infinity,max=-Infinity;
+        for(let j=0;j<vertices.length;j+=2){const n=vertices[j]*x+vertices[j+1]*z;if(n<min)min=n;if(n>max)max=n;}
+        const shift=shiftX*x+shiftZ*z;
+        const overlap=Math.min(axes[i+3]-min-shift,max+shift-axes[i+2]);
+        if(overlap<=0)return null;
+        if(overlap<depth){const sign=x*dx+z*dz<0?-1:1;depth=overlap;nx=x*sign;nz=z*sign;}
+      }
     }
     return Number.isFinite(depth)?{depth,x:nx,z:nz}:null;
   }
   const distance=Math.hypot(dx,dz),angle=((a.hordeId*37+b.hordeId*101)%360)*Math.PI/180;
   return {depth:a.radius+b.radius-distance,x:distance>1e-6?dx/distance:Math.cos(angle),z:distance>1e-6?dz/distance:Math.sin(angle)};
+}
+// Movement only needs a threshold decision. Separation still uses the full MTV above.
+function zombieBodiesPenetrate(a,b,tolerance=.0005){
+  const dx=a.group.position.x-b.group.position.x,dz=a.group.position.z-b.group.position.z;
+  const radius=a.radius+b.radius;
+  if(dx*dx+dz*dz>=radius*radius)return false;
+  if(a.collisionHull?.length>=3&&b.collisionHull?.length>=3){
+    const first=zombieCollisionShape(a),second=zombieCollisionShape(b);
+    if(first.maxX+dx<=second.minX||second.maxX<=first.minX+dx||first.maxZ+dz<=second.minZ||second.maxZ<=first.minZ+dz)return false;
+    for(let side=0;side<2;side++){
+      const own=side?second:first,other=side?first:second,shiftX=side?dx:-dx,shiftZ=side?dz:-dz;
+      const axes=own.axes,vertices=other.vertices;
+      for(let i=0;i<axes.length;i+=4){
+        const x=axes[i],z=axes[i+1];let min=Infinity,max=-Infinity;
+        for(let j=0;j<vertices.length;j+=2){const n=vertices[j]*x+vertices[j+1]*z;if(n<min)min=n;if(n>max)max=n;}
+        const shift=shiftX*x+shiftZ*z;
+        if(axes[i+3]-min-shift<=tolerance||max+shift-axes[i+2]<=tolerance)return false;
+      }
+    }
+    return true;
+  }
+  return radius-Math.hypot(dx,dz)>tolerance;
 }
 function modelFootprintRadius(visual,fallback=.35){
   if(!visual)return fallback;
@@ -6393,14 +6612,20 @@ function enemyAimPoint(enemy,target=new THREE.Vector3()){
 
 let _gateAttackerFrame=-1,_gateAttackerSet=null;
 let _wallAttackerFrame=-1,_wallAttackerSets=new Map();
+function selectHordeContactSlots(candidates,baseCapacity){
+  const multiplier=SurvivalSystem.HORDE_PRESENTATION.contactMultiplier,selected=[];
+  let remaining=baseCapacity*multiplier;
+  for(const enemy of candidates){const cost=enemy.boss?multiplier:1;if(cost>remaining)continue;selected.push(enemy);remaining-=cost;if(!remaining)break;}
+  return selected;
+}
 function enemyGateAttackSlot(enemy){
   if(!enemy||!baseGroup)return false;
   if(_gateAttackerFrame!==_animFrame){
     _gateAttackerFrame=_animFrame;
-    _gateAttackerSet=new Set(enemies.filter((other)=>other&&other.alive&&!other.dying&&other.atGate&&
+    _gateAttackerSet=new Set(selectHordeContactSlots(enemies.filter((other)=>other&&other.alive&&!other.dying&&other.atGate&&
       baseContactDistance(other)<=.55+(other.radius||0))
       .sort((left,right)=>baseContactDistance(left)-baseContactDistance(right))
-      .slice(0,Math.ceil(3/SurvivalSystem.ZOMBIE_COMBAT_SCALE)));
+      ,Math.ceil(3/SurvivalSystem.ZOMBIE_COMBAT_SCALE)));
   }
   return _gateAttackerSet.has(enemy);
 }
@@ -6419,7 +6644,7 @@ function enemyWallAttackSlot(enemy,targetWall){
       Math.hypot(other.group.position.x-targetWall.center.x,other.group.position.z-targetWall.center.z)<=other.radius+TILE*.72)
       .sort((left,right)=>Math.hypot(left.group.position.x-targetWall.center.x,left.group.position.z-targetWall.center.z)-
         Math.hypot(right.group.position.x-targetWall.center.x,right.group.position.z-targetWall.center.z));
-    attackers=new Set(candidates.slice(0,capacity));
+    attackers=new Set(selectHordeContactSlots(candidates,capacity));
     _wallAttackerSets.set(cellKey,attackers);
   }
   return attackers.has(enemy);
@@ -6428,7 +6653,8 @@ function enemyWallAttackSlot(enemy,targetWall){
 function enemyMeleeDamage(enemy){
   const base=enemy.boss?(enemy.bossMechanic==="siege"||enemy.bossMechanic==="doom"?5:3)
     :(enemy.siege?4:(enemy.type==="heavy"||enemy.type==="elite"?2:1));
-  return ACTIVE_MODE.key==="survival"?base*SurvivalSystem.ZOMBIE_COMBAT_SCALE*SurvivalSystem.meleeWaveMultiplier(enemy.sourceWave||game.wave)*survivalPressureMultiplier()*(Number(game.difficultyMultiplier)||1):base;
+  const contactScale=enemy.boss?1:SurvivalSystem.HORDE_PRESENTATION.contactMultiplier;
+  return ACTIVE_MODE.key==="survival"?base*SurvivalSystem.ZOMBIE_COMBAT_SCALE*SurvivalSystem.meleeWaveMultiplier(enemy.sourceWave||game.wave)*survivalPressureMultiplier()*(Number(game.difficultyMultiplier)||1)/contactScale:base;
 }
 function enemyWallDamage(enemy){
   // 第十波仍以800 DPS为锚点；前期给墙体一个逐波展开的承伤缓冲，避免第五波前发育尚未完成就被打穿。
@@ -6445,7 +6671,7 @@ function applyEnemyLifesteal(enemy,damage){
   if(enemy.lifesteal>0)enemy.hp=Math.min(enemy.maxHp,enemy.hp+damage*enemy.lifesteal);
 }
 function updateBossMechanic(enemy,dt,now){
-  if(!enemy.boss||!enemy.bossMechanic)return;
+  if(!enemy.alive||enemy.dying||!enemy.boss||!enemy.bossMechanic)return;
   enemy.specialCd-=dt;if(enemy.specialCd>0)return;
   const aliveNow=enemies.filter((item)=>item.alive).length;
   if(enemy.bossMechanic==="summon"&&aliveNow<64){
@@ -6524,20 +6750,71 @@ function applyZombieReachPose(e){
     e.visualRoot.rotation.z=(moving?Math.sin(phase)*.035:0)+(e.hitReaction||0)*.08*((e.hordeId||0)%2?1:-1);
   }
 }
+let hordeSeparationNeeded=true;
+function resolveHordeMovement(previous){
+  const proposals=[];let requiresSeparation=false;
+  for(const [e,old] of previous){
+    if(!e.alive||e.dying)continue;
+    proposals.push({e,old,x:e.group.position.x,z:e.group.position.z,angle:e.group.rotation.y});
+    e.group.position.x=old.x;e.group.position.z=old.z;e.group.rotation.y=old.angle;
+  }
+  const buckets=new Map(),cell=.75,key=(x,z)=>Math.floor(x/cell)+Math.floor(z/cell)*512;
+  let maxRadius=0;const large=[];
+  for(const e of enemies){
+    if(!e.alive||e.dying)continue;
+    if(e.radius>HORDE_LARGE_RADIUS){large.push(e);continue;}
+    maxRadius=Math.max(maxRadius,e.radius);
+    const k=key(e.group.position.x,e.group.position.z);
+    if(!buckets.has(k))buckets.set(k,new Set());buckets.get(k).add(e);
+  }
+  for(const {e,old,x,z,angle} of proposals){
+    if(Math.abs(x-old.x)+Math.abs(z-old.z)+Math.abs(angle-old.angle)<1e-8)continue;
+    const nearby=[],travel=Math.hypot(x-old.x,z-old.z),reach=e.radius+maxRadius+travel+.001;
+    const collect=other=>{
+      if(other===e)return;
+      const dx=other.group.position.x-old.x,dz=other.group.position.z-old.z,bound=e.radius+other.radius+travel+.001;
+      if(dx*dx+dz*dz<=bound*bound)nearby.push(other);
+    };
+    for(let bz=Math.floor((old.z-reach)/cell);bz<=Math.floor((old.z+reach)/cell);bz++)
+      for(let bx=Math.floor((old.x-reach)/cell);bx<=Math.floor((old.x+reach)/cell);bx++)
+        for(const other of buckets.get(bx+bz*512)||[])collect(other);
+    for(const other of large)collect(other);
+    const ground=heightAt(old.x,old.z),navigationRadius=enemyNavigationRadius(e);
+    const attempt=(nx,nz,rotation)=>{
+      // A legal diagonal endpoint does not imply either axis-only fallback is legal.
+      if((nx!==old.x||nz!==old.z)&&blockedForTank(nx,nz,navigationRadius,ground))return false;
+      e.group.position.x=nx;e.group.position.z=nz;e.group.rotation.y=rotation;
+      for(const other of nearby){
+        if(!zombieBodiesPenetrate(e,other))continue;
+        e.group.position.x=old.x;e.group.position.z=old.z;e.group.rotation.y=old.angle;
+        if(zombieBodiesPenetrate(e,other))requiresSeparation=true;
+        return false;
+      }
+      return true;
+    };
+    let accepted=attempt(x,z,angle);
+    if(!accepted&&angle!==old.angle)accepted=attempt(x,z,old.angle);
+    if(!accepted&&z!==old.z)accepted=attempt(x,old.z,old.angle);
+    if(!accepted&&x!==old.x)attempt(old.x,z,old.angle);
+    e.group.position.y=heightAt(e.group.position.x,e.group.position.z);
+    const oldKey=key(old.x,old.z),newKey=key(e.group.position.x,e.group.position.z);
+    if(e.radius<=HORDE_LARGE_RADIUS&&oldKey!==newKey){buckets.get(oldKey)?.delete(e);if(!buckets.has(newKey))buckets.set(newKey,new Set());buckets.get(newKey).add(e);}
+  }
+  return requiresSeparation;
+}
 function updateEnemies(dt){
+  const previousBodies=ACTIVE_MODE.key==='survival'?new Map(enemies.filter(e=>e.alive&&!e.dying).map(e=>[e,{x:e.group.position.x,z:e.group.position.z,angle:e.group.rotation.y}])):null;
   const now=performance.now();
   const cam=camera.position;
   const crowd=enemies.length,animationStride=crowd>300?16:4,poseStride=crowd>300?8:crowd>120?2:1;
   for(let i=enemies.length-1;i>=0;i--){
-    const e=enemies[i];
+    const e=enemies[i];e._simulationDt=dt;
     e.poseTime=(e.poseTime||0)+dt;
     e.hitReaction=Math.max(0,(e.hitReaction||0)-dt*3.5);
     const previousX=e.group.position.x,previousZ=e.group.position.z;
     const nearDx=previousX-cam.x,nearDz=previousZ-cam.z;
     const near=!e._crowdLod&&nearDx*nearDx+nearDz*nearDz<48*48;
-    /* 远处尸潮渲染预算：战斗逻辑仍逐个运行，只对超大尸潮的远景模型抽样绘制。 */
-    const renderStride=crowd>800?3:crowd>500?2:1;
-    const farForRender=renderStride>1&&nearDx*nearDx+nearDz*nearDz>58*58;
+    /* 实例批次接管远景模型；每个活体始终保留一个渲染实例和独立占位。 */
     e.group.visible=!e._crowdLod;
     if(e.velocity)e.velocity.set(0,0,0);
     /*  dying 状态：保留在数组里播完死亡动画，到达时长后真正清理 */
@@ -6562,7 +6839,7 @@ function updateEnemies(dt){
         }
       }
       if(e.dyingT>=dieDuration+.12){
-        if(e.mixer){try{e.mixer.stop();}catch(_){}}
+        if(e.mixer)e.mixer.stopAllAction();
         scene.remove(e.group);releaseEnemyResources(e);
         if(e.beam){scene.remove(e.beam);disposeTransientObject3D(e.beam);}
         enemies.splice(i,1);
@@ -6722,7 +6999,7 @@ function updateEnemies(dt){
         }
       }
       if(attacked){sfx.zombie(e);sfx.gate();}
-      if(!moved&&!attacked)e.thinkTimer=0;
+      if(!moved&&!attacked)e.thinkTimer=Math.min(e.thinkTimer,.18);
     }
     /* 转角长时间没有推进且前方没有同伴排队时，检查地形后柔和回到当前格中线。
        排队、攻击和脱困期间始终保留实体碰撞，不能把等待的后排拉进前排身体内。 */
@@ -6796,7 +7073,9 @@ function updateEnemies(dt){
       if(distance<34){e.cd=e.fireCd;shoot(e,direction.normalize(),false);}
     }
   }
-  applyHordeSeparation(dt);
+  const unresolved=previousBodies&&resolveHordeMovement(previousBodies);
+  if(unresolved||hordeSeparationNeeded||_animFrame%12===0)applyHordeSeparation(dt);
+  hordeSeparationNeeded=false;
   updateHordeClimbing(dt);
   if(ACTIVE_MODE.key==="survival")spawnPendingSurvivalEnemies(dt);
   else if(survivalCombatRunning()&&game.enemiesToSpawn>0){
@@ -6852,6 +7131,7 @@ function updateWatchdog(dt){
 
 /* 单颗子弹在某位置的碰撞判定：返回 true 表示子弹被消耗 */
 function bulletCollide(b,p){
+  b.impactSurface='world';
   if(ACTIVE_MODE.key==="survival"&&p.y<heightAt(p.x,p.z))return true;
   // 墙体（ P4-3：塔弹 thruWall → 穿透玩家墙/原生钢墙/建筑，不被悬崖和自家构筑挡炮）
   const c=cellOf(p.x,p.z);
@@ -6860,6 +7140,7 @@ function bulletCollide(b,p){
     if(b.thruWall&&(t===T_BRICK||t===T_STEEL||t===T_BUILDING)){/* 穿墙：跳过 */}
     else if(t===T_BRICK){destroyBricksAround(p.x,p.z,.5);return true;}
     else if(t===T_STEEL||t===T_BUILDING){
+      b.impactSurface='armor';
       /*  弹射装甲弹：玩家炮弹碰钢墙/楼房反弹 */
       if(b.owner==="player"&&b.bounce>0){
         b.bounce--;
@@ -6868,16 +7149,20 @@ function bulletCollide(b,p){
         if(pc.x!==c.x)b.vel.x*=-1;else b.vel.z*=-1;
         p.addScaledVector(b.vel,1.4);
         b.hitSet.clear();
-        spawnParticles(p.clone(),0xbfe8ff,6,6,.7);sfx.hit();
+        if(ACTIVE_MODE.key==='survival')projectileImpactFx(b.projectileType,p.clone(),'armor');
+        else spawnParticles(p.clone(),0xbfe8ff,6,6,.7);
+        sfx.hit();
         return false;
       }
-      spawnParticles(p.clone(),0xcfd8e6,5,5,.7);sfx.hit();return true;
+      if(ACTIVE_MODE.key!=='survival')spawnParticles(p.clone(),0xcfd8e6,5,5,.7);
+      sfx.hit();return true;
     }
   }
   // 基地（仅敌方）
   if(b.owner==="enemy"&&baseAlive&&baseGroup){
     const bp=baseGroup.position;
     if(Math.hypot(p.x-bp.x,p.z-bp.z)<2.2){
+      b.impactSurface='armor';
       if(game.baseShieldHP>0){
         game.baseShieldHP-=1;sfx.hit();
         spawnParticles(p.clone(),0x4da3ff,8,6,.8);
@@ -6906,11 +7191,15 @@ function bulletCollide(b,p){
     for(const e of enemies){
       if(!e.alive||performance.now()<e.spawnFlash||performance.now()<(e.phaseUntil||0)||b.hitSet.has(e))continue;
       if(hitEnemyModel(e)){
+        b.impactSurface=ACTIVE_MODE.key==='survival'&&e.characterModel!==false?'flesh':'armor';
         b.hitSet.add(e);
         /*  弱点分析：暴击双倍伤害 */
         let dmg=b.dmg;
         if(Math.random()<game.stats.critChance){
-          dmg*=2;spawnParticles(p.clone(),0xffd75e,9,7,.9);sfx.levelup();
+          dmg*=2;
+          if(ACTIVE_MODE.key!=='survival')spawnParticles(p.clone(),0xffd75e,9,7,.9);
+          else if(b.impactSurface!=='flesh')spawnParticles(p.clone(),0xffd75e,3,4,.16,.16);
+          sfx.levelup();
         }
         if(b.source==="turret"){
           /* 反装甲炮基础伤害被压到不再秒杀普通怪；命中真正的厚甲/首领时再获得职责倍率，
@@ -6919,32 +7208,39 @@ function bulletCollide(b,p){
         }
         damageEnemy(e,dmg,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType,
           hitDirection:b.vel,hitPoint:p});
-        spawnGoreBurst(e,p,b.vel,b.projectileType==='cannon'||b.projectileType==='antitank'?1.35:1);
+        if(e.alive&&!["emp","incendiary","frost","laser"].includes(b.projectileType))spawnGoreBurst(e,p,b.vel,b.projectileType==='cannon'||b.projectileType==='antitank'?1.35:1);
         applyIncendiaryHit(e,b);
-        spawnParticles(p.clone(),0xfff2b0,5,5,.7);
+        if(ACTIVE_MODE.key!=='survival')spawnParticles(p.clone(),0xfff2b0,5,5,.7);
         sfx.hit();
-        if(b.pierceLeft>0){b.pierceLeft--;return false;}
+        if(b.pierceLeft>0){
+          b.pierceLeft--;
+          if(ACTIVE_MODE.key==='survival'&&b.impactSurface==='armor')projectileImpactFx(b.projectileType,p.clone(),'armor');
+          return false;
+        }
         return true;
       }
     }
   }else{
     for(const unit of friendlyUnits){
       if(!unit.alive||!hitR2(unit.group.position,unit.radius+.6))continue;
-      unit.hp-=b.dmg*(1-Math.min(.65,unit.armor||0));spawnParticles(p.clone(),0xff8a6a,5,5,.7);return true;
+      b.impactSurface='armor';unit.hp-=b.dmg*(1-Math.min(.65,unit.armor||0));
+      if(ACTIVE_MODE.key!=='survival')spawnParticles(p.clone(),0xff8a6a,5,5,.7);
+      return true;
     }
     const occupiedHit=inMap(c.x,c.z)?ownedStructureAtCell(idx(c.x,c.z)):null;
-    if(occupiedHit?.kind==='construction')return damageConstruction(occupiedHit.record,b.dmg);
+    if(occupiedHit?.kind==='construction'){b.impactSurface='armor';return damageConstruction(occupiedHit.record,b.dmg);}
     for(const [records,kind] of ownedStructurePools()){
       const structure=(occupiedHit&&occupiedHit.records===records&&occupiedHit.record.hp>0?occupiedHit.record:null)
         ||records.find((item)=>item.hp>0&&hitR2(item.group.position,3));
       if(!structure)continue;
+      b.impactSurface='armor';
       structure.hp-=b.dmg;
       if(structure.hp<=0){
         destroyOwnedStructure(structure,records,kind);
       }
       return true;
     }
-    if(player&&player.alive&&hitR2(player.group.position,player.radius+.6)){damagePlayer(b.dmg);return true;}
+    if(player&&player.alive&&hitR2(player.group.position,player.radius+.6)){b.impactSurface='armor';damagePlayer(b.dmg);return true;}
   }
   return false;
 }
@@ -6952,11 +7248,12 @@ function bulletCollide(b,p){
 function updateBullets(dt){
   for(let i=bullets.length-1;i>=0;i--){
     const b=bullets[i];
+    b.impactSurface='world';
     b.life-=dt;
     b._trailT=(b._trailT||0)-dt;
     if(b._trailT<=0){
-      const trail={machinegun:[0xffd56b,2.4,.11,.07],cannon:[0x8b7b6b,2.2,.22,.09],antitank:[0xf7e5b7,3.2,.16,.045],emp:[0x9cecff,.8,.9,.1],shotgun:[0xffe2a0,2.8,.15,.1],incendiary:[0xff6b2e,3.8,.45,.065],grenade:[0xc99b59,2.1,.3,.09],tank:[0xffc27c,2.4,.2,.08]}[b.projectileType]||[0xc7d5d7,1.25,.18,.06];
-      spawnParticles(b.mesh.position.clone(),trail[0],b.projectileType==="incendiary"?3:2,trail[1],trail[2]);
+      const trail={machinegun:[0xffd56b,2.4,.11,.07],cannon:[0x8b7b6b,2.2,.22,.09],antitank:[0xf7e5b7,3.2,.16,.045],emp:[0x9cecff,.8,.9,.1],shotgun:[0xffe2a0,2.8,.15,.1],incendiary:[0xff6b2e,3.8,.45,.065],grenade:[0xc99b59,2.1,.3,.09],tank:[0xc39a5b,.6,.085,.075,.13]}[b.projectileType]||[0xc7d5d7,1.25,.18,.06];
+      spawnParticles(b.mesh.position.clone(),trail[0],b.projectileType==="incendiary"?3:b.projectileType==='tank'?1:2,trail[1],trail[2],trail[4]);
       b._trailT=trail[3];
     }
     /*  子步进移动：每步 ≤1.2 单位，杜绝高速穿墙/穿人 */
@@ -6977,7 +7274,7 @@ function updateBullets(dt){
     /* 弹道高度锁定在出膛高度，不能随高台地形采样下沉再抬升。 */
     if(Number.isFinite(b.flightY))p.y=b.flightY;
     if(dead){
-      projectileImpactFx(b.projectileType,p.clone());
+      projectileImpactFx(b.projectileType,p.clone(),b.impactSurface);
       if(b.blast>0){
         spawnParticles(p.clone(),0xffa02e,14,10,1.1);
         const R=b.blast;
@@ -6985,7 +7282,7 @@ function updateBullets(dt){
           if(!e.alive)return;
           const dx=e.group.position.x-p.x,dz=e.group.position.z-p.z;
           if(dx*dx+dz*dz<(R+e.radius)*(R+e.radius)){
-            damageEnemy(e,b.dmg*.6,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType});
+            damageEnemy(e,b.dmg*.6,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType,explosionOrigin:p});
           }
         });
         destroyBricksAround(p.x,p.z,R*.7);
@@ -7068,7 +7365,7 @@ function updateCamera(dt){
        方向键/边缘滚动平移 camFocus（沿镜头朝向，上=北）；WASD 保留给 WAR3 指令热键；
        滚轮只改 dist（镜头与地面焦点距离），不再同时拉高+后撤产生"扭动感"。 */
     const PITCH=60*Math.PI/180;                 // 固定俯仰
-    const DIST=Math.max(24,Math.min(120,camHeight));   // camHeight 复用为距离
+    const DIST=Math.max(24,Math.min(240,camHeight));   // camHeight 复用为距离
     const sp=42*dt;
     let dx=0,dz=0;
     if(keys.ArrowUp)dz-=1;
@@ -7081,11 +7378,11 @@ function updateCamera(dt){
       if(mouse.x<EDGE)ex-=1; else if(mouse.x>innerWidth-EDGE)ex+=1;
       if(mouse.y<EDGE)ez-=1; else if(mouse.y>innerHeight-EDGE)ez+=1;
       if(ex||ez){
-        camFocus.x+=ex*60*dt;camFocus.z+=ez*60*dt;
+        survivalOverview=false;camFocus.x+=ex*60*dt;camFocus.z+=ez*60*dt;
       }
     }
     if(dx||dz){
-      const L=Math.hypot(dx,dz)||1;
+      survivalOverview=false;const L=Math.hypot(dx,dz)||1;
       camFocus.x+=dx/L*sp;camFocus.z+=dz/L*sp;
       const lim=HALF-4;
       camFocus.x=Math.max(-lim,Math.min(lim,camFocus.x));
@@ -7190,6 +7487,8 @@ function stepGame(dt,now=performance.now()){
       }
     }
     updateParticles(dt);updateCorpseDecals(dt);
+    if(zombieDeathEffects)zombieDeathEffects.update(dt,camera,innerHeight);
+    flushHordeKillUI();flushEnemyDisposals();
     if(state===STATE.BUILD&&ACTIVE_MODE.key!=="survival"){
       game.buildTimer-=dt;
       const s=Math.max(0,Math.ceil(game.buildTimer));
@@ -7255,6 +7554,8 @@ function resetGame(baseLayout=null,terrainPads=[]){
   if(ACTIVE_MODE.key==="survival")ACTIVE_MODE.base={...(baseLayout||DEFAULT_SURVIVAL_BASE)};
   clearConstruction();
   clearCrowdLod();
+  if(zombieDeathEffects)zombieDeathEffects.clear();
+  flushEnemyDisposals(true);hordeKillUiDirty=false;hordeSpatialFrame=-1;hordeSeparationNeeded=true;
   [...bullets].forEach(b=>{scene.remove(b.mesh);disposeTransientObject3D(b.mesh);});bullets.length=0;
   particles.length=0;particleGeometry.setDrawRange(0,0);
   corpseDecals.splice(0).forEach((item)=>{scene.remove(item.root);disposeTransientObject3D(item.root);});
@@ -7284,7 +7585,7 @@ function resetGame(baseLayout=null,terrainPads=[]){
     playerShieldHP:0,sprintUntil:0,_empTimer:0,_mortarTimer:0,
     tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},researchTier:0,legacyDefense:0,gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
     popUsed:0,popMax:(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.startPop)||12,prepTime:0,endless:false,
-    gold:ACTIVE_MODE.goldStart||0});
+    hordeGoldRemainder:0,gold:ACTIVE_MODE.goldStart||0});
   game.buffs={shieldUntil:0,rapidUntil:0};
   game.stats={dmg:1,fireRate:1,moveSpeed:1,bulletSpeed:1,multishot:0,pierce:0,
     blastRadius:0,magnet:false,luckyLv:0,armorMax:5,
@@ -7305,14 +7606,7 @@ function resetGame(baseLayout=null,terrainPads=[]){
   }
   // 按当前模式立即归位相机，避免从菜单视角长过渡
   if(ACTIVE_MODE.key==="survival"&&baseGroup){
-    /* 开场俯视高台东沿和谷口，不把镜头怼在司令部上。 */
-    const start=ACTIVE_MODE.startFocus||{col:(ACTIVE_MODE.ramp&&ACTIVE_MODE.ramp.col||10)-2,row:(ACTIVE_MODE.ramp&&ACTIVE_MODE.ramp.row||18)-2};
-    const c=cellCenter(start.col,start.row);
-    camHeight=ACTIVE_MODE.cameraY||66;camBack=ACTIVE_MODE.cameraZ||54;
-    const pitch=60*Math.PI/180,dist=Math.max(24,Math.min(120,camHeight));
-    camFocus.set(c.x,0,c.z);
-    camera.position.set(camFocus.x,dist*Math.sin(pitch),camFocus.z+dist*Math.cos(pitch));
-    camera.lookAt(new THREE.Vector3(c.x,0,c.z));
+    frameSurvivalHighland();
   }else if(player&&player.group){
     const f=player.group.position;
     const cy=ACTIVE_MODE.cameraY||60,cz=ACTIVE_MODE.cameraZ||46;
@@ -7369,6 +7663,7 @@ window.render_game_to_text=()=>JSON.stringify({
   state,
   wave:game.wave,difficulty:game.difficultyId||"normal",difficultyMultiplier:game.difficultyMultiplier||1,
   timeDifficulty:{elapsed:game.survivalElapsed||0,damage:survivalPressureMultiplier(),health:survivalPressureMultiplier()},
+  hordePresentation:{lod:typeof getCrowdLodStats==="function"?getCrowdLodStats():null,deaths:zombieDeathEffects?.inspect()||null,disposalQueue:pendingEnemyDisposals.length,cameraDistance:camHeight},
   waveDeadline:{elapsed:game.waveElapsed||0,remaining:Math.max(0,120-(game.waveElapsed||0)),activeLimit:SURVIVAL_ACTIVE_LIMIT},
   waveCounts:{remaining:Math.max(0,game.enemiesToSpawn||0)+activeEnemyCount(),active:activeEnemyCount(),queued:Math.max(0,game.enemiesToSpawn||0)},
   waveTransition:game.waveTransition?{nextWave:game.waveTransition.nextWave,remaining:+game.waveTransition.remaining.toFixed(3),ready:game.waveTransition.ready}:null,

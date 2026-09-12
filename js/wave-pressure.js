@@ -25,8 +25,8 @@ function updateSurvivalPressure(dt){
   if(Math.floor(game.survivalElapsed)!==previous)updateEnemyLeftUI();
 }
 const SURVIVAL_WAVE_SECONDS=120;
-const SURVIVAL_ACTIVE_LIMIT=600;
-const SURVIVAL_PENDING_LIMIT=1000;
+const SURVIVAL_ACTIVE_LIMIT=4000;
+const SURVIVAL_PENDING_LIMIT=8000;
 function enqueueSurvivalWave(wave,preservePending){
   if(!preservePending){game.spawnPlans=[];game.pendingBossWave=0;}
   if(!Array.isArray(game.spawnPlans))game.spawnPlans=[];
@@ -68,16 +68,18 @@ function spawnPendingSurvivalEnemies(dt){
   if(game.spawnTimer>0)return;
   const slots=Math.max(0,SURVIVAL_ACTIVE_LIMIT-enemies.length);
   if(!slots){game.spawnTimer=.2;return;}
-  if(game.pendingBossWave){spawnEnemy(null,true,game.pendingBossWave);game.pendingBossWave=0;const first=game.spawnPlans.find(p=>p.remaining>0);if(first){first.remaining--;game.enemiesToSpawn--;}game.spawnTimer=.05;return;}
+  if(game.pendingBossWave){if(spawnEnemy(null,true,game.pendingBossWave)===false){game.spawnTimer=.2;return;}game.pendingBossWave=0;const first=game.spawnPlans.find(p=>p.remaining>0);if(first){first.remaining--;game.enemiesToSpawn--;}game.spawnTimer=.05;return;}
   const plan=game.spawnPlans.find(p=>p.remaining>0);if(!plan)return;
   const profile=SurvivalSystem.waveProfile(plan.wave);
   game.spawnTimer=(ACTIVE_MODE.spawnInterval||(()=>.5))(plan.wave);
   const count=Math.min(profile.spawnBatch||1,plan.remaining,slots);
+  const started=performance.now();
   for(let i=0;i<count;i++){
     const boss=profile.isBoss&&!plan.bossSpawned;
-    spawnEnemy(boss?null:pickEnemyType(plan.wave),boss,plan.wave);
+    if(spawnEnemy(boss?null:pickEnemyType(plan.wave),boss,plan.wave)===false){game.spawnTimer=.1;break;}
     if(boss){plan.bossSpawned=true;game._bossDone=true;}
     plan.remaining--;game.enemiesToSpawn--;
+    if(performance.now()-started>=4)break;
   }
   game.spawnPlans=game.spawnPlans.filter(p=>p.remaining>0);
   updateEnemyLeftUI();

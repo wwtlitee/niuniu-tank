@@ -3,7 +3,7 @@ const {createStaticServer}=require('./asset-runtime-catalog.cjs');
 const fs=require('node:fs'),assert=require('node:assert/strict');
 (async()=>{
  const server=await createStaticServer(process.cwd()),browser=await chromium.launch({headless:true,args:['--use-angle=d3d11']});
- const output='output/racing-v6.48.0';fs.mkdirSync(output,{recursive:true});
+ const output='output/racing-v10.0.0/runtime';fs.mkdirSync(output,{recursive:true});
  try{
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',r=>{if(r.status()>=400)errors.push(`${r.status()} ${r.url()}`);});
   await page.goto(`http://127.0.0.1:${server.address().port}/racing.html?autotest=1`);await page.waitForFunction(()=>window.racingReady);await page.screenshot({path:output+'/lobby.png'});
@@ -18,7 +18,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
   await page.evaluate(()=>{RacingTest.start();RacingTest.autodrive(15);});await page.screenshot({path:output+'/race.png'});
   const race=JSON.parse(await page.evaluate(()=>render_game_to_text()));assert.ok(race.time>10);
   for(const item of ['boost','shield','mine','missile']){
-   await page.evaluate(item=>{const g=RacingTest.game,c=g.cars[0];c.item=item;c.cooldown=0;if(item==='missile'){const target=g.cars[1],p=RacingRules.sample(c.lastS+30);Object.assign(target,{x:p.x,z:p.z,progress:c.progress+30,finished:false});}},item);
+   await page.evaluate(item=>{const g=RacingTest.game,c=g.cars[0];c.inventory=[null,null];c.slot=0;c.item=item;c.cooldown=0;if(item==='missile'){const target=g.cars[1],p=RacingRules.sample(c.lastS+30);Object.assign(target,{x:p.x,z:p.z,progress:c.progress+30,finished:false});}},item);
    await page.keyboard.press('e');const state=JSON.parse(await page.evaluate(()=>render_game_to_text()));assert.equal(state.item,null,item+' 应消耗');
    await page.evaluate(()=>advanceTime(150));await page.screenshot({path:output+'/'+item+'.png'});
   }

@@ -25,12 +25,12 @@
     fogFar: 126,
     exposure: 0.9,
     moonColor: 0x9db7d7,
-    moonIntensity: 0.7,
-    ambientColor: 0x344258,
-    ambientIntensity: 0.36,
-    hemisphereSky: 0x6681a6,
+    moonIntensity: 0.78,
+    ambientColor: 0x596b7d,
+    ambientIntensity: 0.46,
+    hemisphereSky: 0x8395a6,
     hemisphereGround: 0x15191c,
-    hemisphereIntensity: 0.52,
+    hemisphereIntensity: 0.64,
     lampColor: 0xffc56a,
     fogOpacity: 0.74,
     maxDynamicLights: 8,
@@ -66,6 +66,7 @@
   /* 人形尸潮已经按约四分之一的坦克尺度渲染；战斗参数必须共用同一比例，
      否则小模型会以坦克级伤害和速度冲刺。 */
   const ZOMBIE_COMBAT_SCALE = 0.375;
+  const HORDE_PRESENTATION=Object.freeze({modelScale:1.35,contactMultiplier:4});
 
   // 第10波六个接触位，兵种平均权重46/18；20分钟×3、25%护甲后800 HP/s。
   const WALL_ASSAULT_REFERENCE=Object.freeze({dps:800,contacts:6,timeMultiplier:3,armor:.25,typeWeight:46/18,interval:.9});
@@ -114,7 +115,7 @@
     shotgun: { shape: "pellet", radius: 0.075, length: 0.3, color: 0xffd677, trail: "spark" },
     incendiary: { shape: "fire-shell", radius: 0.2, length: 0.65, color: 0xff682e, trail: "fire" },
     grenade: { shape: "round-shell", radius: 0.27, length: 0.6, color: 0xd8aa58, trail: "smoke" },
-    tank: { shape: "tank-shell", radius: 0.18, length: 0.82, color: 0xc7d5d7, trail: "smoke-light" },
+    tank: { shape: "tank-shell", radius: 0.065, length: 0.46, color: 0x8f7647, trail: "smoke-light" },
   });
 
   const TURRET_RANGE_CURVES = Object.freeze({
@@ -188,7 +189,8 @@
   });
 
   const CAMPAIGN_WAVES = 10;
-  const CAMPAIGN_COUNTS = Object.freeze([10, 44, 78, 160, 280, 420, 580, 740, 880, 1000]);
+  const CAMPAIGN_BUDGET_COUNTS = Object.freeze([120, 180, 260, 420, 520, 620, 720, 840, 960, 1000]);
+  const CAMPAIGN_COUNTS = Object.freeze([600, 1000, 1400, 2000, 2400, 2800, 3200, 3600, 4000, 4000]);
   const BOSS_PROFILES = Object.freeze([
     Object.freeze({ wave: 5, id: "corpse_king", name: "尸王", enemyType: "zombie", mechanic: "summon", color: 0x4f6d3d, hpMultiplier: 6.3 }),
     Object.freeze({ wave: 10, id: "doom_keeper", name: "末日守卫", enemyType: "keeper", mechanic: "doom", color: 0x241b20, hpMultiplier: 18 }),
@@ -318,6 +320,7 @@
       archetype,
       label: ({ normal: "尸潮", fast: "疾行", heavy: "重装", ranged: "远程", ghost: "幽灵", lifesteal: "吸血", siege: "攻城", mixed: "混合", elite: "精英", boss: "首领", finale: "终焉" })[archetype],
       count,
+      densityBudgetScale: CAMPAIGN_BUDGET_COUNTS[campaignIndex] / count,
       hpMultiplier: isEndless
         ? finaleHp * endlessScale
         : tuning[1] * Math.pow(1.025, campaignWave - 1) * hpStage,
@@ -327,8 +330,8 @@
       speedMultiplier: tuning[2] * Math.min(1.15, 1 + (campaignWave - 1) * 0.005),
       armor: tuning[3],
       spawnInterval: 0,
-      spawnBatch: campaignWave <= 3 ? count : (campaignWave >= 10 || isEndless ? 48 : 36),
-      activeCap: 600,
+      spawnBatch: 24,
+      activeCap: 4000,
       giantChance,
       isBoss: archetype === "boss" || archetype === "finale",
       isEndless,
@@ -527,6 +530,7 @@
     enemyRunTimeScale,
     structureAttackCapacity,
     ZOMBIE_COMBAT_SCALE,
+    HORDE_PRESENTATION,
     WALL_ASSAULT_REFERENCE,
     meleeWaveMultiplier,
     wallProgress,

@@ -1,0 +1,96 @@
+{
+  "source": "Kenney repository library",
+  "license": "CC0",
+  "assets": [
+    {
+      "key": "racing-kit/roadStraight",
+      "file": "racing-kit/roadStraight.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\roadStraight.glb"
+    },
+    {
+      "key": "racing-kit/roadStraightBridge",
+      "file": "racing-kit/roadStraightBridge.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\roadStraightBridge.glb"
+    },
+    {
+      "key": "racing-kit/roadCornerLarge",
+      "file": "racing-kit/roadCornerLarge.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\roadCornerLarge.glb"
+    },
+    {
+      "key": "racing-kit/roadRampLong",
+      "file": "racing-kit/roadRampLong.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\roadRampLong.glb"
+    },
+    {
+      "key": "racing-kit/barrierRed",
+      "file": "racing-kit/barrierRed.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\barrierRed.glb"
+    },
+    {
+      "key": "racing-kit/pitsGarage",
+      "file": "racing-kit/pitsGarage.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\pitsGarage.glb"
+    },
+    {
+      "key": "racing-kit/pitsOffice",
+      "file": "racing-kit/pitsOffice.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\racing-kit\\Models\\GLTF format\\pitsOffice.glb"
+    },
+    {
+      "key": "city-kit-roads/bridge-pillar",
+      "file": "city-kit-roads/bridge-pillar.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-roads\\Models\\GLB format\\bridge-pillar.glb"
+    },
+    {
+      "key": "city-kit-roads/light-curved",
+      "file": "city-kit-roads/light-curved.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-roads\\Models\\GLB format\\light-curved.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-a",
+      "file": "city-kit-commercial/building-a.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-a.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-c",
+      "file": "city-kit-commercial/building-c.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-c.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-f",
+      "file": "city-kit-commercial/building-f.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-f.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-j",
+      "file": "city-kit-commercial/building-j.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-j.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-skyscraper-a",
+      "file": "city-kit-commercial/building-skyscraper-a.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-skyscraper-a.glb"
+    },
+    {
+      "key": "city-kit-commercial/building-skyscraper-c",
+      "file": "city-kit-commercial/building-skyscraper-c.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\building-skyscraper-c.glb"
+    },
+    {
+      "key": "city-kit-commercial/low-detail-building-wide-a",
+      "file": "city-kit-commercial/low-detail-building-wide-a.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-commercial\\Models\\GLB format\\low-detail-building-wide-a.glb"
+    },
+    {
+      "key": "city-kit-industrial/building-c",
+      "file": "city-kit-industrial/building-c.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-industrial\\Models\\GLB format\\building-c.glb"
+    },
+    {
+      "key": "city-kit-industrial/building-f",
+      "file": "city-kit-industrial/building-f.glb",
+      "source": "E:\\GameHub\\kenny\\raw\\city-kit-industrial\\Models\\GLB format\\building-f.glb"
+    }
+  ]
+}

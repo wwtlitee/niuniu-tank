@@ -130,7 +130,7 @@ test('绕行遵守移动预算、尝试另一侧，死亡单位不再挡路',asy
     seedContactCrowd(2,false);
     const [rear,front]=enemies,p=rear.group.position;
     rear.radius=front.radius=.3;rear.hordeLaneSide=1;rear.dir.set(0,0,-1);
-    front.group.position.copy(p);front.group.position.z-=.65;front.atGate=true;
+    front.group.position.copy(p);front.group.position.z-=.65;front.atGate=true;_animFrame++;
     const original=blockedForTank,start=p.clone();
     try{
       blockedForTank=(x)=>x>start.x;
@@ -230,7 +230,7 @@ test('持续进攻基地的96只尸群形成前后排，攻击上限和建筑碰
   assert.ok(result.minRatio>=.78,JSON.stringify(result));
   assert.equal(result.solid,0);
   assert.ok(result.damage>0,'接触的前排继续造成伤害');
-  assert.ok(result.peakAttackers<=8);
+  assert.ok(result.peakAttackers<=32);
   assert.deepEqual(errors,[]);
 });
 
@@ -288,7 +288,7 @@ test('第十波Boss拆掉峡谷墙后穿过缺口继续接近基地', async () =
   assert.deepEqual(errors,[]);
 });
 
-test('完整堡垒堵住谷口时尸群不能从两端挤过模型',async()=>{
+test('400只尸群堵住完整堡垒时不得重叠或穿墙',async()=>{
   const result=await page.evaluate(()=>{
     seedContactCrowd(0,false);game.enemiesToSpawn=0;game.wave=1;
     const wall={x:ACTIVE_MODE.canyon.x1,z:ACTIVE_MODE.canyon.z0},key=idx(wall.x,wall.z),c=cellCenter(wall.x,wall.z);
@@ -297,20 +297,23 @@ test('完整堡垒堵住谷口时尸群不能从两端挤过模型',async()=>{
     grid[wall.z][wall.x]=T_STEEL;steelHP.set(key,1e9);wallMeta.set(key,{lv:1,hp:1e9,anchor:wall});structCells.add(key);tileMeshes[key]=model;computeFlowField();
     let crossed=0;
     try{
-      for(let i=0;i<120;i++){
+      for(let i=0;i<400;i++){
         spawnEnemy('normal',false);const e=enemies.at(-1);e.spawnFlash=0;
         if(e.beam)scene.remove(e.beam);e.beam=null;
-        const x=c.x+3+Math.floor(i/12)*.5,z=c.z+(i%12-5.5)*.45;
+        const x=c.x+2+Math.floor(i/20)*.35,z=c.z+(i%20-9.5)*.25;
         e.group.position.set(x,heightAt(x,z),z);
       }
-      const passed=new Set();
-      for(let i=0;i<1200;i++){
-        _animFrame++;updateEnemies(1/60);
+      updateCrowdLod();
+      const passed=new Set(),started=performance.now();
+      for(let i=0;i<600;i++){
+        _animFrame++;updateEnemies(1/60);updateCrowdLod();
         for(const e of enemies)if(e.group.position.x<c.x-1.2)passed.add(e.hordeId);
       }
       crossed=passed.size;
       camera.position.set(c.x+11,PH+18,c.z+16);camera.lookAt(c.x-2,1,c.z);renderer.render(scene,camera);
-      return {crossed,hp:steelHP.get(key),count:enemies.length,radius:enemies[0].radius,hull:enemies[0].collisionHull,nearest:Math.min(...enemies.map(e=>e.group.position.x-c.x))};
+      let maxPenetration=0,overlappingPairs=0;
+      for(let a=0;a<enemies.length;a++)for(let b=a+1;b<enemies.length;b++){const hit=zombieBodyContact(enemies[a],enemies[b]);if(hit){maxPenetration=Math.max(maxPenetration,hit.depth);if(hit.depth>.025)overlappingPairs++;}}
+      return {rendered:enemies.filter(e=>e.group.visible).length+(crowdLodMesh?.count||0),maxPenetration,overlappingPairs,simulationMs:performance.now()-started,crossed,hp:steelHP.get(key),count:enemies.length,radius:enemies[0].radius,hull:enemies[0].collisionHull,nearest:Math.min(...enemies.map(e=>e.group.position.x-c.x))};
     }finally{
       window.cleanupSealedWall=()=>{grid[wall.z][wall.x]=original;steelHP.delete(key);wallMeta.delete(key);structCells.delete(key);delete tileMeshes[key];if(model.parent)model.parent.remove(model);disposeTransientObject3D(model);computeFlowField();};
     }
@@ -318,10 +321,11 @@ test('完整堡垒堵住谷口时尸群不能从两端挤过模型',async()=>{
   await page.screenshot({path:path.join(output,'sealed-wall.png')});
   await page.evaluate(()=>cleanupSealedWall());
   fs.writeFileSync(path.join(output,'sealed-wall.json'),JSON.stringify(result,null,2));
+  assert.equal(result.overlappingPairs,0,JSON.stringify(result));assert.equal(result.count,400);assert.equal(result.rendered,400);
   assert.equal(result.crossed,0,JSON.stringify(result));assert.ok(result.hp>0&&result.hp<1e9,JSON.stringify(result));
 });
 
-test('躯干轮廓来自模型且尺寸有限',async()=>{
+test('头部与躯干轮廓来自模型且尺寸有限',async()=>{
   const result=await page.evaluate(()=>{
     seedContactCrowd(1,false);const e=enemies[0],box=enemyModelBounds(e);
     return {radius:e.radius,hull:e.collisionHull,box:box.getSize(new THREE.Vector3()).toArray()};
@@ -329,4 +333,23 @@ test('躯干轮廓来自模型且尺寸有限',async()=>{
   fs.writeFileSync(path.join(output,'body-hull.json'),JSON.stringify(result,null,2));
   assert.ok(result.radius<1,JSON.stringify(result));assert.ok(result.hull.length>=3);
   assert.ok(result.radius<Math.max(result.box[0],result.box[2])*.3,'伸展手臂不能撑大躯干碰撞');
+});
+
+
+test('四倍接触位抵消普通僵尸降伤且Boss占用加权槽位',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(0,false);game.wave=10;
+    const normal={boss:false,type:'normal',sourceWave:10},boss={boss:true,bossMechanic:'doom',sourceWave:10};
+    const damage=[];
+    for(const difficulty of [.5,.75,1,1.5]){
+      game.difficultyMultiplier=difficulty;
+      const baseline=SurvivalSystem.ZOMBIE_COMBAT_SCALE*SurvivalSystem.meleeWaveMultiplier(10)*survivalPressureMultiplier()*difficulty;
+      damage.push({baseline:baseline*6,actual:enemyMeleeDamage(normal)*24,boss:enemyMeleeDamage(boss),expectedBoss:baseline*5});
+    }
+    const candidates=[boss,...Array.from({length:40},()=>({...normal}))];
+    const slots=selectHordeContactSlots(candidates,6);
+    return {damage,slots:slots.length,weighted:slots.reduce((sum,e)=>sum+(e.boss?4:1),0)};
+  });
+  for(const row of result.damage){assert.ok(Math.abs(row.actual-row.baseline)<1e-8);assert.ok(Math.abs(row.boss-row.expectedBoss)<1e-8);}
+  assert.equal(result.slots,21);assert.equal(result.weighted,24);
 });

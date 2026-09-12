@@ -224,6 +224,7 @@ test('点击左上资源不向地图下单，金矿升级仍可用鼠标完成',
     return goldMines[0].level;
   });
   await page.locator('#cmdcard .cmdBtn').filter({ hasText: '升级' }).click();
+  await page.evaluate(() => { for (let i = 0; i < 300; i++) updateUpgradeJobs(1 / 60); });
   assert.equal(await page.evaluate(() => goldMines[0].level), level + 1);
   await page.evaluate(() => {
     state = STATE.PAUSED;
