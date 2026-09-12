@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.4.5";
+const GAME_VERSION="8.4.6";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -5264,7 +5264,7 @@ function wc3RenderSel(){
     if(game.researchTier>=1)tierName=`高级研究院 · ${BASE_ROUTES[game.doctrine]?.name||""}`;
     else if(game.doctrine)tierName="初级研究院 · 可升阶高级";
     nm.textContent=tierName;hp=s.hp;hpMax=s.maxHp;
-    const lines=Object.values(TECH_TREE).filter((tech)=>game.researchTier<1?tech.tier===0:tech.tier===1&&tech.route===game.doctrine).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`);
+    const lines=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&tech.route===game.doctrine)).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`);
     html=lines.join(" · ")+(game.doctrine?` · 专属 ${Object.keys(game.doctrineTech||{}).filter(k=>game.doctrineTech[k]>0).length}`:"")+`<br>金矿 ${goldMines.length}/${mineUnlockedCount()} · 墙上限 ${wallUnlockedMaxLevel()} · 炮台上限 ${turretUnlockedMaxLevel()}`;
   }else if(k==="house"&&s&&builtHouses.includes(s)){
     ic.innerHTML=UIIcons.svg("house");nm.textContent=`人口房 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
@@ -5510,7 +5510,7 @@ function commandItemsForSelection(){
   if(kind==="heroHub")return heroCommands();
   if(kind==="research"){
     const cap=researchUnlockedMaxLevel();
-    const normal=Object.values(TECH_TREE).filter((tech)=>game.researchTier<1?tech.tier===0:tech.tier===1&&tech.route===game.doctrine).map((tech,index)=>{
+    const normal=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&tech.route===game.doctrine)).map((tech,index)=>{
       const lv=game.tech[tech.id]||0,cost=techCost(tech.id),maxed=lv>=cap,unlocked=techUnlocked(tech.id);
       return {upgradeType:'tech',upgradeId:tech.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,allowQueue:true,act:()=>upgradeTech(tech.id)};
     });
@@ -5550,7 +5550,7 @@ function renderCmdCard(){
   const items=decorateUpgradeCommands(commandItemsForSelection().filter((item)=>!item.sep));
   const factoryRef=wc3Sel&&wc3Sel.kind==="factory"?wc3Sel.ref:null;
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
-  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
+  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.heroSkill&&!!game.autoHeroSkills?.[it.heroSkill],it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
   _cmdCardSignature=signature;wrap.innerHTML="";
   items.forEach(it=>{
@@ -5573,6 +5573,7 @@ function renderCmdCard(){
       +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
+    if(it.heroSkill){if(it.heroAuto)d.classList.add("auto-upgrade");d.oncontextmenu=(event)=>{event.preventDefault();if(startAutoHeroSkill(it.heroSkill)&&!it.dim)it.act?.();toast(" 已启动无人机自动配送");};}
     if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();if(it.batchUpgrade){const selected=selectedEntriesOfKind(it.upgradeType);selected.forEach(({ref})=>startAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref)));if(!it.dim)it.act?.();}else if(startAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)&&!it.dim){it.act?.();}toast(" 已启动全部目标的自动逐级升级");};}
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;

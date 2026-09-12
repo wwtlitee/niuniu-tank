@@ -80,6 +80,6 @@ function updateHeroLogistics(dt){
   if(d.phase==='outbound'){d.phase='install';d.elapsed=0;}
   else if(d.phase==='install'){
     d.elapsed+=dt;c.cargo.position.y=-1-Math.min(1,d.elapsed/1.2)*.8;
-    if(d.elapsed>=1.2&&order&&alive){a.skills[order.skill]=Math.max(a.skills[order.skill],order.level);a.orders.shift();rebuildHeroModules(heroTank);sfx.levelup();d.installed=true;d.phase='return';d.elapsed=0;c.cargo.position.y=-1;refreshHeroUI();}
+    if(d.elapsed>=1.2&&order&&alive){a.skills[order.skill]=Math.max(a.skills[order.skill],order.level);a.orders.shift();rebuildHeroModules(heroTank);sfx.levelup();d.installed=true;d.phase='return';d.elapsed=0;c.cargo.position.y=-1;resumeAutoHeroSkills(true);refreshHeroUI();}
   }else{a.delivery=null;c.root.visible=false;}
 }
