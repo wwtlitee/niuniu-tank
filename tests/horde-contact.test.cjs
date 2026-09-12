@@ -133,7 +133,7 @@ test('前排死亡后最后一只排队敌人会恢复前进', async () => {
     for(let i=0;i<120;i++){_animFrame++;updateEnemies(1/60);}
     return {slowed,moved:rear.group.position.distanceTo(before),scale:rear.crowdSpeedScale};
   });
-  assert.ok(result.slowed<.5,JSON.stringify(result));
+  assert.equal(result.slowed,1,'前排接触不得把减速传播给后排');
   assert.ok(result.moved>1,JSON.stringify(result));
   assert.equal(result.scale,1);
 });

@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.5.1";
+const GAME_VERSION="8.6.0";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -6131,7 +6131,7 @@ function applyHordeSeparation(dt){
   const key=(x,z)=>Math.floor(x/CELL)+Math.floor(z/CELL)*512;
   for(const e of active)e.hordeMass=e.boss||e.giant?3:1;
   // Two bounded projections allow a rear rank to yield without a per-frame teleport.
-  for(let iteration=0;iteration<2;iteration++){
+  for(let iteration=0;iteration<3;iteration++){
     buckets.clear();
     for(const e of active){
       const k=key(e.group.position.x,e.group.position.z);
@@ -6149,16 +6149,10 @@ function applyHordeSeparation(dt){
         for(const other of neighbors){
           if(other.hordeId<=e.hordeId)continue;
           let dx=e.hordeX-other.hordeX,dz=e.hordeZ-other.hordeZ;
-          const d2=dx*dx+dz*dz,desired=(e.radius+other.radius)*.96;
+          const d2=dx*dx+dz*dz,desired=(e.radius+other.radius)*1.02;
           if(d2>=(desired+.18)*(desired+.18))continue;
           const distance=Math.sqrt(d2);
-          // Ease incoming movement before contact, so following units queue instead of
-          // continuously advancing into the separation correction of the front rank.
-          if(distance>1e-6){
-            const speedScale=Math.max(.12,Math.min(1,(distance-desired)/.18));
-            if(-(e.dir.x*dx+e.dir.z*dz)>distance*.6){e.crowdSpeedScale=Math.min(e.crowdSpeedScale,speedScale);e.crowdContact=true;}
-            if(other.dir.x*dx+other.dir.z*dz>distance*.6){other.crowdSpeedScale=Math.min(other.crowdSpeedScale,speedScale);other.crowdContact=true;}
-          }
+          /* 接触只影响当前单位的分离力，绝不把前排减速传播给后排。 */
           if(d2>=desired*desired)continue;
           if(distance<1e-6){
             const angle=((e.hordeId*37+other.hordeId*101)%360)*Math.PI/180;
@@ -6175,7 +6169,7 @@ function applyHordeSeparation(dt){
     for(const e of active){
       const length=Math.hypot(e.hordePushX,e.hordePushZ);
       if(length<1e-6)continue;
-      const step=Math.min(4*Math.min(dt,.025),length*.7),scale=step/length;
+      const step=Math.min(4*Math.min(dt,.025),length*.9),scale=step/length;
       const p=e.group.position,curH=heightAt(p.x,p.z),probe=enemyNavigationRadius(e);
       const dx=e.hordePushX*scale,dz=e.hordePushZ*scale;
       // Terrain remains solid. Allow backward movement as well as movement along a wall.
@@ -6192,6 +6186,30 @@ function enemyNavigationRadius(enemy){
   /* 尸群分离仍使用完整实体半径，保留满屏拥挤和大体型压迫感；
      地形导航半径限制在约三分之一格，避免重装单位被同伴挤到单格道路边缘后永久楔死。 */
   return Math.min(enemy.radius,TILE*.34);
+}
+
+/* 尸群遇到前排实体时切换到相邻车道，后排保持自身速度继续推进。 */
+function hordeLaneBlocked(enemy,dir){
+  if(ACTIVE_MODE.key!=="survival"||!dir)return false;
+  const p=enemy.group.position;
+  for(const other of enemies){
+    if(!other||other===enemy||other.dead||other.atGate)continue;
+    const dx=other.group.position.x-p.x,dz=other.group.position.z-p.z;
+    const forward=dx*dir.x+dz*dir.z;
+    if(forward<=0||forward>enemy.radius+other.radius+.48)continue;
+    const lateral=Math.abs(dx*dir.z-dz*dir.x);
+    if(lateral<enemy.radius+other.radius*.72)return true;
+  }
+  return false;
+}
+function hordeLaneDetour(enemy,dir,spd,curH,radius){
+  if(!hordeLaneBlocked(enemy,dir))return false;
+  const side=enemy.hordeId%2?1:-1,sx=-dir.z*side,sz=dir.x*side;
+  const distance=Math.max(spd*1.5,.12);
+  const nx=enemy.group.position.x+sx*distance,nz=enemy.group.position.z+sz*distance;
+  if(blockedForTank(nx,nz,radius,curH))return false;
+  enemy.group.position.x=nx;enemy.group.position.z=nz;enemy.thinkTimer=.08;
+  return true;
 }
 
 /* 丧尸是矮模型，射击目标必须取模型包围盒内部的身体点，不能继续用根节点的地面坐标。 */
@@ -6474,8 +6492,17 @@ function updateEnemies(dt){
       const wallAttackSlot=wallInReach&&enemyWallAttackSlot(e,targetWall);
       const nx=e.group.position.x+e.dir.x*spd,nz=e.group.position.z+e.dir.z*spd;
       const navigationRadius=enemyNavigationRadius(e);
-      if(!wallInReach&&e.dir.x&&!blockedForTank(nx,e.group.position.z,navigationRadius,curH)){e.group.position.x=nx;moved=true;}
-      if(!wallInReach&&e.dir.z&&!blockedForTank(e.group.position.x,nz,navigationRadius,curH)){e.group.position.z=nz;moved=true;}
+      if(!wallInReach&&!hordeLaneDetour(e,e.dir,spd,curH,navigationRadius)){
+        if(e.dir.x&&!blockedForTank(nx,e.group.position.z,navigationRadius,curH)){e.group.position.x=nx;moved=true;}
+        if(e.dir.z&&!blockedForTank(e.group.position.x,nz,navigationRadius,curH)){e.group.position.z=nz;moved=true;}
+      }else if(!wallInReach)moved=true;
+      /* 前方被尸群占住时，不降低后排速度；尝试沿流向法线换到相邻空位。 */
+      if(ACTIVE_MODE.key==="survival"&&!wallInReach&&!moved&&(e.dir.x||e.dir.z)){
+        const side=e.hordeId%2?1:-1,sx=-e.dir.z*side,sz=e.dir.x*side;
+        if(!blockedForTank(e.group.position.x+sx*spd*1.35,e.group.position.z+sz*spd*1.35,navigationRadius,curH)){
+          e.group.position.x+=sx*spd*1.35;e.group.position.z+=sz*spd*1.35;moved=true;e.thinkTimer=.08;
+        }
+      }
       /*  P0-3 终修（trace7 实测）：单轴推进被挡时沿垂直轴「向本格格心」滑移脱困（仅生存）。
          楔死场景：敌人贴坡道走廊 row34 行缘（pz=42.0 恰为行边界），南向角点采样落进 (·,33) 平地
          h=0，高差 -1.38 曾超 STEP_DOWN(1.3) → x 轴移动被判挡；且流场方向 [-1,0] 无 z 分量，
