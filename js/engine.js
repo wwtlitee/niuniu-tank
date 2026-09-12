@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.4.1";
+const GAME_VERSION="8.4.2";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -5177,13 +5177,13 @@ function wc3SetSelection(entries){
     if(!entry.ref.group)return;
     let ring=wc3ExtraRings[index];
     if(!ring){
-      ring=new THREE.Mesh(new THREE.RingGeometry(.72,1,32),new THREE.MeshBasicMaterial({color:0x48e06f,transparent:true,opacity:.8,side:THREE.DoubleSide,depthWrite:false}));
+      ring=new THREE.Mesh(new THREE.RingGeometry(.72,1,32),new THREE.MeshBasicMaterial({color:0x74f0a0,transparent:true,opacity:.72,side:THREE.DoubleSide,depthWrite:false}));
       ring.rotation.x=-Math.PI/2;scene.add(ring);wc3ExtraRings.push(ring);
     }
-    const p=entry.ref.group.position;ring.position.set(p.x,heightAt(p.x,p.z)+.08,p.z);ring.scale.setScalar(entry.ref.radius||1.3);ring.visible=true;
+    const p=entry.ref.group.position;ring.position.set(p.x,heightAt(p.x,p.z)+.08,p.z);ring.scale.setScalar((entry.ref.radius||1.3)*(1+.06*Math.sin(performance.now()*.004+index)));ring.material.opacity=.58+.18*Math.sin(performance.now()*.004+index);ring.visible=true;
   });
   const hud=$("hud");if(hud)hud.classList.add("hasSel");
-  const sp=$("selPanel");if(sp)sp.classList.add("show");
+  const sp=$("selPanel");if(sp){sp.classList.add("show");sp.classList.toggle("multi",wc3Selection.length>1);}
 }
 function baseSelectionRef(){
   return {group:baseGroup,kind:"base",get hp(){return game.gateHp;},get maxHp(){return game.gateMaxHp;}};
@@ -5228,16 +5228,16 @@ function issueSelectionCommand(command,target=null){
 }
 function wc3RenderSel(){
   const sp=$("selPanel");if(!sp)return;
-  if(!wc3Sel){sp.classList.remove("show");return;}
+  if(!wc3Sel){sp.classList.remove("show","multi");return;}
   wc3UpdateSelectionRing();
   const ic=$("spIcon"),nm=$("spName"),st=$("spStat"),bw=$("spBarWrap"),fg=$("spBarFg"),acts=$("spActs");
   const s=wc3Sel.ref,k=wc3Sel.kind;
   let html="",hp=-1,hpMax=1,btns="";
   if(wc3Selection.length>1){
-    ic.innerHTML=UIIcons.svg("shield");nm.textContent=`已选择 ${wc3Selection.length} 个目标`;
+    ic.innerHTML=UIIcons.svg("shield");nm.textContent=`已选择 ${wc3Selection.length} 个单位`;
     const kindNames={wall:"巨岩墙",goldmine:"金矿",turret:"炮台",beacon:"医疗灯塔",factory:"重工厂",research:"研究院",base:"基地"};
     const counts={};wc3Selection.forEach((entry)=>{const name=entry.kind==="player"?"指挥车":entry.ref.name||kindNames[entry.kind]||"单位";counts[name]=(counts[name]||0)+1;});
-    html=Object.entries(counts).map(([name,count])=>`${name} ×${count}`).join(" · ");
+    html=`批量控制 · ${Object.entries(counts).map(([name,count])=>`${name} ×${count}`).join(" · ")}<br>右键地面移动 · A 攻击移动 · S 停止`;
   }else if(k==="construction"&&constructionJobs.includes(s)){
     ic.innerHTML=UIIcons.svg("build");nm.textContent=s.build.name;
     const phase=s.phase==="building"?`施工中 · ${Math.ceil(s.duration-s.elapsed)} 秒`:s.phase==="returning"?"工程师返回基地":s.route?"工程师赶往工地":"道路受阻，等待通行";
@@ -5546,17 +5546,19 @@ function renderCmdCard(){
     if(it.branchId)d.dataset.branch=it.branchId;
     if(it.commandId)d.dataset.commandId=it.commandId;
     d.setAttribute("aria-disabled",it.dim?"true":"false");
-    d.className="cmdBtn"+(it.category?" category-"+it.category:"")+(it.sel?" active":"")+(it.dim?" disabled":"")
+    const autoEnabled=it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner&&isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner);
+    d.className="cmdBtn"+(it.category?" category-"+it.category:"")+(it.sel?" active":"")+(autoEnabled?" auto-upgrade":"")+(it.dim?" disabled":"")
       +(it.hot==="A"&&wc3AttackMove?" active":"");
     const queued=it.autoType&&factoryRef?(factoryRef.queue||[]).filter((q)=>q.typeId===it.autoType).length:0;
     const producing=it.autoType&&factoryRef&&factoryRef.queue[0]&&factoryRef.queue[0].typeId===it.autoType;
     d.innerHTML=`<span class="ck">${it.hot||""}</span><span class="ci">${UIIcons.svg(it.icon)}</span><span class="cn">${it.name||""}</span>`
       +(it.price!=null?`<span class="cp">${it.price}</span>`:"")
       +(queued?`<span class="cq">${queued}</span>`:"")
+      +(autoEnabled?`<span class="autoBadge">自动</span>`:"")
       +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
-    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();toggleAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner);};if(isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))d.classList.add("active");}
+    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();if(startAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)&&!it.dim){it.act?.();}toast(" 已启动自动逐级升级");};}
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;
       tip.innerHTML=`<div class="t">${UIIcons.svg(it.icon)} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;

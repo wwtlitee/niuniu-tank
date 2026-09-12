@@ -495,6 +495,13 @@ kbd {
   width: 20px;
   height: 20px;
 }
+#selPanel.multi #spName {
+  color: #d8f3df;
+}
+#selPanel.multi #spIcon {
+  border-color: #74f0a0;
+  background: #273a30;
+}
 .spMain {
   flex: 1;
   min-width: 0;
@@ -625,6 +632,29 @@ kbd {
 .cmdBtn.active {
   border-color: var(--accent);
   background: #384338;
+}
+.cmdBtn.auto-upgrade {
+  border-color: #e6bd61;
+  background: linear-gradient(180deg, #4a4027, #302e24);
+  box-shadow: inset 0 0 0 1px rgba(255, 218, 125, .18), 0 0 10px rgba(230, 189, 97, .12);
+}
+.cmdBtn.auto-upgrade::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px dashed rgba(255, 218, 125, .45);
+  pointer-events: none;
+}
+.cmdBtn .autoBadge {
+  position: absolute;
+  left: 3px;
+  bottom: 2px;
+  padding: 1px 3px;
+  color: #17130a;
+  background: #e6bd61;
+  border-radius: 2px;
+  font: 9px var(--mono);
+  font-weight: 700;
 }
 .cmdBtn.disabled {
   opacity: 0.44;

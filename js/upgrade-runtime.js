@@ -14,11 +14,10 @@ function upgradeOwnerKey(o){return `${o.kind}:${o.x}:${o.z}`;}
 const AUTO_UPGRADE_TYPES=new Set(['goldmine','house','beacon','turret','wall','tech','breakthrough','doctrine']);
 function upgradeAutoKey(type,id,owner){return `${type}:${id}:${upgradeOwnerKey(owner)}`;}
 function isAutoUpgrade(type,id,owner){return !!game.autoUpgrades?.[upgradeAutoKey(type,id,owner)];}
-function toggleAutoUpgrade(type,id,owner){
+function startAutoUpgrade(type,id,owner){
   if(!AUTO_UPGRADE_TYPES.has(type)||!owner)return false;
-  game.autoUpgrades||(game.autoUpgrades={});const key=upgradeAutoKey(type,id,owner);
-  if(game.autoUpgrades[key])delete game.autoUpgrades[key];else game.autoUpgrades[key]=true;
-  renderCmdCard();toast(game.autoUpgrades[key]?' 已开启自动逐级升级':' 已关闭自动逐级升级');return true;
+  game.autoUpgrades||(game.autoUpgrades={});game.autoUpgrades[upgradeAutoKey(type,id,owner)]=true;
+  renderCmdCard();return true;
 }
 function resolveUpgradeOwner(o){
   if(o.kind==='base')return baseAlive&&baseGroup?{group:baseGroup}:null;
