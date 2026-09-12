@@ -37,12 +37,12 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.7.1";
+const GAME_VERSION="8.8.0";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
 let HALF = GRID*TILE/2;
-const PH = 2.2;                       // 高地高度（v4.3：坡道 3 格每格 0.733）
+let PH = 2.2; // 经典地图保留原高度，生存高台在模式切换时设置。
 
 function makeSurvivalGroundMaterial(){
   const texture=makeSurvivalPlateauTexture();
@@ -93,6 +93,7 @@ function makeSurvivalPlateauTexture(){
 
 /* 应用模式配置（home.js 进入模式前调用） */
 function applyModeConfig(m){
+  PH=m.mapType==="survival"?3.4:2.2;
   GRID = m.GRID;
   HALF = GRID*TILE/2;
   configureModeAtmosphere(m);
@@ -3159,7 +3160,6 @@ function solidForTank(t,isBullet){
    1.7 > 1.65 放行贴缘通行；台面跳崖落差 2.2 仍 > 1.7 继续拦 —— 上下界之间取值安全。 */
 const STEP_UP=0.9;
 const STEP_DOWN=1.7;
-const RAMP_STEP_UP=PH/2+.15; // 1×1 坡道格心到高台格心的允许抬升
 // Mixed-height cells describe a build restriction, not a solid square cliff collider.
 function isNaturalBoundaryCell(x,z){
   const key=idx(x,z);
@@ -3370,7 +3370,7 @@ function flowStepRise(ax,az,bx,bz){
 function flowCanStep(ax,az,bx,bz){
   const preservesRamp=(x,z)=>grid[z][x]===T_RAMP||wallMeta.get(idx(x,z))?.wasRamp===true;
   const touchesRamp=preservesRamp(ax,az)||preservesRamp(bx,bz);
-  const limit=touchesRamp?RAMP_STEP_UP:STEP_UP;
+  const limit=touchesRamp?PH/2+.15:STEP_UP;
   if(_stepStamp!==navigationStamp||_stepW!==GRID||!_stepCache){
     _stepCache=new Uint8Array(GRID*GRID*8);_stepCache.fill(255);_stepStamp=navigationStamp;_stepW=GRID;
   }
@@ -4822,19 +4822,20 @@ function updateBuiltTurrets(dt){
 
     const effectiveRange=(ACTIVE_MODE.key==="survival"?SurvivalSystem.rangeAtResearchLevel(t.turretKey||t.kind,turretLv)*TILE:t.range*rMult)*(1+.03*doctrineLevel('range'));
     const rangeSq=effectiveRange*effectiveRange;
+    const muzzle=t.group.userData.turret?.userData.muzzleMarker;
+    const sightOrigin=muzzle?muzzle.getWorldPosition(new THREE.Vector3()):t.group.position.clone().add(new THREE.Vector3(0,1.5,0));
     const validTarget=(enemy)=>{
       if(!isEnemyCombatTarget(enemy)||now<enemy.spawnFlash||!isPositionVisible(enemy.group.position))return false;
       const dx=enemy.group.position.x-t.group.position.x,dz=enemy.group.position.z-t.group.position.z;
-      return dx*dx+dz*dz<=rangeSq;
+      return dx*dx+dz*dz<=rangeSq&&(ACTIVE_MODE.key!=="survival"||terrainFireLineClear(sightOrigin,enemyAimPoint(enemy)));
     };
     let tgt=validTarget(t.lockTarget)?t.lockTarget:null;
     if(!tgt){
       let best=rangeSq;
       for(const e of enemies){
-        if(!validTarget(e))continue;
         const dx=e.group.position.x-t.group.position.x,dz=e.group.position.z-t.group.position.z;
         const d2=dx*dx+dz*dz;
-        if(d2<best){best=d2;tgt=e;}
+        if(d2<best&&validTarget(e)){best=d2;tgt=e;}
       }
       t.lockTarget=tgt;
     }
@@ -6204,6 +6205,52 @@ function applyHordeSeparation(dt){
   }
 }
 
+/* 坡口的支撑层只改变垂直姿态；水平寻路、墙体和攻击槽位继续使用实体规则。
+   支撑按固定层序求解，禁止循环互相抬高；同伴离开/死亡后平滑落回坡面。 */
+function updateHordeClimbing(dt){
+  if(ACTIVE_MODE.key!=="survival")return;
+  const ramp=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row),buckets=new Map(),cellSize=2;
+  const live=enemies.filter(e=>e.alive&&!e.dying);
+  for(const e of live){
+    const p=e.group.position,key=`${Math.floor(p.x/cellSize)},${Math.floor(p.z/cellSize)}`;
+    if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(e);
+  }
+  for(const e of live){
+    const p=e.group.position,ground=heightAt(p.x,p.z);
+    let support=0,contacts=0;
+    const nearRamp=Math.abs(p.z-ramp.z)<TILE*.8&&p.x>ramp.x-TILE&&p.x<ramp.x+TILE*2;
+    if(nearRamp&&!e.boss&&e.hordeId%3===0){
+      const cx=Math.floor(p.x/cellSize),cz=Math.floor(p.z/cellSize);
+      for(let z=cz-1;z<=cz+1;z++)for(let x=cx-1;x<=cx+1;x++){
+        for(const other of buckets.get(`${x},${z}`)||[]){
+          if(other===e||other.hordeId%3===0)continue;
+          const q=other.group.position,d=Math.hypot(p.x-q.x,p.z-q.z),reach=(e.radius+other.radius)*1.5;
+          if(d>reach)continue;
+          const groundOther=heightAt(q.x,q.z);
+          if(Math.abs(groundOther-ground)>.8)continue;
+          contacts++;
+          support=Math.max(support,Math.min(.85,Math.max(.22,other._lodHeight*.6)));
+        }
+      }
+    }
+    const target=contacts>=2?support:0;
+    e.hordeLift=(e.hordeLift||0)+(target-(e.hordeLift||0))*Math.min(1,dt*(target?4:7));
+    if(e.hordeLift<.001)e.hordeLift=0;
+    p.y=ground+e.hordeLift;
+    const climb=nearRamp?Math.max(0,Math.min(.5,(heightAt(p.x-.35,p.z)-ground)*.7)):0;
+    e.group.rotation.x+=(-climb-(e.hordeLift>0?.16:0)-e.group.rotation.x)*Math.min(1,dt*7);
+  }
+}
+
+function terrainFireLineClear(from,to){
+  const distance=Math.hypot(to.x-from.x,to.z-from.z),steps=Math.max(1,Math.ceil(distance/.25));
+  for(let i=1;i<steps;i++){
+    const t=i/steps,x=from.x+(to.x-from.x)*t,z=from.z+(to.z-from.z)*t;
+    if(from.y+(to.y-from.y)*t<heightAt(x,z)+.025)return false;
+  }
+  return true;
+}
+
 function enemyNavigationRadius(enemy){
   /* 尸群分离仍使用完整实体半径，保留满屏拥挤和大体型压迫感；
      地形导航半径限制在约三分之一格，避免重装单位被同伴挤到单格道路边缘后永久楔死。 */
@@ -6654,6 +6701,7 @@ function updateEnemies(dt){
     }
   }
   applyHordeSeparation(dt);
+  updateHordeClimbing(dt);
   if(ACTIVE_MODE.key==="survival")spawnPendingSurvivalEnemies(dt);
   else if(survivalCombatRunning()&&game.enemiesToSpawn>0){
     if(!Number.isFinite(game.spawnTimer))game.spawnTimer=0;
@@ -6708,6 +6756,7 @@ function updateWatchdog(dt){
 
 /* 单颗子弹在某位置的碰撞判定：返回 true 表示子弹被消耗 */
 function bulletCollide(b,p){
+  if(ACTIVE_MODE.key==="survival"&&p.y<heightAt(p.x,p.z))return true;
   // 墙体（ P4-3：塔弹 thruWall → 穿透玩家墙/原生钢墙/建筑，不被悬崖和自家构筑挡炮）
   const c=cellOf(p.x,p.z);
   if(inMap(c.x,c.z)){

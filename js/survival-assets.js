@@ -86,7 +86,7 @@
   }
 
   return Object.freeze({
-    version: "8.7.1",
+    version: "8.8.0",
     primaryTerrainFamily: "platformer",
     allowedFamilies: Object.freeze(["platformer", "castle", "monsters", "td", "nature", "graveyard", "survivors", "retro", "protagonists", "characters", "industrial"]),
     excludedFamilies: Object.freeze({

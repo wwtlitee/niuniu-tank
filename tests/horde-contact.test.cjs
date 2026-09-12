@@ -61,6 +61,55 @@ after(async () => {
   if(server)await new Promise(r => server.close(r));
 });
 
+test('加高坡口的200只尸群形成支撑层，散开落地，俯射遵守实际地形', async () => {
+  const initial=await page.evaluate(()=>{
+    seedContactCrowd(0,false);game.enemiesToSpawn=0;
+    const r=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row);
+    for(let i=0;i<200;i++){
+      spawnEnemy('normal',false);const e=enemies.at(-1);
+      if(e.beam)scene.remove(e.beam);e.beam=null;e.spawnFlash=0;e.hp=e.maxHp=1e9;
+      const x=r.x-1+(i%25)*.45,z=r.z+(Math.floor(i/25)-3.5)*.4;
+      e.group.position.set(x,heightAt(x,z),z);e.dir.set(-1,0,0);
+    }
+    for(let i=0;i<90;i++){_animFrame++;applyHordeSeparation(1/60);updateHordeClimbing(1/60);}
+    camera.position.set(r.x+15,PH+13,r.z+15);camera.lookAt(r.x-1,PH*.5,r.z);
+    renderer.toneMappingExposure=1.25;renderer.render(scene,camera);
+    const origin=new THREE.Vector3(r.x-2,PH+2,r.z),target=new THREE.Vector3(r.x+5,1,r.z);
+    return {height:PH,raised:enemies.filter(e=>e.hordeLift>.15).length,
+      peak:Math.max(...enemies.map(e=>e.hordeLift)),clear:terrainFireLineClear(origin,target),
+      blocked:terrainFireLineClear(new THREE.Vector3(r.x-2,.5,r.z),target),
+      underground:bulletCollide({thruWall:true},new THREE.Vector3(r.x-2,.1,r.z))};
+  });
+  await page.screenshot({path:path.join(output,'ramp-pile.png')});
+  fs.writeFileSync(path.join(output,'ramp-pile.json'),JSON.stringify(initial,null,2));
+  assert.equal(initial.height,3.4);assert.ok(initial.raised>=5,JSON.stringify(initial));
+  assert.ok(initial.peak<=.85);assert.equal(initial.clear,true);assert.equal(initial.blocked,false);assert.equal(initial.underground,true);
+  const settled=await page.evaluate(()=>{
+    const e=enemies.find(e=>e.hordeLift>.15),before=enemyAimPoint(e).y;
+    for(const other of enemies)if(other!==e)other.alive=false;
+    for(let i=0;i<180;i++)updateHordeClimbing(1/60);
+    const after=enemyAimPoint(e).y;
+    return {lift:e.hordeLift,drop:before-after};
+  });
+  assert.equal(settled.lift,0);assert.ok(settled.drop>.1,JSON.stringify(settled));
+  const advancing=await page.evaluate(()=>{
+    for(const e of enemies)e.alive=true;
+    const r=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row);
+    let raised=0;
+    for(let i=0;i<360;i++){
+      _animFrame++;updateEnemies(1/60);
+      raised=Math.max(raised,enemies.filter(e=>e.hordeLift>.15).length);
+    }
+    for(const e of enemies){if(e.mixer)e.mixer.update(.1);e.group.updateWorldMatrix(true,true);}
+    renderer.render(scene,camera);
+    return {raised,crossed:enemies.filter(e=>e.group.position.x<r.x-TILE*.5).length};
+  });
+  await page.screenshot({path:path.join(output,'ramp-assault-live.png')});
+  fs.writeFileSync(path.join(output,'ramp-assault-live.json'),JSON.stringify(advancing,null,2));
+  assert.ok(advancing.raised>0,JSON.stringify(advancing));assert.ok(advancing.crossed>0,JSON.stringify(advancing));
+  assert.deepEqual(errors,[]);
+});
+
 test('基地前等待攻击的尸群仍然占据空间，完全重叠可以恢复', async () => {
   const result = await page.evaluate(() => {
     seedContactCrowd(48, true);
@@ -73,6 +122,24 @@ test('基地前等待攻击的尸群仍然占据空间，完全重叠可以恢�
   assert.equal(result.severe,0,JSON.stringify(result));
   assert.ok(result.minRatio>=.89,JSON.stringify(result));
   assert.equal(result.solid,0);
+});
+
+test('坡顶炮台真实俯射能命中坡下敌人',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(0,false);
+    const r=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row);
+    spawnEnemy('normal',false);const e=enemies.at(-1);e.spawnFlash=0;e.hp=e.maxHp=100;
+    e.group.position.set(r.x+5,heightAt(r.x+5,r.z),r.z);
+    const group=makeTurretMesh('rapid');group.position.set(r.x-2,PH,r.z);scene.add(group);
+    const t={group,turretKey:'rapid',kind:'rapid',level:0,cd:0,fireCd:.1,dmg:1,range:40,lockTarget:e};
+    builtTurrets.push(t);_visionSourceCache=[{x:r.x,z:r.z,radius:100}];
+    for(let i=0;i<180;i++){_animFrame++;updateBuiltTurrets(1/60);updateBullets(1/60);}
+    const result={damage:100-e.hp,locked:t.lockTarget===e,pitch:group.userData.turret.userData.pitchPivot.rotation.x};
+    builtTurrets.splice(builtTurrets.indexOf(t),1);scene.remove(group);disposeTransientObject3D(group);
+    return result;
+  });
+  fs.writeFileSync(path.join(output,'ramp-fire.json'),JSON.stringify(result,null,2));
+  assert.ok(result.damage>0,JSON.stringify(result));assert.ok(result.pitch>0,JSON.stringify(result));assert.deepEqual(errors,[]);
 });
 
 test('脱困状态的小半径敌人也不能相互穿透', async () => {
