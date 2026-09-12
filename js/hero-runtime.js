@@ -5,7 +5,10 @@ function heroTarget(e){return isEnemyCombatTarget(e)&&performance.now()>=(e.spaw
 function clearHeroEffects(){for(const s of heroProjectiles){scene.remove(s.mesh);disposeTransientObject3D(s.mesh);}heroProjectiles.length=0;heroBurns.clear();}
 function launchHeroProjectile(origin,shot){
   if(heroProjectiles.length>=24)return;
-  const mesh=new THREE.Mesh(new THREE.SphereGeometry(shot.target?.15:.23,6,4),new THREE.MeshBasicMaterial({color:shot.target?0xffd392:0xff9452}));
+  const weapon=shot.weapon||'mortar',color=weapon==='missile'?0xffd392:0xff9452,mesh=new THREE.Group();
+  const bodyGeometry=weapon==='missile'?(typeof THREE.CapsuleGeometry==='function'?new THREE.CapsuleGeometry(.13,.55,4,8):new THREE.CylinderGeometry(.13,.13,.8,8)):new THREE.SphereGeometry(.23,9,7);
+  const body=new THREE.Mesh(bodyGeometry,new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:1.4,roughness:.25,metalness:.4}));body.rotation.x=Math.PI/2;mesh.add(body);
+  if(weapon==='missile'){const fin=new THREE.Mesh(new THREE.ConeGeometry(.18,.28,6),new THREE.MeshBasicMaterial({color:0xff6d32}));fin.rotation.x=Math.PI/2;fin.position.z=.38;mesh.add(fin);}
   mesh.position.copy(origin);scene.add(mesh);heroProjectiles.push({...shot,total:shot.t,origin:origin.clone(),mesh});
 }
 function updateHeroEffects(dt){
@@ -168,8 +171,8 @@ function updateHeroCombat(u,dt){
       playSpecialWeapon('laser');
     }else if(id==='missile'){
       const candidates=enemies.filter(e=>isEnemyCombatTarget(e)&&u.group.position.distanceToSquared(e.group.position)<=u.range*u.range);
-      for(let j=0;j<3;j++){const e=candidates[j%candidates.length];if(!e)break;const p=enemyAimPoint(e);launchHeroProjectile(origin,{t:.35+j*.15,target:e,point:p,damage:damage*1.2*(1+.1*(lv-1)),radius:TILE});}playSpecialWeapon('grenade');
-    }else{launchHeroProjectile(origin,{t:.8,point:point.clone(),damage:damage*4*(1+.12*(lv-1)),radius:1.5*TILE});playSpecialWeapon('grenade');}
+      for(let j=0;j<3;j++){const e=candidates[j%candidates.length];if(!e)break;const p=enemyAimPoint(e);launchHeroProjectile(origin,{weapon:'missile',t:.35+j*.15,target:e,point:p,damage:damage*1.2*(1+.1*(lv-1)),radius:TILE});}playSpecialWeapon('grenade');
+    }else{launchHeroProjectile(origin,{weapon:'mortar',t:.8,point:point.clone(),damage:damage*4*(1+.12*(lv-1)),radius:1.5*TILE});playSpecialWeapon('grenade');}
   }
 }
 function heroSkillSummary(id,level){
