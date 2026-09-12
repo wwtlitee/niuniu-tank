@@ -5473,7 +5473,7 @@ function structureUpgradeItem(kind,ref,multi){
     const costs=selectedEntriesOfKind(kind).map(({ref:item})=>kind==="wall"?(wallLvAt(item.x,item.z)<wallUnlockedMaxLevel()?wallPriceNext(wallLvAt(item.x,item.z)):null)
       :kind==="goldmine"?goldMineUpCost(item.level):kind==="beacon"?medicalBeaconUpgradeCost(item):kind==="turret"?turretUpgradeCost(item):kind==="house"?houseUpgradeCost(item.level):null).filter((value)=>value!=null);
     const total=costs.reduce((sum,value)=>sum+value,0),minimum=costs.length?Math.min(...costs):Infinity;
-    return {upgradeType:kind,upgradeId:'',upgradeOwner:upgradeOwner(kind,ref),k:"U",commandId:`${kind}-up`,icon:"upgrade",name:costs.length?"批量升级":"全部满级",price:costs.length?total:null,hot:"U",tip:`选中 ${selectedEntriesOfKind(kind).length} 个 · 可升级 ${costs.length} 个`,dim:!costs.length||game.gold<minimum||(kind==="turret"&&ref.turretKey==="turret"),act:()=>batchUpgradeSelected(kind)};
+    return {upgradeType:kind,upgradeId:'',upgradeOwner:upgradeOwner(kind,ref),batchUpgrade:true,k:"U",commandId:`${kind}-up`,icon:"upgrade",name:costs.length?"批量升级":"全部满级",price:costs.length?total:null,hot:"U",tip:`选中 ${selectedEntriesOfKind(kind).length} 个 · 可升级 ${costs.length} 个`,dim:!costs.length||game.gold<minimum||(kind==="turret"&&ref.turretKey==="turret"),act:()=>batchUpgradeSelected(kind)};
   }
   return {upgradeType:kind,upgradeId:'',upgradeOwner:upgradeOwner(kind,ref),k:"U",commandId:`${kind}-up`,icon:"upgrade",name:cost==null?`已满级 Lv${level}`:`升级 Lv${level+1}`,price:cost,hot:"U",tip:`当前 Lv${level}${kind==="turret"&&!doctrineAllows('tower',level)?" · 需要炮台专精":""}`,dim:cost==null||game.gold<cost||(kind==="turret"&&(ref.turretKey==="turret"||!doctrineAllows('tower',level))),act};
 }
@@ -5536,7 +5536,7 @@ function renderCmdCard(){
   const items=decorateUpgradeCommands(commandItemsForSelection().filter((item)=>!item.sep));
   const factoryRef=wc3Sel&&wc3Sel.kind==="factory"?wc3Sel.ref:null;
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
-  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.upgradeType&&isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)]),factoryQueue]);
+  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
   _cmdCardSignature=signature;wrap.innerHTML="";
   items.forEach(it=>{
@@ -5546,7 +5546,8 @@ function renderCmdCard(){
     if(it.branchId)d.dataset.branch=it.branchId;
     if(it.commandId)d.dataset.commandId=it.commandId;
     d.setAttribute("aria-disabled",it.dim?"true":"false");
-    const autoEnabled=it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner&&isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner);
+    const autoOwners=it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>upgradeOwner(it.upgradeType,ref)):[];
+    const autoEnabled=it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner&&(it.batchUpgrade?autoOwners.length>0&&autoOwners.every(owner=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',owner)):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner));
     d.className="cmdBtn"+(it.category?" category-"+it.category:"")+(it.sel?" active":"")+(autoEnabled?" auto-upgrade":"")+(it.dim?" disabled":"")
       +(it.hot==="A"&&wc3AttackMove?" active":"");
     const queued=it.autoType&&factoryRef?(factoryRef.queue||[]).filter((q)=>q.typeId===it.autoType).length:0;
@@ -5558,7 +5559,7 @@ function renderCmdCard(){
       +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
-    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();if(startAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)&&!it.dim){it.act?.();}toast(" 已启动自动逐级升级");};}
+    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();if(it.batchUpgrade){const selected=selectedEntriesOfKind(it.upgradeType);selected.forEach(({ref})=>startAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref)));if(!it.dim)it.act?.();}else if(startAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)&&!it.dim){it.act?.();}toast(" 已启动全部目标的自动逐级升级");};}
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;
       tip.innerHTML=`<div class="t">${UIIcons.svg(it.icon)} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;
