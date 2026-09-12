@@ -19,6 +19,18 @@ function startAutoUpgrade(type,id,owner){
   game.autoUpgrades||(game.autoUpgrades={});game.autoUpgrades[upgradeAutoKey(type,id,owner)]=true;
   renderCmdCard();return true;
 }
+function toggleAutoUpgrades(type,id,owners){
+  const targets=owners.filter(owner=>owner&&resolveUpgradeOwner(owner));
+  if(!AUTO_UPGRADE_TYPES.has(type)||!targets.length)return false;
+  const enabled=!targets.every(owner=>isAutoUpgrade(type,id,owner));
+  game.autoUpgrades||={};
+  for(const owner of targets){
+    const key=upgradeAutoKey(type,id,owner);
+    if(enabled)game.autoUpgrades[key]=true;else delete game.autoUpgrades[key];
+  }
+  game._autoUpgradeGoldSnapshot=null;
+  renderCmdCard();return enabled;
+}
 function resumeAutoUpgrades(){
   if(ACTIVE_MODE.key!=='survival'||!game.autoUpgrades)return;
   if(game._autoUpgradeGoldSnapshot!=null&&game.gold<=game._autoUpgradeGoldSnapshot)return;
@@ -81,7 +93,7 @@ function upgradeAcademy(){
   if(game.researchTier>=1||!game.doctrine||!researchInstitutes[0])return false;
   if(!applyingUpgrade&&game.gold<600)return false;
   if(deferUpgrade('academy','',upgradeOwner('research',researchInstitutes[0]),600))return true;
-  game.gold-=600;game.researchTier=1;updateGoldUI();refreshHeroUI();return true;
+  game.gold-=600;game.researchTier=1;updateResearchInstituteVisual();updateGoldUI();refreshHeroUI();return true;
 }
 /* P2: while-loop so one frame's dt can drain multiple short jobs (plan §6.4, ≤20 iterations). */
 function updateUpgradeJobs(dt){
@@ -144,7 +156,8 @@ function decorateUpgradeCommands(items){
     if(it.empty)return it;
     let j=null;if(it.upgradeType)j=pendingUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner);
     const a=heroArchive();const status=it.heroProduction&&a.status==='producing'?{progress:1-a.remaining/a.productionTotal,label:a.remaining?'装配中':heroHub()?.exitBlocked?'出口受阻':'正在驶出'}:it.heroSkill?heroOrderProgress(it.heroSkill):j?researchProgress(j):null;
-    return {...it,category:it.category||(it.upgradeType||it.heroSkill?'tech':it.autoType?'build':null),dim:it.dim||!!j&&!it.allowQueue,progress:status?.progress,progressLabel:status?.label};
+    const tip=(it.tip||'')+((it.heroSkill||AUTO_UPGRADE_TYPES.has(it.upgradeType))?'<br>右键开启/关闭自动 · 缺钱等待，来钱继续':'');
+    return {...it,tip,category:it.category||(it.upgradeType||it.heroSkill?'tech':it.autoType?'build':null),dim:it.dim||!!j&&!it.allowQueue,progress:status?.progress,progressLabel:status?.label};
   });
 }
 function renderUpgradeDock(){

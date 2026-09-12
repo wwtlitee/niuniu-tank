@@ -261,7 +261,7 @@ async function profileScenario(page, count) {
   assert.equal(result.collision.overlappingPairs, 0, JSON.stringify(result.collision));
   assert.equal(result.collision.solid, 0, JSON.stringify(result.collision));
   for (const zoom of result.zoom || []) {
-    assert.equal(zoom.renderedUniqueCount, count);
+    assert.equal(zoom.renderedUniqueCount+(zoom.lod?.culledCount||0), count);
     if (zoom.lod) { assert.equal(zoom.lod.pendingBuilds, 0); assert.equal(zoom.lod.transitionCount, 0); }
   }
   return result;

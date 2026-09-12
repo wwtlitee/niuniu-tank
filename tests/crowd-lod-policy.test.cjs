@@ -9,14 +9,14 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/crowd-lod.js'), 'utf
 
 test('屏幕像素决定四档模型精度，不依赖尸群数量', () => {
   assert.equal(typeof context.crowdLodTierForPixels, 'function');
-  assert.deepEqual([60, 30, 18, 8].map(px => context.crowdLodTierForPixels(px)), [0, 1, 2, 3]);
+  assert.deepEqual([90, 48, 27, 12].map(px => context.crowdLodTierForPixels(px)), [0, 1, 2, 3]);
 });
 
 test('缩放阈值带滞回，边缘不会反复切换', () => {
-  assert.equal(context.crowdLodTierForPixels(39, 0), 0);
-  assert.equal(context.crowdLodTierForPixels(42, 1), 1);
-  assert.equal(context.crowdLodTierForPixels(50, 1), 0);
-  assert.equal(context.crowdLodTierForPixels(9, 2), 3);
+  assert.equal(context.crowdLodTierForPixels(60, 0), 0);
+  assert.equal(context.crowdLodTierForPixels(68, 1), 1);
+  assert.equal(context.crowdLodTierForPixels(76, 1), 0);
+  assert.equal(context.crowdLodTierForPixels(15, 2), 3);
 });
 
 test('远景模型实际减少三角面，保持完整外形与有限坐标', () => {
@@ -37,6 +37,12 @@ test('远景模型实际减少三角面，保持完整外形与有限坐标', ()
 
 test('共享模型批次容量覆盖4000实体', () => {
   assert.ok(vm.runInContext('crowdLodCapacity', context) >= 4000);
+});
+test('全景和中景采用更低模型，单个低模不超过原模型八分之一',()=>{
+  assert.ok(context.crowdLodTierForPixels(30)>=2);
+  const ratios=vm.runInContext('CROWD_LOD_RATIOS',context);
+  assert.ok(ratios[1]<=1/8&&ratios[2]<=1/32&&ratios[3]<=1/64);
+  assert.ok(vm.runInContext('CROWD_DETAIL_BUDGET',context)<=96);
 });
 
 test('四分之一到十六分之一模型保留源顶点颜色，换姿态沿用同一颜色簇', () => {

@@ -1,4 +1,4 @@
-/* 装甲竞速 v10.1.0 — 纯规则模块，浏览器与 Node 共用。 */
+/* 装甲竞速 v10.2.0 — 纯规则模块，浏览器与 Node 共用。 */
 (function(root,factory){const node=typeof module==='object'&&module.exports,catalog=node?require('./racing-circuits.js'):root.RacingCircuits,cache=new Map();
  function forTrack(id='canyon'){catalog.get(id);if(!cache.has(id)){const api=factory(catalog.get(id));api.forTrack=forTrack;cache.set(id,api);}return cache.get(id);}
  let selected='canyon';if(!node){const id=new URLSearchParams(root.location.search).get('track');if(catalog.list().some(t=>t.id===id))selected=id;}

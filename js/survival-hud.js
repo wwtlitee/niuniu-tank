@@ -66,3 +66,31 @@ const SurvivalHUD = (() => {
 })();
 
 if (typeof window !== "undefined") window.SurvivalHUD = SurvivalHUD;
+
+function createSurvivalFrameMeter(){
+  let previous=null,elapsed=0,frames=0;
+  return {
+    reset(){previous=null;elapsed=0;frames=0;},
+    sample(now){
+      if(!Number.isFinite(now))return null;
+      if(previous===null){previous=now;return null;}
+      const delta=now-previous;previous=now;
+      if(delta<=0||delta>2000){elapsed=0;frames=0;return null;}
+      elapsed+=delta;frames++;
+      if(elapsed<500)return null;
+      const result={fps:frames*1000/elapsed,frameMs:elapsed/frames};elapsed=0;frames=0;return result;
+    }
+  };
+}
+const survivalFrameMeter=createSurvivalFrameMeter();
+let survivalFrameStats={fps:null,frameMs:null};
+function updateSurvivalFrameStats(now){
+  if(ACTIVE_MODE.key!=='survival'||document.hidden){survivalFrameMeter.reset();return;}
+  const sample=survivalFrameMeter.sample(now);if(!sample)return;
+  survivalFrameStats=sample;
+  const node=document.getElementById('performanceHud');if(!node)return;
+  const lod=getCrowdLodStats(),low=Math.max(0,lod.renderedUniqueCount-lod.detailCount);
+  node.innerHTML=`<b>${Math.round(sample.fps)} FPS</b><span class="perfDetail"> · ${sample.frameMs.toFixed(0)} ms · 低模 ${low}</span>`;
+  node.dataset.level=sample.fps<30?'low':sample.fps<50?'medium':'good';
+  node.title=`实体 ${lod.logicalCount} · 屏外裁剪 ${lod.culledCount||0} · 精细骨骼 ${lod.detailCount} · 尸群三角面 ${lod.triangles}`;
+}

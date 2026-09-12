@@ -160,7 +160,7 @@ test('轻中重三种坦克均沿台阶往返高低地，路线平滑不能切�
             break;
           }
         }
-        row.trips.push({ reached, nearStairs });
+        row.trips.push({ reached, nearStairs,position:unit.group.position.toArray(),destination,route:unit.routeWaypoints,available:unit.routeAvailable,goal:unit.routeGoalCell });
       }
       scene.remove(unit.group);
       friendlyUnits.splice(friendlyUnits.indexOf(unit), 1);

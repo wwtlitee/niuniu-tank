@@ -311,6 +311,30 @@ function chamferedBox(w, h, d) {
   geometry.translate(0, 0, -d / 2 + bevel);
   return geometry;
 }
+// An additive upper floor preserves the live building, health bar, selection and paid jobs.
+function updateResearchInstituteVisual(){
+  for(const institute of researchInstitutes){
+    const root=institute.group;if(!root||game.researchTier<1||root.getObjectByName('advanced-academy'))continue;
+    const annex=new THREE.Group();annex.name='advanced-academy';
+    const routeColor={hero:0xa94d58,tank:0xd3a955,tower:0x5cacc9}[game.doctrine]||0x5cacc9;
+    const armor=new THREE.MeshStandardMaterial({color:0x354751,metalness:.65,roughness:.48});
+    const trim=new THREE.MeshStandardMaterial({color:routeColor,metalness:.45,roughness:.4});
+    const glass=new THREE.MeshStandardMaterial({color:0x7cdef2,emissive:0x245566,emissiveIntensity:.7,metalness:.25,roughness:.25});
+    const add=(geometry,material,x,y,z)=>{const m=new THREE.Mesh(geometry,material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;annex.add(m);return m;};
+    for(const side of [-1,1]){
+      add(new THREE.BoxGeometry(1.5,1.55,4.9),armor,side*2.25,4.7,0);
+      add(new THREE.BoxGeometry(1.58,.18,5.02),trim,side*2.25,5.56,0);
+      add(new THREE.BoxGeometry(1.16,.45,.08),glass,side*2.25,4.85,2.5);
+      for(const z of [-1.6,0,1.6])add(new THREE.BoxGeometry(.12,1.5,.2),trim,side*3.02,4.7,z);
+    }
+    add(new THREE.CylinderGeometry(.72,1.0,1.65,12),armor,0,5.68,-.3);
+    add(new THREE.CylinderGeometry(.53,.53,1.35,12),glass,0,6.6,-.3);
+    add(new THREE.CylinderGeometry(.8,.8,.2,12),trim,0,7.34,-.3);
+    const ring=add(new THREE.TorusGeometry(1.3,.085,6,32),trim,0,6.75,-.3);ring.rotation.x=Math.PI/2;
+    for(const side of [-1,1])add(new THREE.BoxGeometry(.13,1.65,.13),trim,side*.98,6.0,-.3);
+    root.add(annex);root.name='高级研究院';root.userData.researchTier=1;
+  }
+}
 function makeBuildingModel(kind) {
   if(kind==='factory')return makeFactoryWorkshopModel();
   if(kind==='heroHub')return makeHeroHubModel();

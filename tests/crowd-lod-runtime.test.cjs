@@ -45,14 +45,14 @@ async function captureZoom(distance,name){
 
 test('800实体从远景逐级切换到清晰模型，实际面数下降且无数量丢失',async()=>{
   const results=[];
-  for(const [distance,name] of [[190,'far'],[96,'eighth'],[58,'quarter'],[22,'detail']])results.push(await captureZoom(distance,name));
+  for(const [distance,name] of [[150,'far'],[58,'eighth'],[34,'quarter'],[12,'detail']])results.push(await captureZoom(distance,name));
   fs.writeFileSync(path.join(output,'zoom-stats.json'),JSON.stringify(results,null,2));
-  for(const result of results){assert.equal(result.logicalCount,800);assert.equal(result.renderedUniqueCount,800);assert.equal(result.tierCounts.reduce((a,b)=>a+b),800);assert.equal(result.pendingBuilds,0);}
+  for(const result of results){assert.equal(result.logicalCount,800);assert.equal(result.renderedUniqueCount+result.culledCount,800);assert.equal(result.tierCounts.reduce((a,b)=>a+b),800);assert.equal(result.pendingBuilds,0);}
   assert.ok(results[0].tierCounts[3]>700);
   assert.ok(results[1].tierCounts[2]>500);
   assert.ok(results[2].tierCounts[1]>500);
-  assert.ok(results[3].tierCounts[0]>500);
-  assert.ok(results[3].detailCount<=192,'full geometry beyond the live skeleton budget must be instanced');
+  assert.ok(results[3].tierCounts[0]>100);
+  assert.ok(results[3].detailCount<=96,'full geometry beyond the live skeleton budget must be instanced');
   assert.ok(results[0].triangles<results[3].triangles*.1);
   const colorFaults=await page.evaluate(()=>{
     const failures=[];
@@ -77,7 +77,7 @@ test('屏幕精度依据CSS像素，DPR和resize后按视口正确更新',async(
   assert.deepEqual(result.small,result.large);
   await page.setViewportSize({width:960,height:600});
   const resized=await captureZoom(96,'resize');
-  assert.equal(resized.logicalCount,800);assert.equal(resized.renderedUniqueCount,800);
+  assert.equal(resized.logicalCount,800);assert.equal(resized.renderedUniqueCount+resized.culledCount,800);
   assert.ok(resized.tierCounts[3]>0);
   assert.deepEqual(errors,[]);
 });

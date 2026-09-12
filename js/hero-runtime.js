@@ -37,6 +37,13 @@ function startAutoHeroSkill(id){
   if(!HeroSystem.SKILLS[id])return false;
   game.autoHeroSkills||(game.autoHeroSkills={});game.autoHeroSkills[id]=true;renderCmdCard();return true;
 }
+function toggleAutoHeroSkill(id){
+  if(!HeroSystem.SKILLS[id])return false;
+  game.autoHeroSkills||={};
+  const enabled=!game.autoHeroSkills[id];
+  if(enabled)game.autoHeroSkills[id]=true;else delete game.autoHeroSkills[id];
+  game._autoHeroGoldSnapshot=null;renderCmdCard();return enabled;
+}
 function resumeAutoHeroSkills(force=false){
   const a=heroArchive();if(!game.autoHeroSkills||!heroHub()||!heroTank?.alive)return;
   if(!force&&game._autoHeroGoldSnapshot!=null&&game.gold<=game._autoHeroGoldSnapshot)return;
@@ -144,6 +151,7 @@ function updateHeroCombat(u,dt){
   }
   if(!target){
     u.heroChannel=null;
+    if(u.command==='attack'&&heroTarget(u.attackTarget))setFriendlyMoveTarget(u,u.attackTarget.group.position);
     moveFriendlyUnit(u,dt);return;
   }
   u.attackTarget=target;clearFriendlyRoute(u);

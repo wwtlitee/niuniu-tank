@@ -259,7 +259,7 @@ const HelpOverlay = (() => {
   const KEYS = [
     { label: "通用", entries: [
       { k: "ESC", d: "暂停 / 继续" },
-      { k: "M", d: "一键静音" },
+      { k: "Alt+M", d: "一键静音（未选部队时也可用 M）" },
     ]},
     { label: "经典模式", entries: [
       { k: "WASD", d: "移动坦克" },
@@ -272,7 +272,10 @@ const HelpOverlay = (() => {
       { k: "左键", d: "选中单位 / 建筑" },
       { k: "右键", d: "移动或攻击" },
       { k: "A+左键", d: "攻击移动" },
-      { k: "S", d: "停止" },
+      { k: "S / H", d: "停止 / 原地坚守" },
+      { k: "M+左键", d: "移动" },
+      { k: "F1 / F2", d: "选择英雄 / 帮助" },
+      { k: "Ctrl+数字", d: "保存编队；数字召回，双击聚焦" },
       { k: "P", d: "巡逻" },
       { k: "B", d: "建造" },
       { k: "T", d: "研究院" },
@@ -365,6 +368,7 @@ function configureBGM() {
 function _bindGlobalKeys() {
   addEventListener("keydown", (e) => {
     if (e.code !== "KeyM" || e.repeat) return;
+    if(!e.altKey&&ACTIVE_MODE.key==='survival'&&wc3Selection.some(entry=>entry.kind==='unit'||entry.kind==='player'))return;
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     e.preventDefault();
@@ -430,9 +434,10 @@ boot();
 addEventListener('keydown',event=>{
  const confirm=document.getElementById('confirm'),help=document.getElementById('helpOverlay');
  if(!confirm.classList.contains('hidden')){if(event.code==='Escape')document.getElementById('confirmCancel').click();event.stopImmediatePropagation();return;}
- if(!help.classList.contains('hidden')){if(event.code==='Escape'||event.code==='F1')HelpOverlay.close();event.stopImmediatePropagation();event.preventDefault();return;}
+ if(!help.classList.contains('hidden')){if(event.code==='Escape'||event.code==='F1'||event.code==='F2')HelpOverlay.close();event.stopImmediatePropagation();event.preventDefault();return;}
  if(SettingsUI.isOpen()){if(event.code==='Escape'){SettingsUI.close();event.preventDefault();}event.stopImmediatePropagation();return;}
- if(event.code==='F1'){event.preventDefault();event.stopImmediatePropagation();if(state!==STATE.MENU&&state!==STATE.PAUSED)setPause(true);HelpOverlay.open();}
+ const selectHero=event.code==='F1'&&ACTIVE_MODE.key==='survival'&&(heroTank?.alive||player?.alive);
+ if(event.code==='F2'||event.code==='F1'&&!selectHero){event.preventDefault();event.stopImmediatePropagation();if(state!==STATE.MENU&&state!==STATE.PAUSED)setPause(true);HelpOverlay.open();}
 },{capture:true});
 
 for(const [id,key] of [['settingsMenuBtn','settings'],['helpMenuBtn','research']]){const node=document.querySelector('#'+id+' .ico');if(node)node.innerHTML=UIIcons.svg(key);}

@@ -1,11 +1,11 @@
 /* Screen-size LOD keeps independent entities and collision at every zoom. */
 let crowdLodMesh=null,crowdLodCapacity=4096,crowdLodPrewarmIndex=0;
 const crowdLodTransform=new THREE.Object3D(),crowdLodBatches=new Map(),crowdLodBuildQueue=[];
-// Mode 4 uses the complete original mesh with shared poses when the 192 live
-// skeleton budget is full. It is reported as quality tier 0, not a fifth quality.
-const CROWD_LOD_PIXELS=[40,22,12],CROWD_LOD_RATIOS=[1,.25,.125,.0625,1],CROWD_DETAIL_BUDGET=192;
+// Mode 4 uses shared quarter-detail poses after the 96 live skeleton budget.
+// Zoomed-out tiers prioritize silhouette and color over invisible mesh detail.
+const CROWD_LOD_PIXELS=[64,36,20],CROWD_LOD_RATIOS=[1,.125,.03125,.015625,.25],CROWD_DETAIL_BUDGET=96;
 const crowdLodView=new THREE.Vector3();
-let crowdLodStats={logicalCount:0,renderedUniqueCount:0,detailCount:0,tierCounts:[0,0,0,0],transitionCount:0,pendingBuilds:0,drawCalls:0,triangles:0,capacity:crowdLodCapacity};
+let crowdLodStats={logicalCount:0,renderedUniqueCount:0,culledCount:0,detailCount:0,tierCounts:[0,0,0,0],transitionCount:0,pendingBuilds:0,drawCalls:0,triangles:0,capacity:crowdLodCapacity};
 function crowdLodTierForPixels(pixels,previous){
   if(!Number.isFinite(pixels))return 3;
   let tier=previous;
@@ -138,7 +138,7 @@ function buildCrowdPose(job){
       vertex.applyMatrix4(source.matrixWorld).divideScalar(batch.baseHeight);position.setXYZ(i,vertex.x,vertex.y,vertex.z);
     }
     baked.deleteAttribute('skinIndex');baked.deleteAttribute('skinWeight');
-    const key=source.uuid+':'+tier,geometry=tier===4?baked.clone():simplifyCrowdGeometry(baked,CROWD_LOD_RATIOS[tier],batch.templates.get(key));
+    const key=source.uuid+':'+tier,geometry=simplifyCrowdGeometry(baked,CROWD_LOD_RATIOS[tier],batch.templates.get(key));
     if(tier===4){geometry.computeVertexNormals();geometry.computeBoundingSphere();}
     baked.dispose();if(!frame)batch.templates.set(key,geometry);
     geometry.userData.sourceZombieMesh=source.name||'original-zombie';geometry.userData.lodTier=tier;
@@ -206,11 +206,20 @@ function updateCrowdLod(){
   }
   detailCandidates.sort((a,b)=>b._crowdScreenPixels-a._crowdScreenPixels||(a.hordeId||0)-(b.hordeId||0));
   const detailIds=new Set(detailCandidates.slice(0,CROWD_DETAIL_BUDGET));
-  const stats={logicalCount:0,renderedUniqueCount:0,onScreenCount:0,detailCount:0,tierCounts:[0,0,0,0],transitionCount:0,pendingBuilds:0,drawCalls:0,triangles:0,capacity:crowdLodCapacity};
+  const stats={logicalCount:0,renderedUniqueCount:0,culledCount:0,onScreenCount:0,detailCount:0,tierCounts:[0,0,0,0],transitionCount:0,pendingBuilds:0,drawCalls:0,triangles:0,capacity:crowdLodCapacity};
   let instanceEntities=0;
   for(const enemy of enemies){
     if(!enemy.alive&&!enemy.dying)continue;
     stats.logicalCount++;
+    if(!enemy.group.userData.lodMatrixGuard){
+      const updateWorld=enemy.group.updateMatrixWorld;
+      enemy.group.updateMatrixWorld=function(force){if(this.userData.crowdLodHidden)return;return updateWorld.call(this,force);};
+      enemy.group.userData.lodMatrixGuard=true;
+    }
+    if(!enemy._crowdInView){
+      enemy.group.visible=false;enemy.group.userData.crowdLodHidden=true;enemy._crowdLod=true;
+      stats.culledCount++;stats.tierCounts[3]++;continue;
+    }
     const previous=enemy._crowdLodState;
     const pixels=enemy._crowdScreenPixels;
     const wanted=enemy.boss||enemy.dying?0:enemy._crowdInView?crowdLodTierForPixels(pixels,previous?.wanted):3;
@@ -236,11 +245,6 @@ function updateCrowdLod(){
     if(lod.tier>0&&batch){drawn=appendCrowdInstance(enemy,batch,lod.tier,fade);instanced=drawn;}
     if(lod.from>0&&batch){drawn=appendCrowdInstance(enemy,batch,lod.from,fade-1)||drawn;instanced=drawn;}
     const full=detail||!drawn;
-    if(!enemy.group.userData.lodMatrixGuard){
-      const updateWorld=enemy.group.updateMatrixWorld;
-      enemy.group.updateMatrixWorld=function(force){if(this.userData.crowdLodHidden)return;return updateWorld.call(this,force);};
-      enemy.group.userData.lodMatrixGuard=true;
-    }
     enemy.group.userData.crowdLodHidden=!full;enemy.group.visible=full;enemy._crowdLod=!full;
     if(instanced)instanceEntities++;
     if(full){

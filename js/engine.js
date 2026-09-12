@@ -37,9 +37,9 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="10.1.0";
+const GAME_VERSION="10.2.0";
 // This visual release keeps the 8.10 survival save schema unchanged.
-function isCompatibleSurvivalSaveVersion(version){return version===GAME_VERSION||version==="10.0.0"||version==="9.2.0"||version==="9.1.0"||version==="9.0.0"||version==="8.10.0";}
+function isCompatibleSurvivalSaveVersion(version){return version===GAME_VERSION||version==="10.1.0"||version==="10.0.0"||version==="9.2.0"||version==="9.1.0"||version==="9.0.0"||version==="8.10.0";}
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -2333,6 +2333,10 @@ function planFriendlyRoute(unit,target){
   unit.routeWaypoints=[];unit.routeGoal={x:target.x,z:target.z};unit.routeGoalCell=goal;unit.routeAvailable=false;unit.routeReplan=.65;unit.stuckTime=0;
   unit.routeRevision=navigationStamp;
   if(!goal||!inMap(start.x,start.z))return false;
+  if(navigationSegmentClear(unit.group.position,target,radius)){
+    unit.routeWaypoints=[{x:target.x,z:target.z}];unit.routeDestination=unit.routeWaypoints[0];unit.routeAvailable=true;
+    return true;
+  }
   const passable=(x,z)=>friendlyCellPassable(x,z)&&navigationPositionClear(cellCenter(x,z),radius);
   const key=`${goal.x},${goal.z}:${radius}:${navigationStamp}:${GRID}`;
   if(friendlyFlowCache.key!==key||!friendlyFlowCache.field||friendlyFlowCache.field.width!==GRID){
@@ -2367,7 +2371,8 @@ function setFriendlyMoveTarget(unit,target,force=false,fieldTarget=null){
   const cellChanged=!unit.routeGoalCell||!goal||unit.routeGoalCell.x!==goal.x||unit.routeGoalCell.z!==goal.z;
   unit.moveTarget={x:target.x,z:target.z};
   if(force||cellChanged||!unit.routeWaypoints.length){
-    planFriendlyRoute(unit,fieldTarget||unit.moveTarget);
+    const direct=navigationSegmentClear(unit.group.position,target,radius);
+    planFriendlyRoute(unit,direct?target:(fieldTarget||unit.moveTarget));
     if(unit.routeWaypoints.length&&(target.x!==(fieldTarget||target).x||target.z!==(fieldTarget||target).z)
       &&navigationSegmentClear(unit.routeWaypoints.at(-1),target,radius)){
       unit.routeWaypoints.push({x:target.x,z:target.z});
@@ -2381,25 +2386,32 @@ function setFriendlyMoveTarget(unit,target,force=false,fieldTarget=null){
   }
   return true;
 }
-function moveFriendlyUnit(unit,dt){
+function moveFriendlyUnit(unit,dt,speedScale=1){
+  if(!unit.moveTarget&&unit.command==='attackMove'&&unit.orderDestination&&!isEnemyCombatTarget(unit.attackTarget))setFriendlyMoveTarget(unit,unit.orderDestination,true);
   if(!unit.moveTarget)return;
   unit.routeReplan=Math.max(0,(unit.routeReplan||0)-dt);
   if(unit.routeRevision!==navigationStamp||(!unit.routeWaypoints.length&&unit.routeReplan<=0))planFriendlyRoute(unit,unit.moveTarget);
   if(!unit.routeAvailable)return;
+  while(unit.routeWaypoints.length>1&&Math.hypot(unit.routeWaypoints[0].x-unit.group.position.x,unit.routeWaypoints[0].z-unit.group.position.z)<.12)unit.routeWaypoints.shift();
   const waypoint=unit.routeWaypoints[0]||unit.routeDestination||unit.moveTarget;
   const g=unit.group,oldX=g.position.x,oldZ=g.position.z;
   const dx=waypoint.x-g.position.x,dz=waypoint.z-g.position.z,d=Math.hypot(dx,dz);
-  if(d<.7){
+  if(d<(unit.routeWaypoints.length>1?.12:.45)){
     if(unit.routeWaypoints.length){unit.routeWaypoints.shift();return;}
     if(unit.command==="patrol"&&unit.patrolPoints.length===2){
       unit.patrolIndex=1-unit.patrolIndex;setFriendlyMoveTarget(unit,unit.patrolPoints[unit.patrolIndex],true);
-    }else clearFriendlyRoute(unit);
+    }else{clearFriendlyRoute(unit);unit.orderDestination=null;}
     return;
   }
-  const step=Math.min(d,unit.speed*dt),nx=g.position.x+dx/d*step,nz=g.position.z+dz/d*step;
+  const step=Math.min(d,unit.speed*speedScale*dt),nx=g.position.x+dx/d*step,nz=g.position.z+dz/d*step;
   const radius=Math.min(unit.radius,TILE*.38);
-  if(!blockedForTank(nx,g.position.z,radius,heightAt(g.position.x,g.position.z),false,true))g.position.x=nx;
-  if(!blockedForTank(g.position.x,nz,radius,heightAt(g.position.x,g.position.z),false,true))g.position.z=nz;
+  const ground=heightAt(g.position.x,g.position.z);
+  if(!blockedForTank(nx,nz,radius,ground,false,true)){
+    g.position.x=nx;g.position.z=nz;
+  }else{
+    if(!blockedForTank(nx,g.position.z,radius,ground,false,true))g.position.x=nx;
+    if(!blockedForTank(g.position.x,nz,radius,heightAt(g.position.x,g.position.z),false,true))g.position.z=nz;
+  }
   const want=Math.atan2(dx,dz)+Math.PI;g.rotation.y+=shortAngle(want-g.rotation.y)*Math.min(1,dt*9);
   g.position.y=heightAt(g.position.x,g.position.z);
   const moved=Math.hypot(g.position.x-oldX,g.position.z-oldZ);
@@ -2547,7 +2559,7 @@ function updateFriendlyUnits(dt){
     if(unit.attackTarget&&(!isEnemyCombatTarget(unit.attackTarget)||!isPositionVisible(unit.attackTarget.group.position)))unit.attackTarget=null;
     if(unit.attackTarget&&unit.attackTarget.alive){
         const target=enemyAimPoint(unit.attackTarget),d=unit.group.position.distanceTo(target);
-      if(d>unit.range){setFriendlyMoveTarget(unit,target);}
+      if(d>unit.range){if(unit.command!=="hold")setFriendlyMoveTarget(unit,target);}
       else{
         clearFriendlyRoute(unit);unit.cd-=dt;
         const turret=unit.group.userData.turret,dx=target.x-unit.group.position.x,dz=target.z-unit.group.position.z;
@@ -3295,7 +3307,11 @@ function blockedForTank(px,pz,radius,curH,isBullet=false,isPlayer=false,ignoredC
   if(!isBullet&&curH!==undefined){
     const r=radius*.6;
     const pts=[[px,pz],[px-r,pz-r],[px+r,pz-r],[px-r,pz+r],[px+r,pz+r]];
+    const onStair=ACTIVE_MODE.key==='survival'&&naturalStairHeight(px,pz)!==null;
     for(const s of pts){
+      // A long hull spans multiple real stair treads. Check the center's actual
+      // step, not the height between its rear and its forward overhang.
+      if(onStair&&(s[0]!==px||s[1]!==pz)&&naturalStairHeight(s[0],s[1])!==null)continue;
       const dh=heightAt(s[0],s[1])-curH;
       if(dh>STEP_UP||dh<-STEP_DOWN)return true;
     }
@@ -3522,6 +3538,36 @@ function baseContactDistance(enemy){
   const p=enemy.group.position,b=baseGroup.position;
   return Math.hypot(Math.max(0,Math.abs(p.x-b.x)-TILE),Math.max(0,Math.abs(p.z-b.z)-TILE));
 }
+function enemyRecoveryRoute(e){
+  const p=e.group.position,r=enemyNavigationRadius(e),here=cellOf(p.x,p.z);
+  const segmentClear=target=>{
+    const length=Math.hypot(target.x-p.x,target.z-p.z),steps=Math.max(1,Math.ceil(length/.3));
+    let ground=heightAt(p.x,p.z);
+    for(let i=1;i<=steps;i++){
+      const x=p.x+(target.x-p.x)*i/steps,z=p.z+(target.z-p.z)*i/steps;
+      if(blockedForTank(x,z,r,ground))return false;
+      ground=heightAt(x,z);
+    }
+    return true;
+  };
+  const cached=e.recoveryWaypoint;
+  if(cached&&cached.revision===navigationStamp&&segmentClear(cached))return cached;
+  let best=null,score=Infinity;
+  // Mixed cliff cells can contain legal ground although their centers are unreachable.
+  // Reconnect that ground to a reachable cell; never aim through the cliff at the base.
+  for(let ring=1;ring<=3;ring++){
+    for(let dz=-ring;dz<=ring;dz++)for(let dx=-ring;dx<=ring;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dz))!==ring)continue;
+      const x=here.x+dx,z=here.z+dz,d=flowField?.distanceAt(x,z);
+      if(!Number.isFinite(d))continue;
+      const target=cellCenter(x,z),distance=Math.hypot(target.x-p.x,target.z-p.z),cost=distance+d*TILE*.12;
+      if(cost>=score||!segmentClear(target))continue;
+      score=cost;best={x:target.x,z:target.z,distance:d,revision:navigationStamp};
+    }
+    if(best)break;
+  }
+  e.recoveryWaypoint=best;return best;
+}
 function flowDirFor(e){
   if(!baseGroup)return {best:null,bestD:Infinity,hereD:-1,atGate:false};
   const p=e.group.position, here=cellOf(p.x,p.z);
@@ -3529,6 +3575,13 @@ function flowDirFor(e){
   const hereD=flowField?flowField.distanceAt(here.x,here.z):Infinity;
   if(baseContactDistance(e)<=.55+(e.radius||0))
     return {best:null,bestD:hereD,hereD,atGate:true};   /*  已抵达：不再下梯度 */
+  if(!Number.isFinite(hereD)){
+    const recovery=enemyRecoveryRoute(e);
+    if(!recovery)return {best:null,bestD:Infinity,hereD,atGate:false};
+    const dx=recovery.x-p.x,dz=recovery.z-p.z,length=Math.hypot(dx,dz)||1;
+    return {best:[dx/length,dz/length],bestD:recovery.distance,hereD:recovery.distance+length/TILE,atGate:false};
+  }
+  e.recoveryWaypoint=null;
   if(hereD>=0&&hereD<=GATE_ARRIVE_D){const q=baseContactPoint(p),dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz)||1;return {best:[dx/d,dz/d],bestD:0,hereD,atGate:false};}
   const direction=flowField?flowField.directionAt(here.x,here.z):{x:0,z:0};
   let best=null;
@@ -3616,6 +3669,8 @@ addEventListener("keydown",e=>{
     camFocus.x=f.x;camFocus.z=f.z;
   }
   if(e.code==="Escape"){
+    if(wc3AttackMove){wc3AttackMove=false;renderCmdCard();return;}
+    if(ACTIVE_MODE.key==="survival"&&wc3BuildMode){closeWc3Build();return;}
     /*  新手引导 ESC 优先跳过 */
     if(questActive){questSkip();return;}
     if(state===STATE.PLAYING)setPause(true);
@@ -3660,8 +3715,9 @@ function updateRightCameraDrag(event){
   camFocus.z=Math.max(-limit,Math.min(limit,camFocus.z-(event.clientY-drag.lastY)*scale/Math.sin(Math.PI/3)));
   drag.lastX=event.clientX;drag.lastY=event.clientY;
 }
-addEventListener('blur',()=>{clearRightCameraDrag();mouse.down=false;for(const key of Object.keys(keys))keys[key]=false;});
+addEventListener('blur',()=>{wc3DragStart=null;wc3DragBox?.remove();wc3DragBox=null;clearRightCameraDrag();mouse.down=false;for(const key of Object.keys(keys))keys[key]=false;});
 function issueRightClickCommand(e){
+    if(wc3AttackMove){wc3AttackMove=false;renderCmdCard();return;}
     /*  P4-5：建造模式右键 = 取消当前条目；再无条目则收起建造模式 */
     if(state===STATE.BUILD&&wc3BuildMode){
       if(buildSel!==null)selectBuild(null);
@@ -3682,15 +3738,9 @@ function issueRightClickCommand(e){
           wc3Mark(repairTarget.group.position,0xc69a45);return;
         }
         /* 点敌=攻击目标，点地=移动 */
-        let tgt=null,bd=3.4*3.4;
-        for(const en of enemies){
-          if(!isEnemyCombatTarget(en)||!isPositionVisible(en.group.position))continue;
-          const dx=en.group.position.x-w.x,dz=en.group.position.z-w.z;
-          const dd=dx*dx+dz*dz;
-          if(dd<bd){bd=dd;tgt=en;}
-        }
+        const tgt=clicked?.kind==='enemy'&&isEnemyCombatTarget(clicked.ref)&&isPositionVisible(clicked.ref.group.position)?clicked.ref:null;
         if(tgt){
-          wc3Selection.filter((entry)=>entry.kind==="player"||entry.kind==="unit").forEach((entry)=>{entry.ref.attackTarget=tgt;entry.ref.moveTarget=null;entry.ref.attackMove=false;entry.ref.command="attack";});
+          wc3Selection.filter((entry)=>entry.kind==="player"||entry.kind==="unit").forEach((entry)=>{entry.ref.orderDestination=null;clearFriendlyRoute(entry.ref);entry.ref.attackTarget=tgt;entry.ref.attackMove=false;entry.ref.command="attack";});
           wc3Mark(tgt.group.position,0xff5d5d);
         }else{issueSelectionCommand("move",w);wc3Mark(w,0x39d98a);}
       }
@@ -3698,7 +3748,7 @@ function issueRightClickCommand(e){
 }
 
 function updateWc3DragBox(event){
-  if(!wc3DragStart)return;
+  if(!wc3DragStart||Math.hypot(event.clientX-wc3DragStart.x,event.clientY-wc3DragStart.y)<6)return;
   if(!wc3DragBox){wc3DragBox=document.createElement("div");wc3DragBox.style.cssText="position:fixed;border:1px solid #68df78;background:rgba(70,170,85,.14);pointer-events:none;z-index:80";document.body.appendChild(wc3DragBox);}
   const left=Math.min(wc3DragStart.x,event.clientX),top=Math.min(wc3DragStart.y,event.clientY);
   wc3DragBox.style.left=`${left}px`;wc3DragBox.style.top=`${top}px`;wc3DragBox.style.width=`${Math.abs(event.clientX-wc3DragStart.x)}px`;wc3DragBox.style.height=`${Math.abs(event.clientY-wc3DragStart.y)}px`;
@@ -3711,13 +3761,13 @@ addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY;updateWc3Dr
    经典/塔防模式保持原 WASD 直接操控不变。 */
 let wc3MoveMark=null;   // 点击标记 mesh
 function wc3Mark(pos,color){
-  if(wc3MoveMark){scene.remove(wc3MoveMark);wc3MoveMark=null;}
+  if(wc3MoveMark){scene.remove(wc3MoveMark);wc3MoveMark.geometry.dispose();wc3MoveMark.material.dispose();wc3MoveMark=null;}
   const m=new THREE.Mesh(new THREE.RingGeometry(.55,.85,24),
     new THREE.MeshBasicMaterial({color,transparent:true,opacity:.9,side:THREE.DoubleSide}));
   m.rotation.x=-Math.PI/2;
   m.position.set(pos.x,heightAt(pos.x,pos.z)+.12,pos.z);
   scene.add(m);wc3MoveMark=m;
-  setTimeout(()=>{if(wc3MoveMark===m){scene.remove(m);wc3MoveMark=null;}},700);
+  setTimeout(()=>{if(wc3MoveMark===m){scene.remove(m);m.geometry.dispose();m.material.dispose();wc3MoveMark=null;}},700);
 }
 function screenToWorld(px,py){
   _ndc.x=(px/innerWidth)*2-1;_ndc.y=-(py/innerHeight)*2+1;
@@ -3769,7 +3819,7 @@ addEventListener("mousedown",e=>{
       const w=screenToWorld(e.clientX,e.clientY);
       if(w&&wc3AttackMove==="rally"&&wc3Sel&&wc3Sel.kind==="factory"){
         setFactoryRallyPoint(wc3Sel.ref,w);wc3Mark(w,0xc69a45);toast(" 重工厂集结点已更新");wc3RenderSel();
-      }else if(w){issueSelectionCommand(wc3AttackMove==="patrol"?"patrol":"attackMove",w);wc3Mark(w,wc3AttackMove==="patrol"?0x68d88a:0xff5d5d);}
+      }else if(w){issueSelectionCommand(wc3AttackMove==="patrol"?"patrol":wc3AttackMove==="move"?"move":"attackMove",w);wc3Mark(w,wc3AttackMove==="patrol"||wc3AttackMove==="move"?0x68d88a:0xff5d5d);}
       wc3AttackMove=false;
     }
     else if(ACTIVE_MODE.key==="survival"){
@@ -3799,20 +3849,38 @@ addEventListener("mouseup",e=>{
   else{
     const left=Math.min(start.x,e.clientX),right=Math.max(start.x,e.clientX),top=Math.min(start.y,e.clientY),bottom=Math.max(start.y,e.clientY);
     const candidates=[...(player&&player.alive?[{kind:"player",ref:player}]:[]),...friendlyUnits.filter((unit)=>unit.alive).map((unit)=>({kind:"unit",ref:unit}))];
-    entries=candidates.filter((entry)=>{const point=entry.ref.group.position.clone().project(camera),x=(point.x+1)*innerWidth/2,y=(-point.y+1)*innerHeight/2;return x>=left&&x<=right&&y>=top&&y<=bottom;});
+    entries=candidates.filter((entry)=>{const pos=entry.ref.group.position.clone(),point=pos.clone().add(new THREE.Vector3(0,1.2,0)).project(camera),edge=pos.add(new THREE.Vector3(entry.ref.radius||1.5,1.2,0)).project(camera),r=Math.max(6,Math.abs(edge.x-point.x)*innerWidth/2),x=(point.x+1)*innerWidth/2,y=(-point.y+1)*innerHeight/2;return point.z>=-1&&point.z<=1&&x+r>=left&&x-r<=right&&y+r>=top&&y-r<=bottom;});
   }
-  if(start.shift&&entries.length){
-    const merged=[...wc3Selection];for(const entry of entries){const index=merged.findIndex((old)=>old.ref===entry.ref);if(index>=0)merged.splice(index,1);else merged.push(entry);}entries=merged;
+  if(start.shift){
+    const merged=[...wc3Selection];for(const entry of entries){const index=merged.findIndex((old)=>old.ref===entry.ref);if(index>=0){if(distance<6)merged.splice(index,1);}else merged.push(entry);}entries=merged;
   }
   if(entries.length)wc3SetSelection(entries);else wc3ClearSel();wc3RenderSel();renderCmdCard();
 });
 addEventListener("contextmenu",e=>{e.preventDefault();});   /*  WC3：全局禁右键菜单 */
 /*  WC3：A 键攻击移动预备 */
 let wc3AttackMove=false;
+const wc3ControlGroups=new Map();let wc3LastGroupKey=null,wc3LastGroupTime=0;
+addEventListener('keydown',e=>{
+  if(ACTIVE_MODE.key!=='survival'||![STATE.PLAYING,STATE.PREP,STATE.BUILD].includes(state)||e.target?.matches?.('input,textarea,[contenteditable="true"]'))return;
+  if(!/^Digit[0-9]$/.test(e.code)||e.altKey)return;
+  const key=e.code.slice(5),now=performance.now();
+  if(e.ctrlKey||e.metaKey){
+    wc3ControlGroups.set(key,wc3Selection.slice());toast(` 编队 ${key} · ${wc3Selection.length} 个目标`);
+  }else{
+    // Keep numeric research/build hotkeys intact while a building is selected.
+    if(wc3BuildMode||wc3Selection.some(entry=>!['player','unit'].includes(entry.kind)))return;
+    const group=(wc3ControlGroups.get(key)||[]).filter(entry=>entry.ref?.group?.parent&&entry.ref.alive!==false&&(!Number.isFinite(entry.ref.hp)||entry.ref.hp>0));
+    if(!group.length)return;
+    wc3SetSelection(group);wc3RenderSel();renderCmdCard();
+    if(wc3LastGroupKey===key&&now-wc3LastGroupTime<350){const p=wc3SelectionWorldPosition(group[0]);if(p){survivalOverview=false;camFocus.x=p.x;camFocus.z=p.z;}}
+    wc3LastGroupKey=key;wc3LastGroupTime=now;
+  }
+  e.preventDefault();e.stopImmediatePropagation();
+},true);
 addEventListener("keydown",e=>{
-  if(e.repeat)return;
-  if(e.code==="F1"&&ACTIVE_MODE.key==="survival"&&player&&player.alive){
-    e.preventDefault();wc3Select("player",player);wc3RenderSel();
+  if(e.repeat||e.altKey)return;
+  if(e.code==="F1"&&ACTIVE_MODE.key==="survival"&&(heroTank?.alive||player?.alive)){
+    e.preventDefault();wc3Select(heroTank?.alive?"unit":"player",heroTank?.alive?heroTank:player);wc3RenderSel();renderCmdCard();
   }
   if(e.code==="Escape"&&wc3AttackMove){wc3AttackMove=false;renderCmdCard();}
   if(e.code==="KeyA"&&ACTIVE_MODE.key==="survival"&&wc3Selection.some((entry)=>entry.kind==="player"||entry.kind==="unit")&&(state===STATE.PLAYING||state===STATE.PREP)){
@@ -4793,7 +4861,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
       const maxHp=Math.round(520*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
       const health=attachWorldHealthBar(g,7.25,4.2);
       const record={group:g,orb,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"research",...health};
-      finishIndustrialFacade(g,"research");reserveFootprint(record,buildCells);researchInstitutes.push(record);
+      finishIndustrialFacade(g,"research");reserveFootprint(record,buildCells);researchInstitutes.push(record);updateResearchInstituteVisual();
       sfx.complete();
     }else if(b.id==="factory"){
       const g=takeConstructionModel(constructionJob,()=>makeBuildingModel("factory"));
@@ -5303,10 +5371,23 @@ function wc3UpdateSelectionRing(){
     wc3SelectionRing.rotation.x=-Math.PI/2;
   }
   wc3SelectionRing.material.color.setHex(wc3Sel.kind==="enemy"?0xd9443e:0x48e06f);
-  wc3SelectionRing.scale.setScalar(Math.max(.8,radius));
+  const mobileUnit=wc3Sel.kind==='unit'||wc3Sel.kind==='player';
+  wc3SelectionRing.scale.setScalar(Math.max(.8,radius*(mobileUnit?1.65:1)));
   wc3SelectionRing.position.set(x,y+.08,z);
   wc3SelectionRing.visible=true;
   if(wc3SelectionRing.parent!==scene)scene.add(wc3SelectionRing);
+  wc3ExtraRings.forEach((ring)=>ring.visible=false);
+  wc3Selection.slice(1).forEach((entry,index)=>{
+    if(!entry.ref.group)return;
+    let ring=wc3ExtraRings[index];
+    if(!ring){
+      ring=new THREE.Mesh(new THREE.RingGeometry(.72,1,32),new THREE.MeshBasicMaterial({color:0x74f0a0,transparent:true,opacity:.72,side:THREE.DoubleSide,depthWrite:false}));
+      ring.rotation.x=-Math.PI/2;scene.add(ring);wc3ExtraRings.push(ring);
+    }
+    const p=entry.ref.group.position,unitScale=entry.kind==='unit'||entry.kind==='player'?1.65:1;
+    ring.position.set(p.x,heightAt(p.x,p.z)+.08,p.z);ring.scale.setScalar((entry.ref.radius||1.3)*unitScale);ring.material.opacity=.8;ring.visible=true;
+  });
+
 }
 function wc3ClearSel(){
   wc3Sel=null;
@@ -5328,16 +5409,6 @@ function wc3SetSelection(entries){
   if(wc3BuildMode&&wc3Sel.kind!=="base")closeWc3Build();
   if(wc3Sel.kind!==previousKind)wc3CommandPage="root";
   wc3UpdateSelectionRing();
-  wc3ExtraRings.forEach((ring)=>ring.visible=false);
-  wc3Selection.slice(1).forEach((entry,index)=>{
-    if(!entry.ref.group)return;
-    let ring=wc3ExtraRings[index];
-    if(!ring){
-      ring=new THREE.Mesh(new THREE.RingGeometry(.72,1,32),new THREE.MeshBasicMaterial({color:0x74f0a0,transparent:true,opacity:.72,side:THREE.DoubleSide,depthWrite:false}));
-      ring.rotation.x=-Math.PI/2;scene.add(ring);wc3ExtraRings.push(ring);
-    }
-    const p=entry.ref.group.position;ring.position.set(p.x,heightAt(p.x,p.z)+.08,p.z);ring.scale.setScalar((entry.ref.radius||1.3)*(1+.06*Math.sin(performance.now()*.004+index)));ring.material.opacity=.58+.18*Math.sin(performance.now()*.004+index);ring.visible=true;
-  });
   const hud=$("hud");if(hud)hud.classList.add("hasSel");
   const sp=$("selPanel");if(sp){sp.classList.add("show");sp.classList.toggle("multi",wc3Selection.length>1);}
 }
@@ -5366,11 +5437,17 @@ function selectResearchForCommand(){
 function issueSelectionCommand(command,target=null){
   const controllable=wc3Selection.filter((entry)=>entry.kind==="player"||entry.kind==="unit").map((entry)=>entry.ref).filter((ref)=>ref&&ref.alive);
   if(!controllable.length)return false;
-  const slots=target?SurvivalSystem.formationSlotsForRadii(controllable.map((unit)=>unit.radius||1.5),target,{padding:.45}):[];
+  const available=target?SurvivalSystem.formationSlotsForRadii(controllable.map((unit)=>unit.radius||1.5),target,{padding:.45}):[];
+  const slots=controllable.map(unit=>{
+    if(!available.length)return target;
+    let index=0,best=Infinity;
+    available.forEach((slot,i)=>{const d=Math.hypot(slot.x-unit.group.position.x,slot.z-unit.group.position.z);if(d<best){best=d;index=i;}});
+    return available.splice(index,1)[0];
+  });
   controllable.forEach((unit,index)=>{
-    unit.autoRepairBlocked=false;
-    if(command==="stop"){
-      clearFriendlyRoute(unit);unit.attackTarget=null;unit.repairTarget=null;unit.attackMove=false;unit.command="stop";unit.patrolPoints=[];return;
+    unit.autoRepairBlocked=false;unit.orderDestination=target?{...(slots[index]||target)}:null;
+    if(command==="stop"||command==="hold"){
+      clearFriendlyRoute(unit);unit.attackTarget=null;unit.repairTarget=null;unit.attackMove=false;unit.command=command;unit.patrolPoints=[];return;
     }
     const point=slots[index]||target;
     if(command==="patrol"){
@@ -5393,14 +5470,14 @@ function wc3RenderSel(){
     ic.innerHTML=UIIcons.svg("shield");nm.textContent=`已选择 ${wc3Selection.length} 个单位`;
     const kindNames={wall:"巨岩墙",goldmine:"金矿",turret:"炮台",beacon:"医疗灯塔",factory:"重工厂",research:"研究院",base:"基地"};
     const counts={};wc3Selection.forEach((entry)=>{const name=entry.kind==="player"?"指挥车":entry.ref.name||kindNames[entry.kind]||"单位";counts[name]=(counts[name]||0)+1;});
-    html=`批量控制 · ${Object.entries(counts).map(([name,count])=>`${name} ×${count}`).join(" · ")}<br>右键地面移动 · A 攻击移动 · S 停止`;
+    html=`批量控制 · ${Object.entries(counts).map(([name,count])=>`${name} ×${count}`).join(" · ")}<br>右键移动 · A 攻击移动 · S 停止 · H 坚守<br>Ctrl+数字编队 · 数字召回 · 双击数字聚焦`;
   }else if(k==="construction"&&constructionJobs.includes(s)){
     ic.innerHTML=UIIcons.svg("build");nm.textContent=s.build.name;
     const phase=s.phase==="building"?`施工中 · ${Math.ceil(s.duration-s.elapsed)} 秒`:s.phase==="returning"?"工程师返回基地":s.route?"工程师赶往工地":"道路受阻，等待通行";
     html=phase+` · 已付 ${s.cost} 金币`;hp=s.elapsed;hpMax=s.duration;
   }else if(k==="base"&&s&&baseAlive&&baseGroup){
     ic.innerHTML=UIIcons.svg("base");nm.textContent=BASE_ROUTES[game.doctrine]?.name||"基础指挥基地";hp=game.gateHp;hpMax=game.gateMaxHp;
-    html=game.doctrine?`<b>${BASE_ROUTES[game.doctrine].name}</b> · 底部四格研究专属科技`:`选择高级基地流派 · 改建完成后解锁四项专属科技`;
+    html=game.doctrine?`<b>${BASE_ROUTES[game.doctrine].name}</b> · 高级研究院研究专属科技`:`选择高级基地流派 · 改建后可升阶研究院`;
   }else if(k==="player"&&s&&s.alive){
     ic.innerHTML=UIIcons.svg("shield");
     nm.textContent="装甲指挥车";
@@ -5420,7 +5497,7 @@ function wc3RenderSel(){
     if(game.researchTier>=1)tierName=`高级研究院 · ${BASE_ROUTES[game.doctrine]?.name||""}`;
     else if(game.doctrine)tierName="初级研究院 · 可升阶高级";
     nm.textContent=tierName;hp=s.hp;hpMax=s.maxHp;
-    const lines=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&tech.route===game.doctrine)).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`);
+    const lines=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&game.researchTier>=1&&tech.route===game.doctrine)).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`);
     html=lines.join(" · ")+(game.doctrine?` · 专属 ${Object.keys(game.doctrineTech||{}).filter(k=>game.doctrineTech[k]>0).length}`:"")+`<br>金矿 ${goldMines.length}/${mineUnlockedCount()} · 墙上限 ${wallUnlockedMaxLevel()} · 炮台上限 ${turretUnlockedMaxLevel()}`;
   }else if(k==="house"&&s&&builtHouses.includes(s)){
     ic.innerHTML=UIIcons.svg("house");nm.textContent=`人口房 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
@@ -5478,7 +5555,11 @@ function wallSelectionFromObject(object){
 function wc3PickAt(px,py){
   _selNdc.x=(px/innerWidth)*2-1;_selNdc.y=-(py/innerHeight)*2+1;
   _selRay.setFromCamera(_selNdc,camera);
-  const hits=_selRay.intersectObjects(scene.children,true);
+  const roots=[baseGroup,player?.alive?player.group:null,...friendlyUnits.filter(u=>u.alive).map(u=>u.group),
+    ...[builtTurrets,goldMines,heroHubs,researchInstitutes,heavyFactories,builtHouses,visionBeacons].flatMap(list=>list.map(item=>item.group)),
+    ...constructionJobs.flatMap(job=>[job.site,job.worker]),...[...wallMeta.keys()].map(key=>tileMeshes[key]),
+    ...enemies.filter(e=>isEnemyCombatTarget(e)&&isPositionVisible(e.group.position)).map(e=>e.group)].filter(Boolean);
+  const hits=_selRay.intersectObjects(roots,true);
   for(const h of hits){
     let o=h.object;
     while(o){
@@ -5524,7 +5605,8 @@ function wc3PickAt(px,py){
     const position=wc3SelectionWorldPosition(entry);if(!position)continue;
     const projected=position.clone().project(camera);if(projected.z<-1||projected.z>1)continue;
     const sx=(projected.x+1)*innerWidth/2,sy=(-projected.y+1)*innerHeight/2;
-    const radius=entry.kind==='player'||entry.ref.type==='hero'?58:entry.kind==='unit'?42:48;
+    const edge=position.clone().add(new THREE.Vector3(entry.ref.radius||2,0,0)).project(camera);
+    const radius=Math.max(10,Math.min(46,Math.abs(edge.x-projected.x)*innerWidth*.5+6));
     const distance=Math.hypot(px-sx,py-sy);if(distance<=radius&&distance<best){best=distance;closest=entry;}
   }
   if(closest)return closest;
@@ -5673,12 +5755,13 @@ function commandItemsForSelection(){
   if(!wc3Sel)return [];
   const kinds=new Set(wc3Selection.map((entry)=>entry.kind));
   if([...kinds].every((kind)=>kind==="player"||kind==="unit"))return [
-    {k:"M",icon:"move",name:"移动",tip:"右键点击地面移动",hot:"右键"},
+    {k:"M",icon:"move",name:"移动",tip:"右键点地移动；M 后左键指定位置",hot:"M",act:()=>{wc3AttackMove="move";toast(" 移动：左键点击目标位置");}},
     {k:"A",icon:"attack",name:"攻击",tip:"攻击移动",hot:"A",act:()=>{wc3AttackMove=true;toast(" 攻击移动：左键点击目标位置");}},
     {k:"S",icon:"stop",name:"停止",tip:"停止当前指令",hot:"S",act:()=>issueSelectionCommand("stop")},
+    {k:"H",icon:"shield",name:"原地坚守",tip:"保持位置，攻击射程内敌人，不主动追击",hot:"H",act:()=>issueSelectionCommand("hold")},
     {k:"P",icon:"patrol",name:"巡逻",tip:"在两点间往返警戒",hot:"P",act:()=>{wc3AttackMove="patrol";toast(" 巡逻：左键点击另一端");}},
     ...repairUpgradeCommands(),
-    ...(wc3Selection.length===1&&wc3Sel.ref.type==='hero'?[{k:'H',hot:'H',icon:'base',name:'英雄枢纽',tip:'前往枢纽学习和升级被动武器',dim:!heroHub(),act:()=>{const h=heroHub();if(h)focusSelectedStructure('heroHub',h);}}]:[]),
+    ...(wc3Selection.length===1&&wc3Sel.ref.type==='hero'?[{k:'Y',hot:'Y',icon:'base',name:'英雄枢纽',tip:'前往枢纽学习和升级被动武器',dim:!heroHub(),act:()=>{const h=heroHub();if(h)focusSelectedStructure('heroHub',h);}}]:[]),
     ...(wc3Selection.length===1&&wc3Sel.kind==="unit"&&wc3Sel.ref.type!=='hero'?[{k:"X",icon:"demolish",name:"拆除",tip:"拆除该单位并回收部分金币",hot:"X",act:sellSelectedSingle}]:[]),
   ];
   if(kinds.size!==1||wc3Sel.kind==="enemy")return [];
@@ -5688,7 +5771,7 @@ function commandItemsForSelection(){
   if(kind==="heroHub")return heroCommands();
   if(kind==="research"){
     const cap=researchUnlockedMaxLevel();
-    const normal=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&tech.route===game.doctrine)).map((tech,index)=>{
+    const normal=Object.values(TECH_TREE).filter((tech)=>tech.tier===0||(tech.tier===1&&game.researchTier>=1&&tech.route===game.doctrine)).map((tech,index)=>{
       const lv=game.tech[tech.id]||0,cost=techCost(tech.id),maxed=lv>=cap,unlocked=techUnlocked(tech.id);
       return {upgradeType:'tech',upgradeId:tech.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,allowQueue:true,act:()=>upgradeTech(tech.id)};
     });
@@ -5728,7 +5811,7 @@ function renderCmdCard(){
   const items=decorateUpgradeCommands(commandItemsForSelection().filter((item)=>!item.sep));
   const factoryRef=wc3Sel&&wc3Sel.kind==="factory"?wc3Sel.ref:null;
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
-  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.heroSkill&&!!game.autoHeroSkills?.[it.heroSkill],it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
+  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.upgradeOwner&&upgradeOwnerKey(it.upgradeOwner),it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.heroSkill&&!!game.autoHeroSkills?.[it.heroSkill],it.upgradeType&&(it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>isAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref))).every(Boolean):isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
   // Replaced buttons cannot reliably dispatch mouseleave; never retain their old tooltip.
   const previousTip=$("wc3tip");if(previousTip)previousTip.style.display="none";
@@ -5753,8 +5836,16 @@ function renderCmdCard(){
       +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
-    if(it.heroSkill){if(it.heroAuto)d.classList.add("auto-upgrade");d.oncontextmenu=(event)=>{event.preventDefault();if(startAutoHeroSkill(it.heroSkill)&&!it.dim)it.act?.();toast(" 已启动无人机自动配送");};}
-    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();if(it.batchUpgrade){const selected=selectedEntriesOfKind(it.upgradeType);selected.forEach(({ref})=>startAutoUpgrade(it.upgradeType,it.upgradeId||'',upgradeOwner(it.upgradeType,ref)));if(!it.dim)it.act?.();}else if(startAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)&&!it.dim){it.act?.();}toast(" 已启动全部目标的自动逐级升级");};}
+    if(it.heroSkill){if(it.heroAuto)d.classList.add("auto-upgrade");d.oncontextmenu=(event)=>{event.preventDefault();const enabled=toggleAutoHeroSkill(it.heroSkill);if(enabled&&!it.dim)it.act?.();toast(enabled?" 已启动无人机自动配送":" 已关闭自动配送 · 当前订单继续");};}
+    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){
+      d.oncontextmenu=(event)=>{
+        event.preventDefault();
+        const owners=it.batchUpgrade?selectedEntriesOfKind(it.upgradeType).map(({ref})=>upgradeOwner(it.upgradeType,ref)):[it.upgradeOwner];
+        const enabled=toggleAutoUpgrades(it.upgradeType,it.upgradeId||'',owners);
+        if(enabled&&!it.dim)it.act?.();
+        toast(enabled?" 已启动全部目标的自动逐级升级":" 已关闭全部目标的自动升级 · 当前订单继续");
+      };
+    }
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;
       tip.innerHTML=`<div class="t">${UIIcons.svg(it.icon)} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;
@@ -6129,28 +6220,22 @@ function updatePlayer(dt){
     }
     if(nearest)player.attackTarget=nearest;
   }
-  if(wc3&&player.moveTarget){
-    const dx=player.moveTarget.x-g.position.x,dz=player.moveTarget.z-g.position.z;
-    const d=Math.hypot(dx,dz);
-    if(d<.8){
-      if(player.command==="patrol"&&player.patrolPoints&&player.patrolPoints.length===2){
-        player.patrolIndex=1-(player.patrolIndex||0);player.moveTarget={...player.patrolPoints[player.patrolIndex]};
-      }else{player.moveTarget=null;player.attackMove=false;}
-    }
-    else{mx=dx/d;mz=dz/d;wc3Moving=true;}
-  }
-  if(wc3&&player.attackTarget){
-    if(!player.attackTarget.alive||!isPositionVisible(player.attackTarget.group.position)){player.attackTarget=null;}
-    else{
-      /* 追击目标，进入射程(14)停下自动开火（炮塔自动索敌） */
-      const dx=player.attackTarget.group.position.x-g.position.x,
-            dz=player.attackTarget.group.position.z-g.position.z;
-      const d=Math.hypot(dx,dz);
-      if(d>13){mx=dx/d;mz=dz/d;wc3Moving=true;}
+  if(wc3){
+    let engage=false;
+    if(player.attackTarget){
+      if(!isEnemyCombatTarget(player.attackTarget)||!isPositionVisible(player.attackTarget.group.position))player.attackTarget=null;
       else{
-        if(!player.attackMove)player.moveTarget=null;
-        mx=0;mz=0;wc3Moving=false;
+        const target=player.attackTarget.group.position;
+        engage=Math.hypot(target.x-g.position.x,target.z-g.position.z)<=13;
+        if(engage)clearFriendlyRoute(player);
+        if(!engage&&player.command!=='hold')setFriendlyMoveTarget(player,target);
       }
+    }
+    if(!engage){
+      const oldX=g.position.x,oldZ=g.position.z;
+      const sprintMult=now<game.sprintUntil?1+.35*game.stats.sprintLv:1;
+      moveFriendlyUnit(player,dt,game.stats.moveSpeed*sprintMult);
+      wc3Moving=Math.hypot(g.position.x-oldX,g.position.z-oldZ)>.001;
     }
   }
   if(!wc3){
@@ -6309,6 +6394,9 @@ function applyHordeSeparation(dt){
     let deepest=0;
     const separatePair=(e,other)=>{
           if(other.hordeId<=e.hordeId)return;
+          // Most audited pairs are already legal. Only calculate a full
+          // separation vector after the exact overlap threshold is exceeded.
+          if(!zombieBodiesPenetrate(e,other,.0005))return;
           const contact=zombieBodyContact(e,other);
           if(!contact||contact.depth<.0005)return;
           deepest=Math.max(deepest,contact.depth);
@@ -6343,13 +6431,17 @@ function updateHordeClimbing(dt){
   const ramp=cellCenter(ACTIVE_MODE.ramp.col,ACTIVE_MODE.ramp.row),buckets=new Map(),cellSize=2;
   const live=enemies.filter(e=>e.alive&&!e.dying);
   for(const e of live){
-    const p=e.group.position,key=`${Math.floor(p.x/cellSize)},${Math.floor(p.z/cellSize)}`;
+    const p=e.group.position;
+    if(Math.abs(p.z-ramp.z)>TILE*.8+3||p.x<ramp.x-TILE-3||p.x>ramp.x+TILE*2+3)continue;
+    const key=`${Math.floor(p.x/cellSize)},${Math.floor(p.z/cellSize)}`;
     if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(e);
   }
   for(const e of live){
-    const p=e.group.position,ground=heightAt(p.x,p.z);
-    let support=0,contacts=0;
+    const p=e.group.position;
     const nearRamp=Math.abs(p.z-ramp.z)<TILE*.8&&p.x>ramp.x-TILE&&p.x<ramp.x+TILE*2;
+    if(!nearRamp&&!e.hordeLift&&Math.abs(e.group.rotation.x)<.001)continue;
+    const ground=heightAt(p.x,p.z);
+    let support=0,contacts=0;
     if(nearRamp&&!e.boss&&e.hordeId%3===0){
       const cx=Math.floor(p.x/cellSize),cz=Math.floor(p.z/cellSize);
       for(let z=cz-1;z<=cz+1;z++)for(let x=cx-1;x<=cx+1;x++){
@@ -6529,16 +6621,32 @@ function zombieCollisionShape(enemy){
     shape=enemy._collisionShape={hull,normals,vertices:new Float64Array(hull.length*2),axes:new Float64Array(normals.length*4)};
   }
   if(shape.angle===angle&&shape.scale===scale)return shape;
-  const c=Math.cos(angle),sin=Math.sin(angle),v=shape.vertices,axes=shape.axes;
+  if(shape.angle!==undefined){
+    // Failed movement retries alternate between the proposed and accepted heading.
+    // Keep both exact poses instead of rotating every hull vertex on every retry.
+    const alternate=enemy._collisionShapeAlternate;
+    enemy._collisionShapeAlternate=shape;
+    shape=alternate&&alternate.hull===hull?alternate:{hull,normals:shape.normals,vertices:new Float64Array(hull.length*2),axes:new Float64Array(shape.normals.length*4)};
+    enemy._collisionShape=shape;
+    if(shape.angle===angle&&shape.scale===scale)return shape;
+  }
+  const c=Math.cos(angle),sin=Math.sin(angle),v=shape.vertices;
   shape.minX=shape.minZ=Infinity;shape.maxX=shape.maxZ=-Infinity;
   for(let i=0;i<hull.length;i++){
     const x=(hull[i].x*c+hull[i].z*sin)*scale,z=(-hull[i].x*sin+hull[i].z*c)*scale;
     v[i*2]=x;v[i*2+1]=z;shape.minX=Math.min(shape.minX,x);shape.maxX=Math.max(shape.maxX,x);shape.minZ=Math.min(shape.minZ,z);shape.maxZ=Math.max(shape.maxZ,z);
+    if(i===0||z<v[shape.bottomIndex+1]||(z===v[shape.bottomIndex+1]&&x<v[shape.bottomIndex]))shape.bottomIndex=i*2;
+    if(i===0||z>v[shape.topIndex+1]||(z===v[shape.topIndex+1]&&x>v[shape.topIndex]))shape.topIndex=i*2;
   }
+  shape.angle=angle;shape.scale=scale;shape.cos=c;shape.sin=sin;return shape;
+}
+function zombieCollisionAxes(shape){
+  if(shape.axesAngle===shape.angle&&shape.axesScale===shape.scale)return;
+  const axes=shape.axes,c=shape.cos,sin=shape.sin,scale=shape.scale;
   for(let i=0;i<shape.normals.length;i++){
     const n=shape.normals[i];axes[i*4]=n.x*c+n.z*sin;axes[i*4+1]=-n.x*sin+n.z*c;axes[i*4+2]=n.min*scale;axes[i*4+3]=n.max*scale;
   }
-  shape.angle=angle;shape.scale=scale;return shape;
+  shape.axesAngle=shape.angle;shape.axesScale=scale;
 }
 function zombieWorldHull(enemy){
   const shape=zombieCollisionShape(enemy),p=enemy.group.position,points=[];
@@ -6551,6 +6659,7 @@ function zombieBodyContact(a,b){
   if(a.collisionHull?.length>=3&&b.collisionHull?.length>=3){
     const first=zombieCollisionShape(a),second=zombieCollisionShape(b);
     if(first.maxX+dx<=second.minX||second.maxX<=first.minX+dx||first.maxZ+dz<=second.minZ||second.maxZ<=first.minZ+dz)return null;
+    zombieCollisionAxes(first);zombieCollisionAxes(second);
     let depth=Infinity,nx=0,nz=0;
     for(let side=0;side<2;side++){
       const own=side?second:first,other=side?first:second,shiftX=side?dx:-dx,shiftZ=side?dz:-dz;
@@ -6570,26 +6679,35 @@ function zombieBodyContact(a,b){
   return {depth:a.radius+b.radius-distance,x:distance>1e-6?dx/distance:Math.cos(angle),z:distance>1e-6?dz/distance:Math.sin(angle)};
 }
 // Movement only needs a threshold decision. Separation still uses the full MTV above.
-function zombieBodiesPenetrate(a,b,tolerance=.0005){
+function zombieBodiesPenetrate(a,b,tolerance=.0005,firstShape=null,secondShape=null){
   const dx=a.group.position.x-b.group.position.x,dz=a.group.position.z-b.group.position.z;
   const radius=a.radius+b.radius;
   if(dx*dx+dz*dz>=radius*radius)return false;
   if(a.collisionHull?.length>=3&&b.collisionHull?.length>=3){
-    const first=zombieCollisionShape(a),second=zombieCollisionShape(b);
+    const first=firstShape||zombieCollisionShape(a),second=secondShape||zombieCollisionShape(b);
     if(first.maxX+dx<=second.minX||second.maxX<=first.minX+dx||first.maxZ+dz<=second.minZ||second.maxZ<=first.minZ+dz)return false;
-    for(let side=0;side<2;side++){
-      const own=side?second:first,other=side?first:second,shiftX=side?dx:-dx,shiftZ=side?dz:-dz;
-      const axes=own.axes,vertices=other.vertices;
-      for(let i=0;i<axes.length;i+=4){
-        const x=axes[i],z=axes[i+1];let min=Infinity,max=-Infinity;
-        for(let j=0;j<vertices.length;j+=2){const n=vertices[j]*x+vertices[j+1]*z;if(n<min)min=n;if(n>max)max=n;}
-        const shift=shiftX*x+shiftZ*z;
-        if(axes[i+3]-min-shift<=tolerance||max+shift-axes[i+2]<=tolerance)return false;
-      }
-    }
-    return true;
+    return zombieHullInteriorsOverlap(first.vertices,second.vertices,-dx,-dz,tolerance,first.bottomIndex,second.topIndex);
   }
   return radius-Math.hypot(dx,dz)>tolerance;
+}
+// A point lies inside A + (-B) exactly when the two translated convex bodies
+// overlap. Merge their ordered edges in O(verticesA + verticesB), retaining
+// every model edge and the same inward SAT tolerance; no circular substitute.
+function zombieHullInteriorsOverlap(a,b,dx,dz,tolerance,ia,ib){
+  const na=a.length,nb=b.length;
+  let ca=0,cb=0,px=a[ia]-b[ib],pz=a[ia+1]-b[ib+1];
+  while(ca<na||cb<nb){
+    const an=(ia+2)%na,bn=(ib+2)%nb;
+    const ax=a[an]-a[ia],az=a[an+1]-a[ia+1],bx=b[ib]-b[bn],bz=b[ib+1]-b[bn+1];
+    const cross=ax*bz-az*bx;
+    const takeA=ca<na&&(cb>=nb||cross>=0),takeB=cb<nb&&(ca>=na||cross<=0);
+    const ex=(takeA?ax:0)+(takeB?bx:0),ez=(takeA?az:0)+(takeB?bz:0);
+    const length=Math.sqrt(ex*ex+ez*ez);
+    if(length>1e-12&&ex*(dz-pz)-ez*(dx-px)<=tolerance*length)return false;
+    px+=ex;pz+=ez;
+    if(takeA){ia=an;ca+=2;}if(takeB){ib=bn;cb+=2;}
+  }
+  return true;
 }
 function modelFootprintRadius(visual,fallback=.35){
   if(!visual)return fallback;
@@ -6751,17 +6869,27 @@ function applyZombieReachPose(e){
   }
 }
 let hordeSeparationNeeded=true;
+function hordeRestContactValid(e,old,dt,previous=null){
+  const rest=e._hordeRest;if(!rest)return false;
+  rest.remaining-=dt;
+  if(rest.remaining<=0||rest.revision!==navigationStamp||rest.x!==old.x||rest.z!==old.z||rest.angle!==old.angle||rest.radius!==e.radius)return false;
+  return rest.blockers.every(b=>{
+    const snapshot=previous?.get(b.ref),p=snapshot||b.ref.group.position,angle=snapshot?snapshot.angle:b.ref.group.rotation.y;
+    return b.ref.alive&&!b.ref.dying&&p.x===b.x&&p.z===b.z&&angle===b.angle&&b.ref.radius===b.radius;
+  });
+}
 function resolveHordeMovement(previous){
   const proposals=[];let requiresSeparation=false;
   for(const [e,old] of previous){
     if(!e.alive||e.dying)continue;
     proposals.push({e,old,x:e.group.position.x,z:e.group.position.z,angle:e.group.rotation.y});
-    e.group.position.x=old.x;e.group.position.z=old.z;e.group.rotation.y=old.angle;
+    e.group.position.x=old.x;e.group.position.z=old.z;if(e.group.rotation.y!==old.angle)e.group.rotation.y=old.angle;
   }
   const buckets=new Map(),cell=.75,key=(x,z)=>Math.floor(x/cell)+Math.floor(z/cell)*512;
   let maxRadius=0;const large=[];
   for(const e of enemies){
     if(!e.alive||e.dying)continue;
+    e._hordeResolvedShape=e.collisionHull?.length>=3?zombieCollisionShape(e):null;
     if(e.radius>HORDE_LARGE_RADIUS){large.push(e);continue;}
     maxRadius=Math.max(maxRadius,e.radius);
     const k=key(e.group.position.x,e.group.position.z);
@@ -6769,25 +6897,37 @@ function resolveHordeMovement(previous){
   }
   for(const {e,old,x,z,angle} of proposals){
     if(Math.abs(x-old.x)+Math.abs(z-old.z)+Math.abs(angle-old.angle)<1e-8)continue;
-    const nearby=[],travel=Math.hypot(x-old.x,z-old.z),reach=e.radius+maxRadius+travel+.001;
+    // Only a fully blocked body may rest. Moving/dead blockers and changed
+    // terrain wake it immediately; staggered retries still look for side exits.
+    if(hordeRestContactValid(e,old,e._simulationDt||1/60)){e.group.position.y=heightAt(old.x,old.z);continue;}
+    e._hordeRest=null;
+    const nearby=[],reach=e.radius+maxRadius+.001;
+    const minX=Math.min(old.x,x),maxX=Math.max(old.x,x),minZ=Math.min(old.z,z),maxZ=Math.max(old.z,z);
     const collect=other=>{
       if(other===e)return;
-      const dx=other.group.position.x-old.x,dz=other.group.position.z-old.z,bound=e.radius+other.radius+travel+.001;
-      if(dx*dx+dz*dz<=bound*bound)nearby.push(other);
+      const p=other.group.position,bound=e.radius+other.radius+.001;
+      if(p.x<minX-bound||p.x>maxX+bound||p.z<minZ-bound||p.z>maxZ+bound)return;
+      const dx=p.x-old.x,dz=p.z-old.z,tx=p.x-x,tz=p.z-z;
+      // All four tested endpoints, including the old pose used for overlap
+      // repair. No need to query a travel-expanded circle in every direction.
+      if(Math.min(dx*dx,tx*tx)+Math.min(dz*dz,tz*tz)<=bound*bound)nearby.push(other);
     };
-    for(let bz=Math.floor((old.z-reach)/cell);bz<=Math.floor((old.z+reach)/cell);bz++)
-      for(let bx=Math.floor((old.x-reach)/cell);bx<=Math.floor((old.x+reach)/cell);bx++)
+    for(let bz=Math.floor((minZ-reach)/cell);bz<=Math.floor((maxZ+reach)/cell);bz++)
+      for(let bx=Math.floor((minX-reach)/cell);bx<=Math.floor((maxX+reach)/cell);bx++)
         for(const other of buckets.get(bx+bz*512)||[])collect(other);
     for(const other of large)collect(other);
-    const ground=heightAt(old.x,old.z),navigationRadius=enemyNavigationRadius(e);
+    const ground=heightAt(old.x,old.z),navigationRadius=enemyNavigationRadius(e),oldShape=e._hordeResolvedShape,blockers=[];
+    let oldOverlap=false;
     const attempt=(nx,nz,rotation)=>{
       // A legal diagonal endpoint does not imply either axis-only fallback is legal.
       if((nx!==old.x||nz!==old.z)&&blockedForTank(nx,nz,navigationRadius,ground))return false;
-      e.group.position.x=nx;e.group.position.z=nz;e.group.rotation.y=rotation;
+      e.group.position.x=nx;e.group.position.z=nz;if(e.group.rotation.y!==rotation)e.group.rotation.y=rotation;
+      const shape=e.collisionHull?.length>=3?zombieCollisionShape(e):null;
       for(const other of nearby){
-        if(!zombieBodiesPenetrate(e,other))continue;
-        e.group.position.x=old.x;e.group.position.z=old.z;e.group.rotation.y=old.angle;
-        if(zombieBodiesPenetrate(e,other))requiresSeparation=true;
+        if(!zombieBodiesPenetrate(e,other,.0005,shape,other._hordeResolvedShape))continue;
+        if(!blockers.some(b=>b.ref===other))blockers.push({ref:other,x:other.group.position.x,z:other.group.position.z,angle:other.group.rotation.y,radius:other.radius});
+        e.group.position.x=old.x;e.group.position.z=old.z;if(e.group.rotation.y!==old.angle)e.group.rotation.y=old.angle;
+        if(zombieBodiesPenetrate(e,other,.0005,oldShape,other._hordeResolvedShape)){requiresSeparation=true;oldOverlap=true;}
         return false;
       }
       return true;
@@ -6796,6 +6936,9 @@ function resolveHordeMovement(previous){
     if(!accepted&&angle!==old.angle)accepted=attempt(x,z,old.angle);
     if(!accepted&&z!==old.z)accepted=attempt(x,old.z,old.angle);
     if(!accepted&&x!==old.x)attempt(old.x,z,old.angle);
+    e._hordeResolvedShape=e.collisionHull?.length>=3?zombieCollisionShape(e):null;
+    if(!oldOverlap&&!e.atGate&&!e._hordeCanAttack&&blockers.length&&e.group.position.x===old.x&&e.group.position.z===old.z&&e.group.rotation.y===old.angle)
+      e._hordeRest={...old,radius:e.radius,revision:navigationStamp,remaining:(e._crowdLod ? .24 : .12)+(e.hordeId%5)*.01,blockers};
     e.group.position.y=heightAt(e.group.position.x,e.group.position.z);
     const oldKey=key(old.x,old.z),newKey=key(e.group.position.x,e.group.position.z);
     if(e.radius<=HORDE_LARGE_RADIUS&&oldKey!==newKey){buckets.get(oldKey)?.delete(e);if(!buckets.has(newKey))buckets.set(newKey,new Set());buckets.get(newKey).add(e);}
@@ -6866,6 +7009,10 @@ function updateEnemies(dt){
       e.cd=Math.max(e.cd,.5);
       continue;
     }
+    if(ACTIVE_MODE.key==='survival'&&!e._hordeCanAttack&&hordeRestContactValid(e,{x:previousX,z:previousZ,angle:e.group.rotation.y},dt,previousBodies)){
+      e.thinkTimer-=dt;e.attackPose=Math.max(0,(e.attackPose||0)-dt*1.85);
+      continue;
+    }
     e.thinkTimer-=dt;
     /*  P0-3：转向改为「按格边界重算」为主 + 短 thinkTimer 保底
        原缺陷：thinkTimer 1~2.6s 才重算一次方向，而敌人约 1 秒穿 1 格（速度 ~4 / TILE 4），
@@ -6881,8 +7028,6 @@ function updateEnemies(dt){
       e.atGate=!!f.atGate;
       if(f.best)e.dir.set(f.best[0],0,f.best[1]);
       else if(f.atGate)e.dir.set(0,0,0);           // 已抵达：停下，交给下面的啃门分支
-      else if(baseGroup)e.dir.set(baseGroup.position.x-e.group.position.x,0,
-        baseGroup.position.z-e.group.position.z).normalize();   // 流场缺失:直奔大门
       else e.dir.set(0,0,0);   // 卡住兜底
     }else if(e.thinkTimer<=0){
       /* 非生存模式：沿用原随机游走（保持原有节奏） */
@@ -6912,13 +7057,15 @@ function updateEnemies(dt){
        改为 else-if 互斥：atGate 已判定时跳过撞墙分支，wallCd 只递减一次，节奏回到设计值。 */
     const gateSlot=ACTIVE_MODE.key==="survival"&&e.atGate&&baseAlive&&baseGroup&&enemyGateAttackSlot(e);
     e._gateAttackSlot=!!gateSlot;
+    e._hordeCanAttack=!!gateSlot;
     if(gateSlot){
       e.objectiveKind="base";
       e.dir.set(0,0,0);
       const bp=baseContactPoint(e.group.position);
       const want=Math.atan2(bp.x-e.group.position.x,bp.z-e.group.position.z);
       e.heading=want;
-      e.group.rotation.y+=shortAngle(want-e.group.rotation.y)*Math.min(1,dt*6);
+      const turn=shortAngle(want-e.group.rotation.y);
+      if(turn!==0)e.group.rotation.y=Math.abs(turn)<.003?want:e.group.rotation.y+turn*Math.min(1,dt*6);
       e.wallCd=(e.wallCd||0)-dt;
       if(e.wallCd<=0){
         const bite=enemyMeleeDamage(e);damageGate(bite,e.group.position);applyEnemyLifesteal(e,bite);
@@ -6937,6 +7084,7 @@ function updateEnemies(dt){
         ?{...e.objectiveCell,center:cellCenter(e.objectiveCell.x,e.objectiveCell.z)}:null;
       const wallInReach=!!(targetWall&&(steelHP.get(idx(targetWall.x,targetWall.z))>0||ownedStructureAtCell(idx(targetWall.x,targetWall.z)))
         &&enemyWallTouching(e,targetWall));
+      e._hordeCanAttack=wallInReach;
       const wallAttackSlot=wallInReach&&enemyWallAttackSlot(e,targetWall);
       const nx=e.group.position.x+e.dir.x*spd,nz=e.group.position.z+e.dir.z*spd;
       const navigationRadius=enemyNavigationRadius(e);
@@ -6960,7 +7108,7 @@ function updateEnemies(dt){
       if(ACTIVE_MODE.key==="survival"&&!moved&&((e.dir.x&&!e.dir.z)||(e.dir.z&&!e.dir.x))){
         const wx=e.group.position.x+e.dir.x*(e.radius+.8),wz=e.group.position.z+e.dir.z*(e.radius+.8);
         const wc=cellOf(wx,wz);
-        const frontChew=inMap(wc.x,wc.z)&&(grid[wc.z][wc.x]===T_BRICK||grid[wc.z][wc.x]===T_STEEL||
+        const frontChew=inMap(wc.x,wc.z)&&(grid[wc.z][wc.x]===T_BRICK||steelHP.get(idx(wc.x,wc.z))>0||
           grid[wc.z][wc.x]===T_BASE||structCells.has(idx(wc.x,wc.z)));
         if(!frontChew){
           const cc=cellCenter(cellOf(e.group.position.x,e.group.position.z).x,cellOf(e.group.position.x,e.group.position.z).z);
@@ -7025,7 +7173,8 @@ function updateEnemies(dt){
     if(e.dir.x||e.dir.z){
       const want=Math.atan2(e.dir.x,e.dir.z);
       e.heading=want;
-      e.group.rotation.y+=shortAngle(want-e.group.rotation.y)*Math.min(1,dt*8);
+      const turn=shortAngle(want-e.group.rotation.y);
+      if(turn!==0)e.group.rotation.y=Math.abs(turn)<.003?want:e.group.rotation.y+turn*Math.min(1,dt*8);
     }
     /*  角色动画（P4-1）：移动→Walk / 攻击→attack-melee / 待机→Idle
        Kenney GLB 动画名按「含关键字」模糊匹配（attack-melee-up/down/stab 等变体）。 */
@@ -7500,6 +7649,7 @@ function stepGame(dt,now=performance.now()){
     if(state===STATE.BUILD&&buildSel!==null)updateGhost();
     drawMinimap();
     if(ACTIVE_MODE.key==="survival"){
+      wc3UpdateSelectionRing();
       _cmdT=(_cmdT||0)+dt;
       if(_cmdT>.2){_cmdT=0;renderCmdCard();wc3RenderSel();updateDockRes();}
     }
@@ -7510,6 +7660,7 @@ function loop(){
   updateSurvivalSoundscape();
   const now=performance.now();
   let dt=(now-lastT)/1000;lastT=now;
+  if(typeof updateSurvivalFrameStats==='function')updateSurvivalFrameStats(now);
   dt=Math.min(dt,.05)*FF;
   stepGame(dt,now);
   updateCamera(dt);
@@ -7656,7 +7807,7 @@ Object.assign(window,{get state(){return state;},get game(){return game;},
 
 /* v5.0.0：自动化、无障碍与诊断共用的权威状态出口。 */
 window.render_game_to_text=()=>JSON.stringify({
-  version:GAME_VERSION,
+  version:GAME_VERSION,framePerformance:typeof survivalFrameStats==='undefined'?null:{...survivalFrameStats},
   construction:serializeConstruction(),
   coordinateSystem:"origin at map center; +x east/right; +z south/down; +y up; world units",
   mode:ACTIVE_MODE.key,

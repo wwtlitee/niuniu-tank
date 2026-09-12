@@ -310,7 +310,7 @@ test('400只尸群堵住完整堡垒时不得重叠或穿墙',async()=>{
         for(const e of enemies)if(e.group.position.x<c.x-1.2)passed.add(e.hordeId);
       }
       crossed=passed.size;
-      camera.position.set(c.x+11,PH+18,c.z+16);camera.lookAt(c.x-2,1,c.z);renderer.render(scene,camera);
+      camera.position.set(c.x+11,PH+18,c.z+16);camera.lookAt(c.x-2,1,c.z);updateCrowdLod();renderer.render(scene,camera);
       let maxPenetration=0,overlappingPairs=0;
       for(let a=0;a<enemies.length;a++)for(let b=a+1;b<enemies.length;b++){const hit=zombieBodyContact(enemies[a],enemies[b]);if(hit){maxPenetration=Math.max(maxPenetration,hit.depth);if(hit.depth>.025)overlappingPairs++;}}
       return {rendered:enemies.filter(e=>e.group.visible).length+(crowdLodMesh?.count||0),maxPenetration,overlappingPairs,simulationMs:performance.now()-started,crossed,hp:steelHP.get(key),count:enemies.length,radius:enemies[0].radius,hull:enemies[0].collisionHull,nearest:Math.min(...enemies.map(e=>e.group.position.x-c.x))};
