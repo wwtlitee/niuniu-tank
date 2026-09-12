@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.9.0";
+const GAME_VERSION="8.10.0";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -2884,10 +2884,11 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   scene.add(group);
   /*  角色模型需要面向镜头（默认朝 +Z），转向 +X 朝向战场内侧 */
   group.rotation.y=-Math.PI/2;
-  /* 人形碰撞按肩宽估算，不能再按坦克半径 1.5 计算。 */
+  /* 视觉尺寸只供表现使用，躯干碰撞从实际网格单独提取。 */
   const visualRadius=.65*t.scale*bodyScale;
-  /* 碰撞体直接取模型落地后的实际 X/Z 占用宽度，避免人形之间出现明显空气层。 */
-  const modelRadius=modelFootprintRadius(built.visualRoot||group,visualRadius*.58);
+  /* 手臂不撑开躯干碰撞；外接半径只负责邻域粗筛，接触使用凸轮廓。 */
+  const collisionHull=zombieBodyHull(built.animationRoot||group,group);
+  const modelRadius=collisionHull.length>=3?Math.max(...collisionHull.map(p=>Math.hypot(p.x,p.z))):modelFootprintRadius(built.visualRoot||group,visualRadius*.58);
   const e={sourceWave,group,visualRoot:built.visualRoot||group,animationRoot:built.animationRoot||group,
     _lodHeight:(built.lodHeight||3.2)*bodyScale,hordeId:++_enemySerial,variantId:built.variantId||null,variantPack:built.variantPack||null,
     type:typeKey,boss:isBoss,bossId:bossSpec&&bossSpec.id,bossName:bossSpec&&bossSpec.name,bossMechanic:bossSpec&&bossSpec.mechanic,
@@ -2895,7 +2896,7 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
     armor:Math.max(t.armor||0,waveSpec.armor||0),
     lifesteal:(bossSpec&&bossSpec.mechanic==="lifesteal") ? .45 : (t.lifesteal||0),siege:!!t.siege,
     fireCd:t.fireCd,dmg:t.dmg,visualRadius,
-    radius:modelRadius,heading:Math.PI,
+    radius:modelRadius,collisionHull,collisionHullRadius:modelRadius,heading:Math.PI,
     cd:1+Math.random()*1.5,thinkTimer:0,dir:new THREE.Vector3(0,0,1),
     score:t.score,alive:true,spawnFlash:performance.now()+(isBoss||elite?700:0),beam:null,objectiveKind:"base",objectiveCell:null,
     slowMult:1,slowUntil:0,velocity:new THREE.Vector3(),
@@ -3179,11 +3180,25 @@ function naturalGroundClear(x,z,radius){
   return true;
 }
 function blockedForTank(px,pz,radius,curH,isBullet=false,isPlayer=false,ignoredCells=null){
+  if(!isBullet&&ACTIVE_MODE.key==='survival'){
+    const seen=new Set();
+    for(const [key] of wallMeta){
+      const wall=tileMeshes[key];
+      if(!wall?.userData.wallCollisionParts||seen.has(wall)||!(steelHP.get(key)>0)||ignoredCells?.has(key))continue;
+      seen.add(wall);
+      const x=px-wall.position.x,z=pz-wall.position.z;
+      for(const part of wall.userData.wallCollisionParts){
+        const dx=Math.max(part.minX-x,0,x-part.maxX),dz=Math.max(part.minZ-z,0,z-part.maxZ);
+        if(dx*dx+dz*dz<radius*radius)return true;
+      }
+    }
+  }
   let touchesBoundary=false;
   const minC=cellOf(px-radius,pz-radius),maxC=cellOf(px+radius,pz+radius);
   for(let cz=minC.z;cz<=maxC.z;cz++)for(let cx=minC.x;cx<=maxC.x;cx++){
     if(!inMap(cx,cz))return true;
     const t=grid[cz][cx],cellIndex=idx(cx,cz);
+    if(!isBullet&&steelHP.get(cellIndex)>0&&tileMeshes[cellIndex]?.userData.wallCollisionParts)continue;
     if(!isBullet&&t===T_STEEL&&isNaturalBoundaryCell(cx,cz)){touchesBoundary=true;continue;}
     /*  守军可自由出入自家大门（仅生存），敌人不可 */
     if(isPlayer&&ACTIVE_MODE.key==="survival"&&t===T_BASE)continue;
@@ -6173,17 +6188,11 @@ function applyHordeSeparation(dt){
         for(const other of neighbors){
           if(other.hordeId<=e.hordeId)continue;
           let dx=e.hordeX-other.hordeX,dz=e.hordeZ-other.hordeZ;
-          const d2=dx*dx+dz*dz,desired=(e.radius+other.radius)*1.02;
-          if(d2>=(desired+.18)*(desired+.18))continue;
-          const distance=Math.sqrt(d2);
-          /* 接触只影响当前单位的分离力，绝不把前排减速传播给后排。 */
-          if(d2>=desired*desired)continue;
-          if(distance<1e-6){
-            const angle=((e.hordeId*37+other.hordeId*101)%360)*Math.PI/180;
-            dx=Math.cos(angle);dz=Math.sin(angle);
-          }else{dx/=distance;dz/=distance;}
-          // Keep the true zero distance: substituting 1 reverses the force for small bodies.
-          const force=(desired-distance)/(e.hordeMass+other.hordeMass);
+          if(dx*dx+dz*dz>(e.radius+other.radius)**2)continue;
+          const contact=zombieBodyContact(e,other);
+          if(!contact)continue;
+          dx=contact.x;dz=contact.z;
+          const force=contact.depth/(e.hordeMass+other.hordeMass);
           e.hordePushX+=dx*force*other.hordeMass;e.hordePushZ+=dz*force*other.hordeMass;
           other.hordePushX-=dx*force*e.hordeMass;other.hordePushZ-=dz*force*e.hordeMass;
           e.crowdContact=other.crowdContact=true;
@@ -6305,6 +6314,64 @@ function enemyModelBounds(enemy){
   }
   return enemy._modelBounds;
 }
+/* 用受躯干骨骼驱动的实际网格顶点建立水平轮廓，不把伸展手臂计为一圈空气。
+   轮廓按模型朝向旋转，圆形半径仅用于快速排除不相邻单位。 */
+function zombieBodyHull(visual,group){
+  group.updateMatrixWorld(true);
+  const origin=group.position,angle=-group.rotation.y,c=Math.cos(angle),s=Math.sin(angle),points=[];
+  const v=new THREE.Vector3();
+  visual.traverse(mesh=>{
+    if(!mesh.isSkinnedMesh||!mesh.geometry?.attributes.skinIndex)return;
+    const a=mesh.geometry.attributes,torso=new Set();
+    mesh.skeleton.bones.forEach((bone,i)=>{if(/hips|pelvis|spine|chest/i.test(bone.name))torso.add(i);});
+    mesh.skeleton.update();
+    for(let i=0;i<a.position.count;i++){
+      let weight=0;
+      for(const getter of ['getX','getY','getZ','getW'])if(torso.has(a.skinIndex[getter](i)))weight+=a.skinWeight[getter](i);
+      if(weight<.5)continue;
+      v.fromBufferAttribute(a.position,i);
+      if(mesh.applyBoneTransform)mesh.applyBoneTransform(i,v);else mesh.boneTransform(i,v);
+      v.applyMatrix4(mesh.matrixWorld).sub(origin);
+      points.push({x:v.x*c+v.z*s,z:-v.x*s+v.z*c});
+    }
+  });
+  points.sort((a,b)=>a.x-b.x||a.z-b.z);
+  const cross=(a,b,p)=>(b.x-a.x)*(p.z-a.z)-(b.z-a.z)*(p.x-a.x);
+  const lower=[],upper=[];
+  for(const p of points){while(lower.length>1&&cross(lower.at(-2),lower.at(-1),p)<=0)lower.pop();lower.push(p);}
+  for(let i=points.length-1;i>=0;i--){const p=points[i];while(upper.length>1&&cross(upper.at(-2),upper.at(-1),p)<=0)upper.pop();upper.push(p);}
+  return lower.slice(0,-1).concat(upper.slice(0,-1));
+}
+function zombieWorldHull(enemy){
+  const p=enemy.group.position,angle=enemy.group.rotation.y,c=Math.cos(angle),s=Math.sin(angle);
+  const cached=enemy._collisionWorld;
+  if(cached&&cached.x===p.x&&cached.z===p.z&&cached.angle===angle&&cached.radius===enemy.radius)return cached.points;
+  const scale=enemy.radius/(enemy.collisionHullRadius||enemy.radius);
+  const points=enemy.collisionHull.map(v=>({x:p.x+(v.x*c+v.z*s)*scale,z:p.z+(-v.x*s+v.z*c)*scale}));
+  enemy._collisionWorld={x:p.x,z:p.z,angle,radius:enemy.radius,points};return points;
+}
+function zombieBodyContact(a,b){
+  const dx=a.group.position.x-b.group.position.x,dz=a.group.position.z-b.group.position.z;
+  if(dx*dx+dz*dz>=(a.radius+b.radius)**2)return null;
+  if(a.collisionHull?.length>=3&&b.collisionHull?.length>=3){
+    const first=zombieWorldHull(a),second=zombieWorldHull(b);
+    let depth=Infinity,nx=0,nz=0;
+    for(const hull of [first,second])for(let i=0;i<hull.length;i++){
+      const p=hull[i],q=hull[(i+1)%hull.length],length=Math.hypot(q.x-p.x,q.z-p.z);
+      if(length<1e-8)continue;
+      let x=-(q.z-p.z)/length,z=(q.x-p.x)/length;
+      let lowA=Infinity,highA=-Infinity,lowB=Infinity,highB=-Infinity;
+      for(const v of first){const n=v.x*x+v.z*z;lowA=Math.min(lowA,n);highA=Math.max(highA,n);}
+      for(const v of second){const n=v.x*x+v.z*z;lowB=Math.min(lowB,n);highB=Math.max(highB,n);}
+      const overlap=Math.min(highA-lowB,highB-lowA);
+      if(overlap<=0)return null;
+      if(overlap<depth){if(x*dx+z*dz<0){x=-x;z=-z;}depth=overlap;nx=x;nz=z;}
+    }
+    return Number.isFinite(depth)?{depth,x:nx,z:nz}:null;
+  }
+  const distance=Math.hypot(dx,dz),angle=((a.hordeId*37+b.hordeId*101)%360)*Math.PI/180;
+  return {depth:a.radius+b.radius-distance,x:distance>1e-6?dx/distance:Math.cos(angle),z:distance>1e-6?dz/distance:Math.sin(angle)};
+}
 function modelFootprintRadius(visual,fallback=.35){
   if(!visual)return fallback;
   const bounds=new THREE.Box3();visual.updateWorldMatrix(true,true);bounds.setFromObject(visual);
@@ -6367,6 +6434,12 @@ function enemyWallDamage(enemy){
   // 第十波仍以800 DPS为锚点；前期给墙体一个逐波展开的承伤缓冲，避免第五波前发育尚未完成就被打穿。
   const wave=Math.max(1,Number(enemy?.sourceWave)||game.wave||1),grace=.65+.35*(Math.min(10,wave)-1)/9;
   return enemyMeleeDamage(enemy)*4*grace*(enemy.boss?1.8:1);
+}
+function enemyWallTouching(enemy,wall){
+  const model=tileMeshes[idx(wall.x,wall.z)],parts=model?.userData.wallCollisionParts;
+  if(!parts)return Math.hypot(wall.center.x-enemy.group.position.x,wall.center.z-enemy.group.position.z)<=enemy.radius+TILE*.72;
+  const x=enemy.group.position.x-model.position.x,z=enemy.group.position.z-model.position.z;
+  return parts.some(part=>Math.hypot(Math.max(part.minX-x,0,x-part.maxX),Math.max(part.minZ-z,0,z-part.maxZ))<=enemy.radius+.045);
 }
 function applyEnemyLifesteal(enemy,damage){
   if(enemy.lifesteal>0)enemy.hp=Math.min(enemy.maxHp,enemy.hp+damage*enemy.lifesteal);
@@ -6586,7 +6659,7 @@ function updateEnemies(dt){
       const targetWall=e.objectiveKind==="wall"&&e.objectiveCell
         ?{...e.objectiveCell,center:cellCenter(e.objectiveCell.x,e.objectiveCell.z)}:null;
       const wallInReach=!!(targetWall&&(steelHP.get(idx(targetWall.x,targetWall.z))>0||ownedStructureAtCell(idx(targetWall.x,targetWall.z)))
-        &&Math.hypot(targetWall.center.x-e.group.position.x,targetWall.center.z-e.group.position.z)<=e.radius+TILE*.72);
+        &&enemyWallTouching(e,targetWall));
       const wallAttackSlot=wallInReach&&enemyWallAttackSlot(e,targetWall);
       const nx=e.group.position.x+e.dir.x*spd,nz=e.group.position.z+e.dir.z*spd;
       const navigationRadius=enemyNavigationRadius(e);

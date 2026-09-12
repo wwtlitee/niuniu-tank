@@ -46,7 +46,8 @@ before(async () => {
         if(blockedForTank(p.x,p.z,enemyNavigationRadius(e),heightAt(p.x,p.z))) solid++;
         for (let j = i + 1; j < enemies.length; j++) {
           const o = enemies[j], q = o.group.position;
-          const ratio = Math.hypot(p.x-q.x,p.z-q.z)/(e.radius+o.radius);
+          const contact=zombieBodyContact(e,o);
+          const ratio = contact?1-contact.depth/(e.radius+o.radius):1;
           minRatio = Math.min(minRatio, ratio);
           if (ratio < .7) severe++;
         }
@@ -68,7 +69,7 @@ test('加高坡口的200只尸群形成支撑层，散开落地，俯射遵守�
     for(let i=0;i<200;i++){
       spawnEnemy('normal',false);const e=enemies.at(-1);
       if(e.beam)scene.remove(e.beam);e.beam=null;e.spawnFlash=0;e.hp=e.maxHp=1e9;
-      const x=r.x-1+(i%25)*.45,z=r.z+(Math.floor(i/25)-3.5)*.4;
+      const x=r.x-1+(i%25)*.22,z=r.z+(Math.floor(i/25)-3.5)*.20;
       e.group.position.set(x,heightAt(x,z),z);e.dir.set(-1,0,0);
     }
     for(let i=0;i<90;i++){_animFrame++;applyHordeSeparation(1/60);updateHordeClimbing(1/60);}
@@ -285,4 +286,47 @@ test('第十波Boss拆掉峡谷墙后穿过缺口继续接近基地', async () =
   assert.notEqual(result.crossedAt,null,JSON.stringify(result));
   assert.notEqual(result.gateAt,null,JSON.stringify(result));
   assert.deepEqual(errors,[]);
+});
+
+test('完整堡垒堵住谷口时尸群不能从两端挤过模型',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(0,false);game.enemiesToSpawn=0;game.wave=1;
+    const wall={x:ACTIVE_MODE.canyon.x1,z:ACTIVE_MODE.canyon.z0},key=idx(wall.x,wall.z),c=cellCenter(wall.x,wall.z);
+    const original=grid[wall.z][wall.x];
+    const model=buildWallTile(mapGroup,wall.x,wall.z,1);
+    grid[wall.z][wall.x]=T_STEEL;steelHP.set(key,1e9);wallMeta.set(key,{lv:1,hp:1e9,anchor:wall});structCells.add(key);tileMeshes[key]=model;computeFlowField();
+    let crossed=0;
+    try{
+      for(let i=0;i<120;i++){
+        spawnEnemy('normal',false);const e=enemies.at(-1);e.spawnFlash=0;
+        if(e.beam)scene.remove(e.beam);e.beam=null;
+        const x=c.x+3+Math.floor(i/12)*.5,z=c.z+(i%12-5.5)*.45;
+        e.group.position.set(x,heightAt(x,z),z);
+      }
+      const passed=new Set();
+      for(let i=0;i<1200;i++){
+        _animFrame++;updateEnemies(1/60);
+        for(const e of enemies)if(e.group.position.x<c.x-1.2)passed.add(e.hordeId);
+      }
+      crossed=passed.size;
+      camera.position.set(c.x+11,PH+18,c.z+16);camera.lookAt(c.x-2,1,c.z);renderer.render(scene,camera);
+      return {crossed,hp:steelHP.get(key),count:enemies.length,radius:enemies[0].radius,hull:enemies[0].collisionHull,nearest:Math.min(...enemies.map(e=>e.group.position.x-c.x))};
+    }finally{
+      window.cleanupSealedWall=()=>{grid[wall.z][wall.x]=original;steelHP.delete(key);wallMeta.delete(key);structCells.delete(key);delete tileMeshes[key];if(model.parent)model.parent.remove(model);disposeTransientObject3D(model);computeFlowField();};
+    }
+  });
+  await page.screenshot({path:path.join(output,'sealed-wall.png')});
+  await page.evaluate(()=>cleanupSealedWall());
+  fs.writeFileSync(path.join(output,'sealed-wall.json'),JSON.stringify(result,null,2));
+  assert.equal(result.crossed,0,JSON.stringify(result));assert.ok(result.hp>0&&result.hp<1e9,JSON.stringify(result));
+});
+
+test('躯干轮廓来自模型且尺寸有限',async()=>{
+  const result=await page.evaluate(()=>{
+    seedContactCrowd(1,false);const e=enemies[0],box=enemyModelBounds(e);
+    return {radius:e.radius,hull:e.collisionHull,box:box.getSize(new THREE.Vector3()).toArray()};
+  });
+  fs.writeFileSync(path.join(output,'body-hull.json'),JSON.stringify(result,null,2));
+  assert.ok(result.radius<1,JSON.stringify(result));assert.ok(result.hull.length>=3);
+  assert.ok(result.radius<Math.max(result.box[0],result.box[2])*.3,'伸展手臂不能撑大躯干碰撞');
 });

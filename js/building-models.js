@@ -19,6 +19,7 @@ function makeFortificationWall(cx, cz, level) {
     : heightAt(center.x, center.z);
   const height = inValley ? Math.max(0.65, PH - floor - 0.07) : 1.8;
   root.position.set(center.x, floor, center.z);
+  root.userData.wallCollisionParts=[];
   const stone = new THREE.MeshStandardMaterial({ color: 0x92958e, roughness: 0.94, metalness: 0.05 });
   const steel = new THREE.MeshStandardMaterial({ color: 0x465661, roughness: 0.6, metalness: 0.65 });
   const inset = new THREE.MeshStandardMaterial({ color: 0x202d34, roughness: 0.74, metalness: 0.4 });
@@ -30,6 +31,8 @@ function makeFortificationWall(cx, cz, level) {
     roughness: 0.4,
   });
   const add = (w, h, d, x, y, z, material) => {
+    // 与门板/承重构件使用同一组尺寸，不能再用一个地块代替整堵长墙。
+    if(h>=.5)root.userData.wallCollisionParts.push({minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,minY:y-h/2,maxY:y+h/2});
     const m = new THREE.Mesh(chamferedBox(w, h, d), material);
     m.position.set(x, y, z);
     root.add(m);
