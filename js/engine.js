@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.4.6";
+const GAME_VERSION="8.5.0";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -2944,22 +2944,32 @@ function disposeTransientObject3D(root){
 const TURRET_PROJECTILE_SPEED=27;
 function makeProjectileMesh(type,dirVec){
   const spec=SurvivalSystem.PROJECTILE_VISUALS[type]||SurvivalSystem.PROJECTILE_VISUALS.tank;
-  let geometry;
-  if(spec.shape==="tracer")geometry=new THREE.BoxGeometry(spec.radius*1.15,spec.radius*1.15,spec.length);
-  else if(spec.shape==="sabot-dart")geometry=new THREE.ConeGeometry(spec.radius,spec.length,8);
-  else if(spec.shape==="crystal-orb")geometry=new THREE.IcosahedronGeometry(spec.radius,1);
-  else if(spec.shape==="round-shell")geometry=new THREE.SphereGeometry(spec.radius,10,8);
-  else geometry=typeof THREE.CapsuleGeometry==="function"
-    ?new THREE.CapsuleGeometry(spec.radius,Math.max(.08,spec.length-spec.radius*2),4,8)
-    :new THREE.BoxGeometry(spec.radius*1.5,spec.radius*1.5,spec.length);
-  const material=spec.shape==="crystal-orb"
-    ?new THREE.MeshStandardMaterial({color:spec.color,emissive:spec.color,emissiveIntensity:1.15,roughness:.2,metalness:.15})
-    :new THREE.MeshStandardMaterial({color:spec.color,emissive:new THREE.Color(spec.color).multiplyScalar(.16),roughness:.42,metalness:.55});
-  const mesh=new THREE.Mesh(geometry,material);
-  if(spec.shape==="sabot-dart")mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dirVec.clone().normalize());
-  else mesh.lookAt(dirVec.clone());
-  mesh.userData.projectileType=type;mesh.userData.projectileShape=spec.shape;mesh.userData.trail=spec.trail;
-  return mesh;
+  const root=new THREE.Group(),axis=new THREE.Vector3(0,0,1),dir=dirVec.clone().normalize();
+  const capsule=(radius,length,radial, tubular)=>typeof THREE.CapsuleGeometry==="function"?new THREE.CapsuleGeometry(radius,length,radial,tubular):new THREE.CylinderGeometry(radius,radius,length+radius*2,radial);
+  const material=(emissive=.16,roughness=.42,metalness=.55)=>new THREE.MeshStandardMaterial({color:spec.color,emissive:new THREE.Color(spec.color).multiplyScalar(emissive),emissiveIntensity:emissive>1?emissive:1,roughness,metalness});
+  let body;
+  if(spec.shape==="tracer"){
+    body=new THREE.Mesh(capsule(spec.radius,Math.max(.1,spec.length-.12),4,8),material(1.8,.3,.25));
+    body.rotation.x=Math.PI/2;root.add(body);
+    const core=new THREE.Mesh(new THREE.BoxGeometry(spec.radius*.35,spec.radius*.35,spec.length*1.18),material(3,.2,.05));root.add(core);
+  }else if(spec.shape==="sabot-dart"){
+    body=new THREE.Mesh(new THREE.ConeGeometry(spec.radius,spec.length,8),material(1.1,.26,.7));body.rotation.x=-Math.PI/2;root.add(body);
+    const fin=new THREE.Mesh(new THREE.BoxGeometry(spec.radius*.8,spec.radius*.08,spec.length*.45),material(.6,.35,.8));fin.position.z=spec.length*.22;root.add(fin);
+  }else if(spec.shape==="crystal-orb"){
+    body=new THREE.Mesh(new THREE.IcosahedronGeometry(spec.radius,1),material(2.4,.12,.2));root.add(body);
+    for(const scale of [1.35,1.7]){const ring=new THREE.Mesh(new THREE.TorusGeometry(spec.radius*scale,.025,6,18),material(2.8,.12,.1));ring.rotation.y=Math.PI/2;root.add(ring);}
+  }else if(spec.shape==="round-shell"){
+    body=new THREE.Mesh(new THREE.SphereGeometry(spec.radius,12,10),material(.7,.32,.75));root.add(body);
+    const band=new THREE.Mesh(new THREE.TorusGeometry(spec.radius*.92,spec.radius*.08,6,16),material(1.4,.25,.6));band.rotation.y=Math.PI/2;root.add(band);
+  }else if(spec.shape==="fire-shell"){
+    body=new THREE.Mesh(new THREE.ConeGeometry(spec.radius,spec.length,8),material(2.2,.22,.35));body.rotation.x=-Math.PI/2;root.add(body);
+    const glow=new THREE.Mesh(new THREE.SphereGeometry(spec.radius*.72,8,6),new THREE.MeshBasicMaterial({color:0xffd36a,transparent:true,opacity:.8}));glow.position.z=-spec.length*.22;root.add(glow);
+  }else{
+    body=new THREE.Mesh(capsule(spec.radius,Math.max(.08,spec.length-spec.radius*2),6,10),material(.9,.3,.65));body.rotation.x=Math.PI/2;root.add(body);
+  }
+  root.quaternion.setFromUnitVectors(axis,dir);
+  root.userData.projectileType=type;root.userData.projectileShape=spec.shape;root.userData.trail=spec.trail;
+  return root;
 }
 function shoot(owner,dirVec,friendly=false,opts={}){
   const isPlayer=owner==="player";
@@ -5374,6 +5384,17 @@ function wc3PickAt(px,py){
   if(closest)return closest;
   return null;
 }
+function projectileImpactFx(type,pos){
+  const fx={
+    machinegun:[0xffd56b,4,4,.22],cannon:[0xff8d42,18,11,.65],antitank:[0xf7e5b7,11,10,.42],
+    emp:[0x8deaff,22,6,.82],shotgun:[0xffe2a0,9,8,.28],incendiary:[0xff5428,24,12,.75],
+    grenade:[0xd6a15e,20,10,.7],tank:[0xffc27c,13,9,.5]
+  }[type]||[0xffc27c,10,8,.4];
+  spawnParticles(pos,fx[0],fx[1],fx[2],fx[3]);
+  if(type==='emp'){spawnParticles(pos,0xe3fbff,12,4,.35);camShake=Math.max(camShake,.22);}
+  else if(type==='incendiary'){spawnParticles(pos,0xffd36a,12,7,.6);camShake=Math.max(camShake,.3);}
+  else if(type==='cannon'||type==='grenade'||type==='tank'){camShake=Math.max(camShake,.18);}
+}
 
 function wc3SelectionWorldPosition(entry){
   if(!entry||!entry.ref)return null;
@@ -6732,9 +6753,9 @@ function updateBullets(dt){
     b.life-=dt;
     b._trailT=(b._trailT||0)-dt;
     if(b._trailT<=0){
-      const trailColor=b.projectileType==="emp"?0xb9efff:b.projectileType==="cannon"?0x82786c:b.projectileType==="machinegun"?0xffcf72:0xc7d5d7;
-      spawnParticles(b.mesh.position.clone(),trailColor,b.projectileType==="cannon"?2:1,b.projectileType==="emp"?.7:1.25,.18);
-      b._trailT=b.projectileType==="machinegun"?.085:.045;
+      const trail={machinegun:[0xffd56b,2.4,.11,.07],cannon:[0x8b7b6b,2.2,.22,.09],antitank:[0xf7e5b7,3.2,.16,.045],emp:[0x9cecff,.8,.9,.1],shotgun:[0xffe2a0,2.8,.15,.1],incendiary:[0xff6b2e,3.8,.45,.065],grenade:[0xc99b59,2.1,.3,.09],tank:[0xffc27c,2.4,.2,.08]}[b.projectileType]||[0xc7d5d7,1.25,.18,.06];
+      spawnParticles(b.mesh.position.clone(),trail[0],b.projectileType==="incendiary"?3:2,trail[1],trail[2]);
+      b._trailT=trail[3];
     }
     /*  子步进移动：每步 ≤1.2 单位，杜绝高速穿墙/穿人 */
     if(b.gravity)b.vel.y-=b.gravity*dt;
@@ -6754,9 +6775,7 @@ function updateBullets(dt){
     /* 弹道高度锁定在出膛高度，不能随高台地形采样下沉再抬升。 */
     if(Number.isFinite(b.flightY))p.y=b.flightY;
     if(dead){
-      if(b.projectileType==="emp")spawnParticles(p.clone(),0xa7e9ff,10,4,.65);
-      else if(b.projectileType==="antitank")spawnParticles(p.clone(),0xf1dfbb,7,7,.35);
-      else if(b.projectileType==="machinegun")spawnParticles(p.clone(),0xffcf72,3,3,.2);
+      projectileImpactFx(b.projectileType,p.clone());
       if(b.blast>0){
         spawnParticles(p.clone(),0xffa02e,14,10,1.1);
         const R=b.blast;
