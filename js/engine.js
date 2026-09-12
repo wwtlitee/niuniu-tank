@@ -37,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.6.0";
+const GAME_VERSION="8.7.1";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -2885,6 +2885,8 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
   group.rotation.y=-Math.PI/2;
   /* 人形碰撞按肩宽估算，不能再按坦克半径 1.5 计算。 */
   const visualRadius=.65*t.scale*bodyScale;
+  /* 碰撞体直接取模型落地后的实际 X/Z 占用宽度，避免人形之间出现明显空气层。 */
+  const modelRadius=modelFootprintRadius(built.visualRoot||group,visualRadius*.58);
   const e={sourceWave,group,visualRoot:built.visualRoot||group,animationRoot:built.animationRoot||group,
     _lodHeight:(built.lodHeight||3.2)*bodyScale,hordeId:++_enemySerial,variantId:built.variantId||null,variantPack:built.variantPack||null,
     type:typeKey,boss:isBoss,bossId:bossSpec&&bossSpec.id,bossName:bossSpec&&bossSpec.name,bossMechanic:bossSpec&&bossSpec.mechanic,
@@ -2892,7 +2894,7 @@ function spawnEnemy(typeKey,isBoss=false,sourceWave=game.wave){
     armor:Math.max(t.armor||0,waveSpec.armor||0),
     lifesteal:(bossSpec&&bossSpec.mechanic==="lifesteal") ? .45 : (t.lifesteal||0),siege:!!t.siege,
     fireCd:t.fireCd,dmg:t.dmg,visualRadius,
-    radius:SurvivalSystem.hordeCollisionRadius(visualRadius,isBoss),heading:Math.PI,
+    radius:modelRadius,heading:Math.PI,
     cd:1+Math.random()*1.5,thinkTimer:0,dir:new THREE.Vector3(0,0,1),
     score:t.score,alive:true,spawnFlash:performance.now()+(isBoss||elite?700:0),beam:null,objectiveKind:"base",objectiveCell:null,
     slowMult:1,slowUntil:0,velocity:new THREE.Vector3(),
@@ -3078,6 +3080,26 @@ function spawnCorpseRemains(pos,big=false,scale=1){
     splat(big?.34:.2,.52,Math.cos(a)*d,Math.sin(a)*d);
   }
   root.position.copy(pos);scene.add(root);corpseDecals.push({root,pieces:[],life:Infinity,settle:0});
+  while(corpseDecals.length>180){const old=corpseDecals.shift();if(old){scene.remove(old.root);disposeTransientObject3D(old.root);}}
+}
+function spawnGoreBurst(enemy,hitPoint,hitDirection,intensity=1){
+  if(!enemy||enemies.length>260)return;
+  const now=performance.now();if(now<(enemy._goreCooldown||0))return;
+  enemy._goreCooldown=now+(enemy.boss?90:135);
+  const shared=corpseSharedAssets(),root=new THREE.Group(),pieces=[];
+  const origin=hitPoint?.clone?.()||enemy.group.position.clone().setY(1.1);
+  const forward=hitDirection?.clone?.()||new THREE.Vector3((Math.random()-.5),.3,(Math.random()-.5));
+  if(forward.lengthSq()<1e-5)forward.set(0,.3,1);forward.normalize();
+  const count=enemy.boss?7:3+Math.floor(Math.random()*3),mats=[shared.flesh,shared.bloods[1],shared.bloods[3]];
+  for(let i=0;i<count;i++){
+    const mesh=new THREE.Mesh(i===0&&Math.random()<.35?shared.head:(i%3===0?shared.limb:shared.drop),mats[i%3]);
+    mesh.scale.setScalar((.65+Math.random()*.7)*Math.min(1.3,enemy.radius/.35));
+    mesh.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);mesh.userData.gore=true;root.add(mesh);
+    const spread=new THREE.Vector3((Math.random()-.5)*1.8,(Math.random()*.8+.35)*1.5,(Math.random()-.5)*1.8);
+    pieces.push({mesh,velocity:forward.clone().multiplyScalar((3.5+Math.random()*4.5)*intensity).add(spread),spin:new THREE.Vector3((Math.random()-.5)*14,(Math.random()-.5)*14,(Math.random()-.5)*14),blood:i%3===1});
+  }
+  root.position.copy(origin);scene.add(root);corpseDecals.push({root,pieces,life:.9+Math.random()*.45,settle:.9});
+  spawnParticles(origin,0x8f1d25,Math.ceil(8*intensity),8*intensity,.55);
   while(corpseDecals.length>180){const old=corpseDecals.shift();if(old){scene.remove(old.root);disposeTransientObject3D(old.root);}}
 }
 /*  电磁塔连锁闪电视觉：两点间一次性闪光线段，随粒子循环衰减 */
@@ -6196,9 +6218,9 @@ function hordeLaneBlocked(enemy,dir){
     if(!other||other===enemy||other.dead||other.atGate)continue;
     const dx=other.group.position.x-p.x,dz=other.group.position.z-p.z;
     const forward=dx*dir.x+dz*dir.z;
-    if(forward<=0||forward>enemy.radius+other.radius+.48)continue;
+    if(forward<=0||forward>enemy.radius+other.radius+.16)continue;
     const lateral=Math.abs(dx*dir.z-dz*dir.x);
-    if(lateral<enemy.radius+other.radius*.72)return true;
+    if(lateral<enemy.radius+other.radius*.54)return true;
   }
   return false;
 }
@@ -6221,6 +6243,13 @@ function enemyModelBounds(enemy){
     enemy._modelBoundsFrame=_animFrame;enemy._modelBoundsX=p.x;enemy._modelBoundsZ=p.z;enemy._modelBoundsY=p.y;
   }
   return enemy._modelBounds;
+}
+function modelFootprintRadius(visual,fallback=.35){
+  if(!visual)return fallback;
+  const bounds=new THREE.Box3();visual.updateWorldMatrix(true,true);bounds.setFromObject(visual);
+  if(bounds.isEmpty())return fallback;
+  const width=Math.max(0,bounds.max.x-bounds.min.x),depth=Math.max(0,bounds.max.z-bounds.min.z);
+  return Math.max(.12,Math.min(1.8,Math.max(width,depth)*.5+.025));
 }
 function enemyAimPoint(enemy,target=new THREE.Vector3()){
   if(!enemy||!enemy.group)return target.set(0,0,0);
@@ -6745,6 +6774,7 @@ function bulletCollide(b,p){
         }
         damageEnemy(e,dmg,{source:b.source,armorPierce:b.armorPierce,projectileType:b.projectileType,
           hitDirection:b.vel,hitPoint:p});
+        spawnGoreBurst(e,p,b.vel,b.projectileType==='cannon'||b.projectileType==='antitank'?1.35:1);
         applyIncendiaryHit(e,b);
         spawnParticles(p.clone(),0xfff2b0,5,5,.7);
         sfx.hit();
