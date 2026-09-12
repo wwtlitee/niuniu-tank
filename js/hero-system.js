@@ -34,7 +34,7 @@
   function archive(input={}){
     input=input&&typeof input==='object'?input:{};
     const skills=Object.fromEntries(Object.keys(SKILLS).map(k=>[k,level(input.skills?.[k])])),orders=[],levels={...skills};
-    for(const order of Array.isArray(input.orders)?input.orders.slice(0,270):[]){if(!order||!SKILLS[order.skill])continue;const next=level(order.level);if(next!==levels[order.skill]+1)continue;orders.push({skill:order.skill,level:next});levels[order.skill]=next;}
+    for(const order of Array.isArray(input.orders)?input.orders.slice(0,20):[]){if(!order||!SKILLS[order.skill])continue;const next=level(order.level);if(next!==levels[order.skill]+1)continue;orders.push({skill:order.skill,level:next});levels[order.skill]=next;}
     const finite=v=>Number.isFinite(v)?Math.max(-10000,Math.min(10000,v)):0;
     const d=input.delivery,delivery=d&&['outbound','install','return'].includes(d.phase)?{phase:d.phase,installed:!!d.installed,progress:Math.max(0,Math.min(.8,Number(d.progress)||0)),flightDistance:Math.max(1,Math.min(10000,Number(d.flightDistance)||12)),elapsed:Math.max(0,Math.min(2,Number(d.elapsed)||0)),x:finite(d.x),y:finite(d.y),z:finite(d.z)}:null;
     const p=input.deployment,deployment=p&&Number.isFinite(p.x)&&Number.isFinite(p.z)?{x:finite(p.x),z:finite(p.z),heading:finite(p.heading),hubX:finite(p.hubX),hubZ:finite(p.hubZ)}:null;

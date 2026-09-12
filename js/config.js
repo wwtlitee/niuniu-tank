@@ -66,10 +66,11 @@ for (const [id, branch] of Object.entries(SurvivalSystem.TURRET_BRANCHES)) {
  *  - baseCost × growth^level 即下一档成本
  *  - requires：前置依赖（其它分支需达到的最低档位）
  * ------------------------------------------------------------------- */
-const TECH_ICONS = { defense: "shield", turret: "turret", tank: "tank", economy: "coin" };
+const TECH_ICONS = { defense: "shield", turret: "turret", tank: "tank", economy: "coin", heroCore: "star" };
 const TECH_DESCRIPTIONS = {
   defense: "墙体与大门生命、护甲", turret: "炮台伤害、射速与射程",
   tank: "坦克伤害、生命与移速", economy: "金矿收入、建造折扣与人口",
+  heroCore: "英雄普攻与攻击技能伤害",
 };
 const TECH_TREE = Object.fromEntries(Object.entries(SurvivalSystem.RESEARCH_LINES).map(([id, line]) => [id, {
   ...line, icon: TECH_ICONS[id], desc: TECH_DESCRIPTIONS[id], growth: 1.42, requires: {},

@@ -28,7 +28,7 @@ async function fresh() {
     hideQuestPanel();
   });
 }
-test('基地流派通过键盘下单，长按不重复付款，完成后四项科技可研究', async () => {
+test('基地流派通过键盘下单，长按不重复付款，改建后专属科技迁入研究院且仅高级研究院可研究', async () => {
   await fresh();await page.keyboard.press('g');
   assert.equal(await page.evaluate(()=>wc3Sel.kind),'base');
   assert.deepEqual(await page.evaluate(()=>commandItemsForSelection().filter(i=>i.upgradeType==='base').map(i=>i.hot)),['U','J','K']);
@@ -36,8 +36,22 @@ test('基地流派通过键盘下单，长按不重复付款，完成后四项�
   assert.deepEqual(await page.evaluate(()=>[game.doctrine,game.upgradeJobs.length,game.gold]),[null,1,before-1500]);
   await page.evaluate(()=>{for(let i=0;i<31*60;i++)updateUpgradeJobs(1/60);renderCmdCard();});
   assert.equal(await page.evaluate(()=>game.doctrine),'tower');
-  assert.equal(await page.evaluate(()=>commandItemsForSelection().slice(-4).filter(i=>i.upgradeType==='doctrine').length),4);
-  await page.keyboard.press('u');assert.equal(await page.evaluate(()=>game.upgradeJobs.length),1);
+  // 基地面板不再承载专属科技按钮（已迁入研究院）
+  assert.equal(await page.evaluate(()=>commandItemsForSelection().filter(i=>i.upgradeType==='doctrine').length),0);
+  // 初级研究院面板只有经济/墙与升阶入口，无专属科技
+  await page.evaluate(()=>{
+    const research={x:1,z:1,group:new THREE.Group(),hp:300,maxHp:300};research.group.parent=scene;researchInstitutes.push(research);
+    wc3SetSelection([{kind:'research',ref:research}]);wc3RenderSel();renderCmdCard();
+  });
+  assert.equal(await page.evaluate(()=>commandItemsForSelection().filter(i=>i.upgradeType==='academy').length),1);
+  assert.equal(await page.evaluate(()=>commandItemsForSelection().filter(i=>i.upgradeType==='doctrine').length),0);
+  // 升阶高级研究院
+  await page.evaluate(()=>{upgradeAcademy();for(let i=0;i<9*60;i++)updateUpgradeJobs(1/60);renderCmdCard();});
+  assert.equal(await page.evaluate(()=>game.researchTier),1);
+  // 高级研究院出现四项专属科技且可下单
+  assert.equal(await page.evaluate(()=>commandItemsForSelection().filter(i=>i.upgradeType==='doctrine').length),4);
+  await page.evaluate(()=>{const item=commandItemsForSelection().find(i=>i.upgradeType==='doctrine');item.act();});
+  assert.equal(await page.evaluate(()=>game.upgradeJobs.length),1);
   assert.equal(await page.evaluate(()=>Object.values(game.doctrineTech).reduce((s,n)=>s+n,0)),0);
 });
 

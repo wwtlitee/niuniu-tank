@@ -25,15 +25,22 @@ function chooseDoctrine(route){
 }
 function doctrineAllows(route,currentLevel){return !!game._restoring||currentLevel<3||game.doctrine===route;}
 function buyHeroSkill(id){
-  const a=heroArchive(),spec=HeroSystem.SKILLS[id];if(!spec||!heroHub())return false;
+  const a=heroArchive(),spec=HeroSystem.SKILLS[id];if(!spec||!heroHub()||a.orders.length>=20||a.orders.some(o=>o.skill===id))return false;
   const lv=HeroSystem.orderedLevel(a,id),cost=HeroSystem.skillCost(lv);
   if(!doctrineAllows('hero',lv)||!Number.isFinite(cost)||game.gold<cost)return false;
   game.gold-=cost;a.orders.push({skill:id,level:lv+1});sfx.levelup();refreshHeroUI();return true;
 }
 function buyDoctrineTech(id){
-  const spec=HeroSystem.TECH[id],lv=doctrineLevel(id),cost=paidUpgradeCost(HeroSystem.techCost(lv));
-  if(!spec||game.doctrine!==spec.route||!baseAlive||!Number.isFinite(cost)||game.gold<cost)return false;
-  if(deferUpgrade('doctrine',id,upgradeOwner('base'),cost,lv))return true;
+  const spec=HeroSystem.TECH[id],lv=doctrineLevel(id);
+  if(!spec||game.doctrine!==spec.route||!baseAlive||!researchInstitutes[0])return false;
+  if(!doctrineAllows(spec.route,lv)||game.researchTier<1)return false;
+  const owner=upgradeOwner('research',researchInstitutes[0]);
+  const target=nextProjectTargetLevel('doctrine',id,owner,lv,5);
+  if(target==null)return false;
+  /* P2 §6.2: price by target — techCost at from-level (target-1). */
+  const cost=paidUpgradeCost(HeroSystem.techCost(target-1));
+  if(!Number.isFinite(cost)||game.gold<cost)return false;
+  if(deferUpgrade('doctrine',id,owner,cost,target-1,target))return true;
   game.gold-=cost;(game.doctrineTech||(game.doctrineTech={}))[id]=lv+1;
   for(const unit of friendlyUnits)applyDoctrineStats(unit);
   
@@ -91,7 +98,7 @@ function updateHeroProduction(dt){
   applyDoctrineStats(u);rebuildHeroModules(u);updateHeroWorkshop(null,0,0);refreshHeroUI();
 }
 function heroDied(u){if(u.type!=='hero')return;heroArchive().status='dead';heroArchive().remaining=0;heroTank=null;}
-function heroDamage(u){return u.dmg*HeroSystem.growth(heroArchive().kills)*(1+.02*heroArchive().skills.command);}
+function heroDamage(u){return u.dmg*(1+.04*researchPowerLevel(game.tech.heroCore||0))*HeroSystem.growth(heroArchive().kills)*(1+.02*heroArchive().skills.command);}
 function heroHit(enemy,damage,pierce=0){
   if(!heroTarget(enemy))return;
   damageEnemy(enemy,damage,{source:'hero',armorPierce:pierce});
@@ -109,6 +116,13 @@ function heroSplash(point,damage,radius){
 }
 function updateHeroCombat(u,dt){
   const a=heroArchive(),skills=a.skills;u.heroCooldowns||={};
+  if(skills.heal){
+    const radius=4.5*TILE,rate=HeroSystem.healingRate(skills.heal);
+    const heal=(target,position)=>{if(!target||!validRepairTarget(target)||!position||u.group.position.distanceToSquared(position)>radius*radius)return;const amount=Math.min(target.maxHp-target.hp,target.maxHp*rate*dt);if(amount>0){target.hp+=amount;showMedicalHealingLink(u,target,'tank');}};
+    for(const [ci,meta] of wallMeta){const x=ci%GRID,z=Math.floor(ci/GRID);heal(wallRepairTarget({x,z}),cellCenter(x,z));}
+    for(const target of new Set([...builtTurrets,...goldMines,...builtHouses,...heroHubs,...heavyFactories,...researchInstitutes,...visionBeacons]))heal(target,target.group?.position);
+    if(baseAlive&&baseGroup)heal({group:baseGroup,get hp(){return game.gateHp;},set hp(value){game.gateHp=value;updateHpUI();},maxHp:game.gateMaxHp},baseGroup.position);
+  }
   for(const id in u.heroCooldowns)u.heroCooldowns[id]=Math.max(0,u.heroCooldowns[id]-dt);
   let target=heroTarget(u.attackTarget)?u.attackTarget:null;
   if(target&&u.group.position.distanceToSquared(target.group.position)>u.range*u.range)target=null;
@@ -117,8 +131,6 @@ function updateHeroCombat(u,dt){
   }
   if(!target){
     u.heroChannel=null;
-    if(skills.heal&&!u.moveTarget){const range=u.range;u.range=4.5*TILE;const t=nearestRepairTarget(u);u.range=range;
-      if(t&&t!==u&&validRepairTarget(t)&&u.group.position.distanceToSquared(t.group.position)<=(4.5*TILE)**2){const healed=Math.min(t.maxHp-t.hp,t.maxHp*HeroSystem.healingRate(skills.heal)*dt,game.gold*10);if(healed>0){t.hp+=healed;game.gold-=healed/10;showMedicalHealingLink(u,t,'tank');}}}
     moveFriendlyUnit(u,dt);return;
   }
   u.attackTarget=target;clearFriendlyRoute(u);
@@ -161,9 +173,10 @@ function heroSkillSummary(id,level){
 function heroCommands(){
   const a=heroArchive(),q=heroProductionQuote();
   return [{heroProduction:true,category:'build',k:'H',hot:'H',icon:'tank',name:a.status==='producing'?(a.remaining>0?`${['底盘定位','履带安装','装甲拼装','炮塔装配','系统校准'][Math.min(4,Math.floor((1-a.remaining/a.productionTotal)*5))]} ${Math.ceil(a.remaining)}秒`:(heroHub()?.exitBlocked?'出口受阻 · 台内等待':a.deployment?'英雄驶出组装台':'组装完成 · 等待出厂')):a.status==='alive'?'英雄已出战':a.status==='dead'?'复活英雄':'生产英雄',price:['unbuilt','dead'].includes(a.status)?q.cost:null,tip:`唯一英雄 · 6人口 · ${q.time}秒`,dim:!['unbuilt','dead'].includes(a.status)||game.gold<q.cost||game.popUsed+6>game.popMax,act:produceHero},
-    ...Object.entries(HeroSystem.SKILLS).map(([id,s],i)=>{const lv=a.skills[id],ordered=HeroSystem.orderedLevel(a,id),cost=HeroSystem.skillCost(ordered);return {heroSkill:id,k:String(i+1),hot:String(i+1),icon:s.icon,name:`${s.name} Lv${lv}${ordered>lv?" · 配送+"+(ordered-lv):""}`,price:Number.isFinite(cost)?cost:null,tip:`${s.tip} · 自动触发<br>当前：${heroSkillSummary(id,lv)}<br>${ordered<30?'下单 Lv'+(ordered+1)+'：'+heroSkillSummary(id,ordered+1):'已订至满级'}<br>安装后生效 · 待配送 ${ordered-lv}级<br>Lv4以上需英雄专精`,dim:!Number.isFinite(cost)||game.gold<cost||!doctrineAllows('hero',ordered),act:()=>buyHeroSkill(id)};})];
+    ...Object.entries(HeroSystem.SKILLS).map(([id,s],i)=>{const lv=a.skills[id],ordered=HeroSystem.orderedLevel(a,id),cost=HeroSystem.skillCost(ordered);return {heroSkill:id,k:String(i+1),hot:String(i+1),icon:s.icon,name:`${s.name} Lv${lv}${ordered>lv?" · 配送+"+(ordered-lv):""}`,price:Number.isFinite(cost)?cost:null,tip:`${s.tip} · 自动触发<br>当前：${heroSkillSummary(id,lv)}<br>${ordered<30?'下单 Lv'+(ordered+1)+'：'+heroSkillSummary(id,ordered+1):'已订至满级'}<br>安装后生效 · 待配送 ${ordered-lv}级<br>Lv4以上需英雄专精`,dim:a.orders.length>=20||!Number.isFinite(cost)||game.gold<cost||!doctrineAllows('hero',ordered),act:()=>buyHeroSkill(id)};})];
 }
 function doctrineCommands(){
   if(!game.doctrine)return ['tower','tank','hero'].map((r,i)=>({k:String(i+1),hot:String(i+1),icon:r==='tower'?'turret':'tank',name:{tower:'炮台专精',tank:'坦克专精',hero:'英雄专精'}[r],tip:'本局只能选择一条主战路线；其他体系仅可初阶升级',act:()=>chooseDoctrine(r)}));
-  return Object.entries(HeroSystem.TECH).filter(([,s])=>s.route===game.doctrine).map(([id,s],i)=>{const lv=doctrineLevel(id),cost=HeroSystem.techCost(lv);return {upgradeType:'doctrine',upgradeId:id,upgradeOwner:upgradeOwner('base'),k:['U','J','K','L'][i],hot:['U','J','K','L'][i],icon:'research',name:`${s.name} Lv${lv}`,price:Number.isFinite(cost)?cost:null,tip:`${s.tip} · 上限5级`,dim:!Number.isFinite(cost)||game.gold<cost,act:()=>buyDoctrineTech(id)};});
+  const owner=upgradeOwner('research',researchInstitutes[0]);
+  return Object.entries(HeroSystem.TECH).filter(([,s])=>s.route===game.doctrine).map(([id,s],i)=>{const lv=doctrineLevel(id),cost=HeroSystem.techCost(lv);return {upgradeType:'doctrine',upgradeId:id,upgradeOwner:owner,k:['U','J','K','L'][i],hot:['U','J','K','L'][i],icon:'research',name:`${s.name} Lv${lv}`,price:Number.isFinite(cost)?cost:null,tip:`${s.tip} · 上限5级`,dim:!Number.isFinite(cost)||game.gold<cost||game.researchTier<1,allowQueue:true,act:()=>buyDoctrineTech(id)};});
 }

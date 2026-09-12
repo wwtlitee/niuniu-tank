@@ -4,6 +4,21 @@
    ===================================================================== */
 "use strict";
 
+const SEED_PARAM=new URLSearchParams(location.search).get("seed");
+if(SEED_PARAM!==null){
+  const _seedVal=(+SEED_PARAM>>>0)||1;
+  const _origRandom=Math.random;
+  let _rngState=_seedVal;
+  Math.random=function(){
+    _rngState|=0;_rngState=_rngState+0x6D2B79F5|0;
+    let t=Math.imul(_rngState^_rngState>>>15,1|_rngState);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return((t^t>>>14)>>>0)/4294967296;
+  };
+  Math._origRandom=_origRandom;
+  Math._seedVal=_seedVal;
+}
+
 const RUNTIME_ERROR_DEBUG=new URLSearchParams(location.search).get("debug")==="1";
 const _shownRuntimeErrors=new Set();
 window.addEventListener("error",e=>{
@@ -22,7 +37,7 @@ window.addEventListener("error",e=>{
 });
 
 /* ---------------- 基础常量 ---------------- */
-const GAME_VERSION="8.2.0";
+const GAME_VERSION="8.4.1";
 const DEFAULT_SURVIVAL_BASE=Object.freeze({...GAME_MODES.survival.base});
 let GRID = 47;                     // 由激活模式动态设置（默认大地图）
 const TILE = 4;
@@ -1917,10 +1932,13 @@ function applyMedicalBeaconVisual(beacon){
 }
 function upgradeMedicalBeacon(beacon){
   if(!beacon||!visionBeacons.includes(beacon))return false;
-  const cost=paidUpgradeCost(medicalBeaconUpgradeCost(beacon));
+  const owner=upgradeOwner('beacon',beacon),target=nextProjectTargetLevel('beacon','',owner,medicalBeaconLevel(beacon),5);
+  if(target==null){toast(" 医疗灯塔升级队列已满");return false;}
+  /* P2 §6.2: price by target — upgradeCosts index is from-level-1 = target-2. */
+  const cost=paidUpgradeCost(SurvivalSystem.MEDICAL_BEACON_RULES.upgradeCosts[target-2]??null);
   if(cost==null){toast(" 医疗灯塔已达 Lv5");return false;}
   if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
-  if(deferUpgrade('beacon','',upgradeOwner('beacon',beacon),cost,medicalBeaconLevel(beacon)))return true;
+  if(deferUpgrade('beacon','',owner,cost,target-1,target))return true;
   game.gold-=cost;beacon.level=medicalBeaconLevel(beacon)+1;
   applyMedicalBeaconVisual(beacon);updateGoldUI();queueVisionFogRedraw();sfx.levelup();
   toast(` 医疗灯塔升至 Lv${beacon.level}`);wc3RenderSel();renderCmdCard();return true;
@@ -2015,7 +2033,7 @@ const game={
     baseWallLv:0,baseRepairLv:0,autoTurretLv:0,baseShieldMax:0,airstrikeLv:0,overloadLv:0},
   buffs:{shieldUntil:0,rapidUntil:0},
   bombs:0,respawnTimer:0,baseShieldHP:0,buildTimer:0,
-  tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
+  tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},researchTier:0,legacyDefense:0,gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
   popUsed:0,popMax:12,prepTime:0,
 };
 const SURVIVAL_SAVE_KEY="tank3d-survival-save-v1";
@@ -2033,15 +2051,20 @@ function saveSurvivalSnapshot(){
       beacons:visionBeacons.map((b)=>({x:b.x,z:b.z,level:b.level,hp:b.hp,maxHp:b.maxHp})),
       units:friendlyUnits.filter((u)=>u.alive).map((u)=>({type:u.type,repairBranch:u.repairBranch||null,heroTank:!!u.heroTank,x:u.group.position.x,z:u.group.position.z,hp:u.hp,maxHp:u.maxHp,moveTarget:u.moveTarget,command:u.command})),
     };
-    const snapshot={terrainTrees:grid.flatMap((row,z)=>row.flatMap((t,x)=>t===T_TREE?[idx(x,z)]:[])),upgradeJobs:game.upgradeJobs||[],hero:heroArchive(),doctrine:game.doctrine||null,doctrineTech:game.doctrineTech||{},endless:!!game.endless,overflowPressure:game.overflowPressure||0,version:GAME_VERSION,naturalTerrainVersion:2,terrainPads:terrainSurface.natural?.supportPads||[],savedAt:Date.now(),mode:"survival",structures,construction:serializeConstruction(),baseLayout:{...ACTIVE_MODE.base},game:{survivalElapsed:game.survivalElapsed||0,wave:game.wave,gold:game.gold,score:game.score,popUsed:game.popUsed,popMax:game.popMax,difficultyMultiplier:game.difficultyMultiplier||1,difficultyId:game.difficultyId||"normal",
+    const snapshot={legacyDefense:game.legacyDefense||0,terrainTrees:grid.flatMap((row,z)=>row.flatMap((t,x)=>t===T_TREE?[idx(x,z)]:[])),upgradeJobs:game.upgradeJobs||[],hero:heroArchive(),doctrine:game.doctrine||null,doctrineTech:game.doctrineTech||{},endless:!!game.endless,overflowPressure:game.overflowPressure||0,version:GAME_VERSION,naturalTerrainVersion:2,terrainPads:terrainSurface.natural?.supportPads||[],savedAt:Date.now(),mode:"survival",structures,construction:serializeConstruction(),baseLayout:{...ACTIVE_MODE.base},game:{survivalElapsed:game.survivalElapsed||0,wave:game.wave,gold:game.gold,score:game.score,popUsed:game.popUsed,popMax:game.popMax,difficultyMultiplier:game.difficultyMultiplier||1,difficultyId:game.difficultyId||"normal",
       gateHp:game.gateHp,gateMaxHp:game.gateMaxHp,gateHpLv:game.gateHpLv,gateArmorLv:game.gateArmorLv,gateThornsLv:game.gateThornsLv,
-      gateRegenLv:game.gateRegenLv,gateDodgeLv:game.gateDodgeLv,tech:{...game.tech},breakthroughs:{...game.breakthroughs}}};
+      gateRegenLv:game.gateRegenLv,gateDodgeLv:game.gateDodgeLv,tech:{...game.tech},breakthroughs:{...game.breakthroughs},researchTier:game.researchTier===1?1:0}};
     localStorage.setItem(SURVIVAL_SAVE_KEY,JSON.stringify(snapshot));
     return true;
   }catch(_){return false;}
 }
 function readSurvivalSnapshot(){
-  try{const raw=localStorage.getItem(SURVIVAL_SAVE_KEY);return raw?JSON.parse(raw):null;}catch(_){return null;}
+  try{
+    const raw=localStorage.getItem(SURVIVAL_SAVE_KEY);if(!raw)return null;
+    const snapshot=JSON.parse(raw);
+    if(snapshot?.version!==GAME_VERSION){localStorage.removeItem(SURVIVAL_SAVE_KEY);return null;}
+    return snapshot;
+  }catch(_){try{localStorage.removeItem(SURVIVAL_SAVE_KEY);}catch{}return null;}
 }
 function clearSurvivalSnapshot(){try{localStorage.removeItem(SURVIVAL_SAVE_KEY);}catch(_){} }
 function restoreSurvivalStructures(data,legacyRepair=false){
@@ -2110,8 +2133,8 @@ function restoreSurvivalSnapshot(snapshot){
   ["gateHp","gateMaxHp","gateHpLv","gateArmorLv","gateThornsLv","gateRegenLv","gateDodgeLv"].forEach((key)=>{
     if(Number.isFinite(Number(saved[key])))game[key]=Number(saved[key]);
   });
-  game.tech={...(saved.tech||{})};game.breakthroughs={...(saved.breakthroughs||{})};
   const savedVersion=String(snapshot.version||'0.0.0').split('.').map(Number);
+  game.tech={...(saved.tech||{})};game.breakthroughs={...(saved.breakthroughs||{})};game.legacyDefense=Number.isFinite(Number(snapshot.legacyDefense))?Math.max(0,Number(snapshot.legacyDefense)):((savedVersion[0]||0)<9?Math.max(0,Number(game.tech.defense)||0):0);game.researchTier=saved.researchTier===1?1:0;
   game.hero=HeroSystem.archive(snapshot.hero);game.doctrine=['tower','tank','hero'].includes(snapshot.doctrine)?snapshot.doctrine:null;game.doctrineTech=Object.fromEntries(Object.keys(HeroSystem.TECH).map(k=>[k,HeroSystem.level(snapshot.doctrineTech?.[k],5)]));game.endless=!!snapshot.endless;game.overflowPressure=Math.max(0,Number(snapshot.overflowPressure)||0);game._restoring=true;
   restoreSurvivalStructures(snapshot.structures,savedVersion[0]<6||(savedVersion[0]===6&&savedVersion[1]<44));
   game._restoring=false;if(heroArchive().status==='alive'&&!heroTank)heroArchive().status='dead';if(heroArchive().status==='producing')game.popUsed+=6;
@@ -2166,7 +2189,7 @@ function createFriendlyUnit(typeId,position){
 function queueFactoryUnit(factory,typeId,restoring=false){
   const spec=SurvivalSystem.FRIENDLY_UNIT_TYPES[typeId];
   if(typeId==='repair'||typeId==='hero')return false;
-  if(!factory||heavyFactories.indexOf(factory)<0||!spec||factory.queue.length>=5)return false;
+  if(!factory||heavyFactories.indexOf(factory)<0||!spec||factory.queue.length>=20)return false;
   if(!restoring&&typeId==='repair'&&!repairProductionStatus().allowed)return false;
   const cost=Math.ceil(spec.cost*(1-.03*doctrineLevel('supply'))),time=spec.buildTime*(1-.04*doctrineLevel('supply'));
   if(game.gold<cost||game.popUsed+spec.population>game.popMax)return false;
@@ -2204,7 +2227,7 @@ function updateFactories(dt){
   updateUpgradeJobs(dt);updateHeroProduction(dt);
   for(const f of [...factoryWorkshops.keys()])if(!heavyFactories.includes(f)||!f.queue.length)clearFactoryWorkshop(f);
   for(const factory of heavyFactories){
-    if(factory.autoType&&factory.queue.length<5)queueFactoryUnit(factory,factory.autoType);
+    if(factory.autoType&&factory.queue.length<20)queueFactoryUnit(factory,factory.autoType);
     const item=factory.queue[0];if(!item)continue;
     tickFactoryProduction(factory,item,dt);
   }
@@ -2218,7 +2241,7 @@ function renderFactoryQueueDock(){
   dock.innerHTML=`<div class="globalQueueTitle"> 生产队列</div>`+heavyFactories.map((factory,index)=>{
     const queue=factory.queue||[],current=queue[0],pct=Math.round((factory.progress||0)*100);
     const labels=queue.map((item,itemIndex)=>`<span class="${itemIndex===0?"current":""}">${itemIndex===0?" ":""}${SurvivalSystem.FRIENDLY_UNIT_TYPES[item.typeId]?.name||item.typeId}</span>`).join("")||"<span>空闲</span>";
-    return `<div class="globalQueueFactory"><div class="globalQueueName">重工厂 ${index+1} · ${queue.length}/5 · ${factory.exitBlocked?"出口受阻":current?.remaining===0?"正在驶出":"装配生产"}</div><div class="globalQueueItems">${labels}</div>${current?`<div class="globalQueueBar"><i style="width:${pct}%"></i></div>`:""}</div>`;
+    return `<div class="globalQueueFactory"><div class="globalQueueName">重工厂 ${index+1} · ${queue.length}/20 · ${factory.exitBlocked?"出口受阻":current?.remaining===0?"正在驶出":"装配生产"}</div><div class="globalQueueItems">${labels}</div>${current?`<div class="globalQueueBar"><i style="width:${pct}%"></i></div>`:""}</div>`;
   }).join("");
 }
 
@@ -4020,9 +4043,12 @@ function goldMineUpCost(level){
 function houseUpgradeCost(level){return level>=5?null:Math.round(100*Math.pow(2,Math.max(0,level-1)));}
 function upgradeHouse(house){
   if(!house||builtHouses.indexOf(house)<0)return false;
-  const cost=paidUpgradeCost(houseUpgradeCost(house.level||1));if(cost==null){toast(" 人口房已达 Lv5");return false;}
+  const owner=upgradeOwner('house',house),target=nextProjectTargetLevel('house','',owner,house.level||1,5);
+  if(target==null){toast(" 人口房升级队列已满");return false;}
+  /* P2 §6.2: price by target — cost at from-level (target-1). */
+  const cost=paidUpgradeCost(houseUpgradeCost(target-1));if(cost==null){toast(" 人口房已达 Lv5");return false;}
   if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
-  if(deferUpgrade('house','',upgradeOwner('house',house),cost,house.level||1))return true;
+  if(deferUpgrade('house','',owner,cost,target-1,target))return true;
   game.gold-=cost;const old=house.popProvided||6;house.level=(house.level||1)+1;house.popProvided=old+4;game.popMax+=4;
   const visual=house.visualRoot||house.group;visual.scale.setScalar(1+.06*(house.level-1));updateGoldUI();updateResUI();wc3RenderSel();renderCmdCard();toast(` 人口房升至 Lv${house.level} · 人口上限 +4`);return true;
 }
@@ -4074,9 +4100,12 @@ function upgradeGoldMine(mine){
   if(!mine||goldMines.indexOf(mine)<0)return false;
   const maxLevel=(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.mineMaxLevel)||SurvivalSystem.MINE_ECONOMY.maxLevel;
   if(mine.level>=maxLevel){toast(" 金矿已完成五次升级");return false;}
-  const cost=paidUpgradeCost(goldMineUpCost(mine.level));
+  const owner=upgradeOwner('goldmine',mine),target=nextProjectTargetLevel('goldmine','',owner,mine.level,maxLevel);
+  if(target==null){toast(" 金矿升级队列已满");return false;}
+  /* P2 §6.2: price by target — cost at from-level (target-1). */
+  const cost=paidUpgradeCost(goldMineUpCost(target-1));
   if(cost==null||game.gold<cost){toast(` 升级需要 ${cost||0} 金币`);return false;}
-  if(deferUpgrade('goldmine','',upgradeOwner('goldmine',mine),cost,mine.level))return true;
+  if(deferUpgrade('goldmine','',owner,cost,target-1,target))return true;
   game.gold-=cost;
   mine.level++;
   upgradeGoldMineVisual(mine);
@@ -4431,9 +4460,12 @@ function upgradeTurretAt(x,z){
   if(t.level>=turretUnlockedMaxLevel()-1){toast(` 炮塔已达当前上限 Lv${turretUnlockedMaxLevel()}，请研究炮台突破`);return false;}
   const tt=TURRET_TYPES[t.turretKey];
   if(!tt){toast(" 暂无可应用升级");return false;}
-  const cost=paidUpgradeCost(turretUpgradeCost(t));
+  const owner=upgradeOwner('turret',t),target=nextProjectTargetLevel('turret','',owner,t.level,turretUnlockedMaxLevel()-1);
+  if(target==null){toast(` 炮塔队列已排至上限 Lv${turretUnlockedMaxLevel()}`);return false;}
+  /* P2 §6.2: price by target — cost at from-level (target-1). */
+  const cost=paidUpgradeCost(turretUpgradeCost({level:target-1,turretKey:t.turretKey}));
   if(cost==null||game.gold<cost){toast(` 升级需要 ${cost||0} 金币`);return false;}
-  if(deferUpgrade('turret','',upgradeOwner('turret',t),cost,t.level))return true;
+  if(deferUpgrade('turret','',owner,cost,target-1,target))return true;
   game.gold-=cost;updateGoldUI();
   const st=turretStats(t.turretKey,t.level+1);
   if(st.dmg!=null)t.dmg=st.dmg;
@@ -4462,9 +4494,12 @@ function upgradeWallAt(x,z){
   const ci=idx(x,z),meta=wallMeta.get(ci),curLv=meta&&meta.lv||0;
   if(curLv<1||grid[z][x]!==T_STEEL||!steelHP.has(ci)){toast(" 该位置没有可升级的巨岩墙");return false;}
   if(curLv>=wallUnlockedMaxLevel()){toast(` 墙体已达当前上限 Lv${wallUnlockedMaxLevel()}，请研究巨岩突破`);return false;}
-  const cost=paidUpgradeCost(wallPriceNext(curLv));
+  const owner=upgradeOwner('wall',{x,z}),target=nextProjectTargetLevel('wall','',owner,curLv,wallUnlockedMaxLevel());
+  if(target==null){toast(` 墙体队列已排至上限 Lv${wallUnlockedMaxLevel()}`);return false;}
+  /* P2 §6.2: price by target — wallPriceNext(target-1) is the cost of Lv(target-1)→Lv(target). */
+  const cost=paidUpgradeCost(wallPriceNext(target-1));
   if(game.gold<cost){toast(` 升级需要 ${cost} 金币`);return false;}
-  if(deferUpgrade('wall','',upgradeOwner('wall',{x,z}),cost,curLv))return true;
+  if(deferUpgrade('wall','',owner,cost,target-1,target))return true;
   game.gold-=cost;updateGoldUI();
   const nextLv=curLv+1,w=wallDefinition(nextLv),oldHp=steelHP.get(ci),oldMax=wallMaxHp(curLv);
   const ratio=oldMax>0?Math.max(0,Math.min(1,oldHp/oldMax)):1,wasRamp=!!meta.wasRamp;
@@ -4528,7 +4563,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
     game.gold-=cost;updateGoldUI();
     const g=takeConstructionModel(constructionJob,makeGoldmineVisual),visualRoot=g.userData.visualRoot;
     g.position.set(cc.x,gy,cc.z);scene.add(g);
-    const mineMaxHp=Math.round(220*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
+    const mineMaxHp=Math.round(220*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
     const mineHealth=attachWorldHealthBar(g,4.5,2.7);
     mineHealth.bar.userData.panelOnly=true;
     const record={group:g,visualRoot,visualBaseScale:visualRoot.scale.clone(),crystal:null,x:ghostCell.x,z:ghostCell.z,
@@ -4594,7 +4629,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
         new THREE.MeshBasicMaterial({color:0x39d98a,depthWrite:false}));
       bar.position.y=3.6;barFg.position.y=3.6;bar.visible=barFg.visible=false;
       g.add(bar);g.add(barFg);
-      const structureMult=1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0),turretHp=Math.round(40*structureMult);
+      const structureMult=1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0),turretHp=Math.round(40*structureMult);
       const record={group:g,kind:key,turretKey:key,level:0,cx:ghostCell.x,cz:ghostCell.z,x:ghostCell.x,z:ghostCell.z,
         /*  range 以"格"配置，转世界单位参与距离比较（TILE=4） */
         range:st.range*TILE,cd:0,fireCd:1/st.fireRate,dmg:st.dmg,blast:st.splash||0,
@@ -4609,7 +4644,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
       const g=takeConstructionModel(constructionJob,makeHouseVisual);
       g.position.set(cc.x,gy,cc.z);scene.add(g);
       game.popMax+=(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.housePop)||6;
-      const houseMaxHp=Math.round(160*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
+      const houseMaxHp=Math.round(160*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
       const houseHealth=attachWorldHealthBar(g,3.35,2.5);
       const record={group:g,visualRoot:g,x:ghostCell.x,z:ghostCell.z,level:1,hp:houseMaxHp,maxHp:houseMaxHp,
         kind:"house",popProvided:(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.housePop)||6,...houseHealth};
@@ -4618,11 +4653,11 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
       sfx.complete();
     }else if(b.id==="heroHub"){
       const g=takeConstructionModel(constructionJob,makeHeroHubModel);g.position.set(cc.x,gy,cc.z);scene.add(g);
-      const maxHp=620*(1+(TECH_TREE.defense.effect.structureHpPct||.1)*researchPowerLevel(game.tech.defense||0)),health=attachWorldHealthBar(g,4.1,4);const record={group:g,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"heroHub",...health};reserveFootprint(record,buildCells);heroHubs.push(record);sfx.complete();
+      const maxHp=620*(1+(TECH_TREE.defense.effect.structureHpPct||.1)*researchPowerLevel(game.legacyDefense||0)),health=attachWorldHealthBar(g,4.1,4);const record={group:g,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"heroHub",...health};reserveFootprint(record,buildCells);heroHubs.push(record);sfx.complete();
     }else if(b.id==="research"){
       const g=takeConstructionModel(constructionJob,()=>makeBuildingModel("research")),orb=g.userData.orb;
       g.position.set(cc.x,gy,cc.z);scene.add(g);
-      const maxHp=Math.round(520*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
+      const maxHp=Math.round(520*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
       const health=attachWorldHealthBar(g,7.25,4.2);
       const record={group:g,orb,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"research",...health};
       finishIndustrialFacade(g,"research");reserveFootprint(record,buildCells);researchInstitutes.push(record);
@@ -4630,7 +4665,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
     }else if(b.id==="factory"){
       const g=takeConstructionModel(constructionJob,()=>makeBuildingModel("factory"));
       g.position.set(cc.x,gy,cc.z);scene.add(g);
-      const maxHp=Math.round(760*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
+      const maxHp=Math.round(760*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
       const health=attachWorldHealthBar(g,7.15,5.2);
       const record={group:g,x:ghostCell.x,z:ghostCell.z,hp:maxHp,maxHp,kind:"factory",queue:[],progress:0,autoType:null,
         rally:{x:cc.x+TILE*2.8,z:cc.z},...health};
@@ -4642,7 +4677,7 @@ function placeBuildingImmediately(px,pz,constructionJob=null,restoring=false){
       pool.castShadow=false;pool.receiveShadow=false;pool.raycast=()=>{};
       scene.add(g);
       const light=registerSurvivalPointLight(cc.x,gy+4.85,cc.z,1.18,28);if(light)light.userData.beaconLight=true;
-      const maxHp=Math.round(180*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.tech.defense||0)));
+      const maxHp=Math.round(180*(1+(TECH_TREE.defense.effect.structureHpPct||0.1)*researchPowerLevel(game.legacyDefense||0)));
       const health=attachWorldHealthBar(g,6.15,2.8);
       const record={group:g,light,lantern,pool,x:ghostCell.x,z:ghostCell.z,level:1,hp:maxHp,maxHp,kind:"beacon",popUsed:needPop||0,...health};
       reserveFootprint(record,buildCells);visionBeacons.push(record);game.popUsed+=needPop;updateResUI();applyMedicalBeaconVisual(record);queueVisionFogRedraw();sfx.complete();
@@ -5220,12 +5255,17 @@ function wc3RenderSel(){
     hp=s.hp;hpMax=s.maxHp;html=`${friendlyWeaponDescription(s)}<br>伤害 <b>${s.dmg.toFixed(1)}</b> · 移速 <b>${s.speed.toFixed(1)}</b> · 人口 <b>${s.population}</b>`;
   }else if(k==="factory"&&s&&heavyFactories.includes(s)){
     ic.innerHTML=UIIcons.svg("factory");nm.textContent="重工厂";hp=s.hp;hpMax=s.maxHp;
-    html=s.queue[0]?`生产中 <b>${SurvivalSystem.FRIENDLY_UNIT_TYPES[s.queue[0].typeId].name}</b> · <b>${Math.round(s.progress*100)}%</b> · 队列 <b>${s.queue.length}/5</b>`:`队列空闲 · <b>0/5</b>`;
+    html=s.queue[0]?`生产中 <b>${SurvivalSystem.FRIENDLY_UNIT_TYPES[s.queue[0].typeId].name}</b> · <b>${Math.round(s.progress*100)}%</b> · 队列 <b>${s.queue.length}/20</b>`:`队列空闲 · <b>0/20</b>`;
   }else if(k==="heroHub"&&s){ic.innerHTML=UIIcons.svg("base");nm.textContent="英雄枢纽";hp=s.hp;hpMax=s.maxHp;html=`英雄 ${{unbuilt:'待生产',producing:'整备中',alive:'已出战',dead:'等待复活'}[heroArchive().status]} · 击杀 ${heroArchive().kills} · 攻击成长 ×${HeroSystem.growth(heroArchive().kills).toFixed(2)}`;
   }else if(k==="research"&&s&&researchInstitutes.includes(s)){
-    ic.innerHTML=UIIcons.svg("research");nm.textContent="研究院";hp=s.hp;hpMax=s.maxHp;
+    ic.innerHTML=UIIcons.svg("research");
     const cap=researchUnlockedMaxLevel();
-    html=Object.values(TECH_TREE).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`).join(" · ")+`<br>金矿 ${goldMines.length}/${mineUnlockedCount()} · 墙上限 ${wallUnlockedMaxLevel()} · 炮台上限 ${turretUnlockedMaxLevel()}`;
+    let tierName="初级研究院";
+    if(game.researchTier>=1)tierName=`高级研究院 · ${BASE_ROUTES[game.doctrine]?.name||""}`;
+    else if(game.doctrine)tierName="初级研究院 · 可升阶高级";
+    nm.textContent=tierName;hp=s.hp;hpMax=s.maxHp;
+    const lines=Object.values(TECH_TREE).filter((tech)=>game.researchTier<1?tech.tier===0:tech.tier===1&&tech.route===game.doctrine).map((tech)=>`${tech.name} ${game.tech[tech.id]||0}/${cap}`);
+    html=lines.join(" · ")+(game.doctrine?` · 专属 ${Object.keys(game.doctrineTech||{}).filter(k=>game.doctrineTech[k]>0).length}`:"")+`<br>金矿 ${goldMines.length}/${mineUnlockedCount()} · 墙上限 ${wallUnlockedMaxLevel()} · 炮台上限 ${turretUnlockedMaxLevel()}`;
   }else if(k==="house"&&s&&builtHouses.includes(s)){
     ic.innerHTML=UIIcons.svg("house");nm.textContent=`人口房 Lv${s.level||1}`;hp=s.hp;hpMax=s.maxHp;
     html=`人口上限 +${s.popProvided||6} · 建造上限 5 座`;
@@ -5456,19 +5496,21 @@ function commandItemsForSelection(){
   if(kind==="heroHub")return heroCommands();
   if(kind==="research"){
     const cap=researchUnlockedMaxLevel();
-    const normal=Object.values(TECH_TREE).map((tech,index)=>{
+    const normal=Object.values(TECH_TREE).filter((tech)=>game.researchTier<1?tech.tier===0:tech.tier===1&&tech.route===game.doctrine).map((tech,index)=>{
       const lv=game.tech[tech.id]||0,cost=techCost(tech.id),maxed=lv>=cap,unlocked=techUnlocked(tech.id);
-      return {upgradeType:'tech',upgradeId:tech.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,act:()=>upgradeTech(tech.id)};
+      return {upgradeType:'tech',upgradeId:tech.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+1),icon:tech.icon,name:tech.name,price:maxed?null:cost,hot:String(index+1),tip:`${tech.desc}<br>Lv${lv}/${cap}`,dim:maxed||!unlocked||game.gold<cost,allowQueue:true,act:()=>upgradeTech(tech.id)};
     });
+    const academy=game.researchTier<1?[{upgradeType:'academy',upgradeId:'',upgradeOwner:upgradeOwner('research',ref),k:"A",hot:"A",icon:"research",name:"高级研究院",price:600,tip:game.doctrine?"600金币 · 升级8秒 · 原地升级不新增占地":"基地改建完成后开放 · 600金币/8秒",dim:!game.doctrine||game.gold<600,act:()=>upgradeAcademy()}]:[];
+    const doctrine=game.doctrine&&game.researchTier>=1?doctrineCommands():[];
     const icons={mining:"mine",science:"research",wall:"wall",turret:"turret"};
-    const breakthrough=Object.values(SurvivalSystem.BREAKTHROUGH_RESEARCH).map((item,index)=>{
+    const breakthrough=game.endless&&game.researchTier>=1?Object.values(SurvivalSystem.BREAKTHROUGH_RESEARCH).map((item,index)=>{
       const lv=breakthroughLevel(item.id),cost=breakthroughCost(item.id);
       const target=item.id==="mining"?`金矿上限 ${mineUnlockedCount()}`:item.id==="science"?`科技上限 ${researchUnlockedMaxLevel()}`:item.id==="wall"?`巨岩上限 ${wallUnlockedMaxLevel()}`:`炮台上限 ${turretUnlockedMaxLevel()}`;
-      return {upgradeType:'breakthrough',upgradeId:item.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+5),icon:icons[item.id],name:item.name,price:cost,hot:String(index+5),tip:`无限研究 · Lv${lv}<br>${target}`,dim:game.gold<cost,act:()=>upgradeBreakthrough(item.id)};
-    });
-    return [...normal,...breakthrough,{k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle}];
+      return {upgradeType:'breakthrough',upgradeId:item.id,upgradeOwner:upgradeOwner('research',ref),k:String(index+5),icon:icons[item.id],name:item.name,price:cost,hot:String(index+5),tip:`无限研究 · Lv${lv}<br>${target}`,dim:game.gold<cost,allowQueue:true,act:()=>upgradeBreakthrough(item.id)};
+    }):[];
+    return [...normal,...academy,...doctrine,...breakthrough,{k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除并回收部分金币",act:sellSelectedSingle}];
   }
-  if(kind==="factory")return [...Object.entries(SurvivalSystem.FRIENDLY_UNIT_TYPES).filter(([id])=>["light","medium","heavy"].includes(id)).map(([typeId,spec],index)=>{spec={...spec,cost:Math.ceil(spec.cost*(1-.03*doctrineLevel('supply'))),buildTime:spec.buildTime*(1-.04*doctrineLevel('supply'))};const medical=typeId==='repair'?repairProductionStatus():null;return {k:String(index+1),icon:typeId==="repair"?"repair":"tank",name:medical?`${spec.name} ${medical.count}/${medical.max}`:spec.name,price:spec.cost,hot:String(index+1),autoType:typeId,tip:`人口 ${spec.population} · 生产 ${spec.buildTime}秒 · 右键切换自动生产${medical?`<br>${medical.reason}<br>医疗车同目标不叠加；与灯塔独立补充`:""}`,dim:(medical&&!medical.allowed)||ref.queue.length>=5||game.gold<spec.cost||game.popUsed+spec.population>game.popMax,act:()=>{if(queueFactoryUnit(ref,typeId)){toast(` ${spec.name} 已加入生产队列`);wc3RenderSel();renderCmdCard();}}};}),
+  if(kind==="factory")return [...Object.entries(SurvivalSystem.FRIENDLY_UNIT_TYPES).filter(([id])=>["light","medium","heavy"].includes(id)).map(([typeId,spec],index)=>{spec={...spec,cost:Math.ceil(spec.cost*(1-.03*doctrineLevel('supply'))),buildTime:spec.buildTime*(1-.04*doctrineLevel('supply'))};const medical=typeId==='repair'?repairProductionStatus():null;return {k:String(index+1),icon:typeId==="repair"?"repair":"tank",name:medical?`${spec.name} ${medical.count}/${medical.max}`:spec.name,price:spec.cost,hot:String(index+1),autoType:typeId,tip:`人口 ${spec.population} · 生产 ${spec.buildTime}秒 · 右键切换自动生产${medical?`<br>${medical.reason}<br>医疗车同目标不叠加；与灯塔独立补充`:""}`,dim:(medical&&!medical.allowed)||ref.queue.length>=20||game.gold<spec.cost||game.popUsed+spec.population>game.popMax,act:()=>{if(queueFactoryUnit(ref,typeId)){toast(` ${spec.name} 已加入生产队列`);wc3RenderSel();renderCmdCard();}}};}),
     {k:"R",icon:"flag",name:"集结点",hot:"R",tip:"设置新的出厂集结点",act:()=>{wc3AttackMove="rally";toast(" 左键点击设置集结点");}},
     {k:"C",icon:"close",name:"取消生产",hot:"C",tip:"取消队尾单位并返还 75% 金币",dim:!ref.queue.length,act:()=>cancelFactoryQueue(ref)},
     {k:"X",icon:"demolish",name:"拆除",hot:"X",tip:"拆除重工厂",act:sellSelectedSingle}];
@@ -5494,7 +5536,7 @@ function renderCmdCard(){
   const items=decorateUpgradeCommands(commandItemsForSelection().filter((item)=>!item.sep));
   const factoryRef=wc3Sel&&wc3Sel.kind==="factory"?wc3Sel.ref:null;
   const factoryQueue=factoryRef?{progress:+(factoryRef.progress||0).toFixed(3),queue:(factoryRef.queue||[]).map((q)=>q.typeId)}:null;
-  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove]),factoryQueue]);
+  const signature=JSON.stringify([items.map((it)=>[it.k,it.name,it.price,it.sel,it.dim,it.progress,it.progressLabel,it.hot==="A"&&!!wc3AttackMove,it.upgradeType&&isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner)]),factoryQueue]);
   if(signature===_cmdCardSignature&&wrap.childElementCount)return;
   _cmdCardSignature=signature;wrap.innerHTML="";
   items.forEach(it=>{
@@ -5514,6 +5556,7 @@ function renderCmdCard(){
       +(it.progress!=null?`<i class="cprog researchProgress" style="width:${Math.round(it.progress*100)}%"></i><span class="researchStatus">${it.progressLabel}</span>`:"")
       +(producing?`<i class="cprog" style="width:${Math.round((factoryRef.progress||0)*100)}%"></i>`:"");
     if(it.autoType){d.oncontextmenu=(event)=>{event.preventDefault();toggleFactoryAuto(wc3Sel.ref,it.autoType);};if(wc3Sel.ref.autoType===it.autoType)d.classList.add("active");}
+    if(it.upgradeType&&AUTO_UPGRADE_TYPES.has(it.upgradeType)&&it.upgradeOwner){d.oncontextmenu=(event)=>{event.preventDefault();toggleAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner);};if(isAutoUpgrade(it.upgradeType,it.upgradeId||'',it.upgradeOwner))d.classList.add("active");}
     d.onmouseenter=()=>{
       const tip=$("wc3tip");if(!tip)return;
       tip.innerHTML=`<div class="t">${UIIcons.svg(it.icon)} ${it.name}</div><div>${it.tip}</div><div class="k">快捷键：${it.hot}</div>`;
@@ -5574,16 +5617,21 @@ function upgradeBreakthrough(id){
   if(id==='turret'&&!doctrineAllows('tower',3)){toast("需要炮台专精");return false;}
   const item=SurvivalSystem.BREAKTHROUGH_RESEARCH[id];
   if(!item){toast(" 未知突破研究");return false;}
-  const cost=paidUpgradeCost(breakthroughCost(id));
+  const owner=upgradeOwner('research',researchInstitutes[0]),target=nextProjectTargetLevel('breakthrough',id,owner,breakthroughLevel(id),null);
+  if(target==null){toast(`${item.name} 已在队列中`);return false;}
+  /* P2 §6.2: price by target — breakthroughCost at from-level (target-1). */
+  const cost=paidUpgradeCost(SurvivalSystem.breakthroughCost(id,target-1));
   if(game.gold<cost){toast(` ${item.name}需要 ${cost} 金币`);return false;}
-  if(deferUpgrade('breakthrough',id,upgradeOwner('research',researchInstitutes[0]),cost,breakthroughLevel(id)))return true;
+  if(deferUpgrade('breakthrough',id,owner,cost,target-1,target))return true;
   game.gold-=cost;game.breakthroughs[id]=breakthroughLevel(id)+1;
   const result=id==="mining"?`金矿上限 ${mineUnlockedCount()}`:id==="science"?`科技上限 ${researchUnlockedMaxLevel()}`:id==="wall"?`巨岩上限 ${wallUnlockedMaxLevel()}`:`炮台上限 ${turretUnlockedMaxLevel()}`;
   sfx.levelup();toast(`${item.name} Lv${game.breakthroughs[id]} · ${result}`);updateGoldUI();wc3RenderSel();renderCmdCard();return true;
 }
 function techUnlocked(branch){
-  if((branch==='tank'||branch==='turret')&&!doctrineAllows(branch==='tank'?'tank':'tower',game.tech[branch]||0))return false;
-  const req=TECH_TREE[branch].requires||{};
+  const t=TECH_TREE[branch];
+  if(t.tier===1&&game.researchTier<1)return false;
+  if(t.route&&!doctrineAllows(t.route,game.tech[branch]||0))return false;
+  const req=t.requires||{};
   for(const k in req)if((game.tech[k]||0)<req[k])return false;
   return true;
 }
@@ -5614,14 +5662,19 @@ function renderTech(){
   updateGoldUI();
 }
 function upgradeTech(branch){
-  if((branch==='tank'||branch==='turret')&&!doctrineAllows(branch==='tank'?'tank':'tower',game.tech[branch]||0)){toast("高阶科技需要对应主战专精");return false;}
+  const line=TECH_TREE[branch];
+  if(line.tier===1&&game.researchTier<1){toast("需要先升级高级研究院");return false;}
+  if(line.route&&!doctrineAllows(line.route,game.tech[branch]||0)){toast("高阶科技需要对应主战专精");return false;}
   const t=TECH_TREE[branch],lv=game.tech[branch]||0;
   const cap=researchUnlockedMaxLevel();
   if(lv>=cap){toast(`${t.name} 已达当前上限，请先研究科技突破`);return;}
   if(!techUnlocked(branch)){toast("前置科技未解锁，需先强化前置分支");return;}
-  const cost=paidUpgradeCost(techCost(branch));
+  const owner=upgradeOwner('research',researchInstitutes[0]),target=nextProjectTargetLevel('tech',branch,owner,lv,cap);
+  if(target==null){toast(`${t.name} 队列已排至上限 Lv${cap}`);return;}
+  /* P2 §6.2: price by target — researchCost at from-level (target-1). */
+  const cost=paidUpgradeCost(SurvivalSystem.researchCost(branch,target-1,cap));
   if(game.gold<cost){toast("金币不足，升级失败");return;}
-  if(deferUpgrade('tech',branch,upgradeOwner('research',researchInstitutes[0]),cost,lv))return true;
+  if(deferUpgrade('tech',branch,owner,cost,target-1,target))return true;
   game.gold-=cost;
   game.tech[branch]=lv+1;
   if(sfx&&sfx.levelup)sfx.levelup();
@@ -5632,9 +5685,6 @@ function upgradeTech(branch){
     for(const [ci,meta] of wallMeta){
       const ratio=(steelHP.get(ci)||0)/Math.max(1,wallDefinition(meta.lv).hp*oldMultiplier);
       const next=Math.max(1,Math.round(wallMaxHp(meta.lv)*ratio));steelHP.set(ci,next);meta.hp=next;
-    }
-    for(const structure of [...builtTurrets,...researchInstitutes,...heroHubs,...heavyFactories,...visionBeacons]){
-      const ratio=structure.hp/structure.maxHp;structure.maxHp=Math.round(structure.maxHp/oldMultiplier*newMultiplier);structure.hp=Math.max(1,Math.round(structure.maxHp*ratio));
     }
     const newMax=computeGateMaxHp();
     const ratio=game.gateMaxHp>0?game.gateHp/game.gateMaxHp:1;
@@ -6993,7 +7043,7 @@ function resetGame(baseLayout=null,terrainPads=[]){
   Object.assign(game,{score:0,lives:3,wave:0,bombs:0,upgrades:{},hero:HeroSystem.archive(),doctrine:null,doctrineTech:{},upgradeJobs:[],_bossDone:false,_eliteToast:false,
     baseShieldHP:0,enemiesToSpawn:0,spawnTimer:0,respawnTimer:0,waveTransition:null,_resumeWave:0,spawnPlans:[],waveElapsed:0,survivalElapsed:0,
     playerShieldHP:0,sprintUntil:0,_empTimer:0,_mortarTimer:0,
-    tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
+    tech:{},breakthroughs:{mining:0,science:0,wall:0,turret:0},researchTier:0,legacyDefense:0,gateHp:0,gateMaxHp:0,gateHpLv:0,gateArmorLv:0,gateThornsLv:0,gateRegenLv:0,gateDodgeLv:0,
     popUsed:0,popMax:(ACTIVE_MODE.economy&&ACTIVE_MODE.economy.startPop)||12,prepTime:0,endless:false,
     gold:ACTIVE_MODE.goldStart||0});
   game.buffs={shieldUntil:0,rapidUntil:0};
@@ -7106,7 +7156,7 @@ window.render_game_to_text=()=>JSON.stringify({
     mines:goldMines.map((mine)=>({level:mine.level,income:SurvivalSystem.mineIncome(mine.level)})),incomePopups:mineIncomePopups.map((popup)=>popup.element.textContent)},
   vision:{sources:currentVisionSources().length,visibleEnemies:enemies.filter(e=>e.alive&&isPositionVisible(e.group.position)).length,fogActive:ACTIVE_MODE.key==="survival"&&visionFogSurfaces.length>0},
   atmosphere:{bloodMist:bloodMistSurfaces.map((surface)=>+surface.material.opacity.toFixed(3)),distanceFog:!!scene.fog},
-  research:{...game.tech},breakthroughs:{...game.breakthroughs},mineLimit:mineUnlockedCount(),
+  research:{...game.tech},breakthroughs:{...game.breakthroughs},researchTier:game.researchTier||0,mineLimit:mineUnlockedCount(),
   selected:wc3Sel?{kind:wc3Sel.kind,count:wc3Selection.length}:null,
   terrain:player?{height:+heightAt(player.group.position.x,player.group.position.z).toFixed(3)}:null,
   performance:{drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles},

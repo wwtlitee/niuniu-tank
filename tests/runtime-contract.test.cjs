@@ -678,11 +678,13 @@ test("研究院提供无限突破并实际提高金矿与升级上限", async ()
   const page = await openSurvival();
   const result = await page.evaluate(() => {
     const group=new THREE.Group();scene.add(group);
-    const institute={group,hp:100,maxHp:100};researchInstitutes.push(institute);
+    const institute={group,x:0,z:0,hp:100,maxHp:100};researchInstitutes.push(institute);
     game.breakthroughs={mining:0,science:0,wall:0,turret:0};game.gold=1e9;
+    game.endless=true;game.researchTier=1;
     wc3Select("research",institute);wc3RenderSel();renderCmdCard();
     const breakthroughNames=[...document.querySelectorAll("#cmdcard .cmdBtn .cn")].map((node)=>node.textContent).filter((name)=>name.includes("突破")||name.includes("扩张"));
     const miningCost=breakthroughCost("mining");upgradeBreakthrough("mining");
+    for(let i=0;i<400;i++)updateUpgradeJobs(1/60);
     const afterMining={level:game.breakthroughs.mining,limit:mineUnlockedCount(),spent:miningCost};
     game.breakthroughs.science=1;game.tech.defense=10;
     const extendedTechCost=techCost("defense");
@@ -951,6 +953,7 @@ test("同类巨岩墙多选后可按实际价格批量升级", async () => {
     const beforeGold=game.gold;
     const button=[...document.querySelectorAll("#cmdcard .cmdBtn")].find((node)=>node.textContent.includes("批量升级"));
     button?.click();
+    for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
     return {button:!!button,levels:cells.map((cell)=>wallLvAt(cell.x,cell.z)),spent:beforeGold-game.gold,count:wc3Selection.length};
   });
   await page.close();
@@ -1033,6 +1036,7 @@ test("多选金矿按 U 各升级一级并反馈花费与未升级数量", async
     return {levels:mines.map((mine)=>mine.level),gold:game.gold};
   });
   await page.keyboard.press("u");
+  await page.evaluate(()=>{for(let i=0;i<400;i++)updateUpgradeJobs(1/60);});
   const result=await page.evaluate(() => ({
     levels:goldMines.map((mine)=>mine.level),gold:game.gold,
     message:document.getElementById("announce").textContent,
@@ -1490,6 +1494,7 @@ test("炮台专精快捷键逐项唯一且数字键能触发对应分支",async(
   selectBuild(shopList().indexOf(build));ghostCell=anchor;ghost.visible=true;placeBuildingImmediately();selectBuild(null);
   const turret=builtTurrets.at(-1);wc3Select('turret',turret);const items=commandItemsForSelection().filter(i=>i.branchId);const hots=items.map(i=>i.hot);
   window.dispatchEvent(new KeyboardEvent('keydown',{code:'Digit1',key:'1'}));
+  for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
   return {hots,unique:new Set(hots).size===hots.length,selected:turret.turretKey};
  });await page.close();assert.deepEqual(result.hots,['1','2','3','4']);assert.equal(result.unique,true);assert.equal(result.selected,'rapid');
 });
@@ -2170,9 +2175,11 @@ test("标准炮台专精和后续升级均必须支付金币", async () => {
     const branchCost=Math.round(priceOf(build)*.85);
     game.gold=branchCost-1;const blockedBranch=chooseTurretBranch(turret,"rapid");
     game.gold=branchCost;const paidBranch=chooseTurretBranch(turret,"rapid");
+    for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
     const upgradeCost=turretUpgradeCost(turret);
     game.gold=upgradeCost-1;upgradeTurretAt(anchor.x,anchor.z);const blockedLevel=turret.level;
     game.gold=upgradeCost;upgradeTurretAt(anchor.x,anchor.z);
+    for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
     return {exists:true,branchCost,upgradeCost,blockedBranch,paidBranch,key:turret.turretKey,blockedLevel,paidLevel:turret.level,gold:game.gold};
   });
   await page.close();
@@ -2196,10 +2203,12 @@ test("四种专属炮台均提供五级选中升级链且价格逐级递增", as
     selectBuild(buildIndex);ghost.visible=true;placeBuildingImmediately(center.x,center.z);
     const turret=builtTurrets.find((item)=>item.cx===anchor.x&&item.cz===anchor.z);
     chooseTurretBranch(turret,"rapid");
+    for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
     const costs=[];
     for(let level=0;level<4;level++){
       costs.push(turretUpgradeCost(turret));
       upgradeTurretAt(anchor.x,anchor.z);
+      for(let i=0;i<200;i++)updateUpgradeJobs(1/60);
     }
     wc3Select("turret",turret);wc3RenderSel();renderCmdCard();
     const maxText=document.getElementById("cmdcard").textContent;
@@ -2328,9 +2337,11 @@ test("选中巨岩墙可显示价格并逐级升级到五十级", async () => {
     wc3Select("wall",anchor);wc3RenderSel();renderCmdCard();
     const firstButton=document.querySelector('#cmdcard [data-command-id="wall-up"]'),firstText=firstButton?.querySelector('.cn')?.textContent,displayedCost=firstButton?.querySelector('.cp')?.textContent,firstCost=wallPriceNext(1);
     firstButton&&firstButton.click();
+    for(let i=0;i<300;i++)updateUpgradeJobs(1/60);
     const afterFirst=wallLvAt(anchor.x,anchor.z);
     for(let level=afterFirst;level<50;level++){
       wc3RenderSel();renderCmdCard();document.querySelector('#cmdcard [data-command-id="wall-up"]')?.click();
+      for(let i=0;i<300;i++)updateUpgradeJobs(1/60);
     }
     wc3RenderSel();
     renderCmdCard();return {firstText,displayedCost,firstCost,afterFirst,finalLevel:wallLvAt(anchor.x,anchor.z),maxText:document.getElementById("cmdcard").textContent};
@@ -2389,6 +2400,7 @@ test("金矿升级按钮按当前等级扣费并刷新收益", async () => {
     wc3Select("goldmine",mine);wc3RenderSel();renderCmdCard();
     const beforeText=document.getElementById("spStat").textContent;
     document.querySelector('#cmdcard [data-command-id="goldmine-up"]').click();
+    for(let i=0;i<300;i++)updateUpgradeJobs(1/60);
     return {
       beforeText,level:mine.level,gold:game.gold,
       afterText:document.getElementById("spStat").textContent,

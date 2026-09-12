@@ -133,11 +133,14 @@
     repair: Object.freeze({ base: 4.5, max: 4.5 }),
   });
 
+  /* P3 §3/§4: each research line carries its doctrine route (null = public) and the
+     academy tier that unlocks it (0 = 初级研究院, 1 = 高级研究院). */
   const RESEARCH_LINES = freezeTable({
-    defense: { id: "defense", name: "防御工程", maxLevel: 10, baseCost: 90, effect: { structureHpPct: 0.1, structureArmorPct: 0.025 } },
-    turret: { id: "turret", name: "火力工程", maxLevel: 10, baseCost: 120, effect: { damagePct: 0.05, fireRatePct: 0.03, rangePct: 0.02 } },
-    tank: { id: "tank", name: "装甲工程", maxLevel: 10, baseCost: 120, effect: { damagePct: 0.07, hpPct: 0.08, speedPct: 0.025 } },
-    economy: { id: "economy", name: "后勤工程", maxLevel: 10, baseCost: 110, effect: { incomePct: 0.055, buildCostPct: -0.015, population: 1 } },
+    defense: { id: "defense", name: "防御工程", maxLevel: 10, baseCost: 90, route: null, tier: 0, effect: { structureHpPct: 0.1, structureArmorPct: 0.025 } },
+    turret: { id: "turret", name: "火力工程", maxLevel: 10, baseCost: 120, route: "tower", tier: 1, effect: { damagePct: 0.05, fireRatePct: 0.03, rangePct: 0.02 } },
+    tank: { id: "tank", name: "装甲工程", maxLevel: 10, baseCost: 120, route: "tank", tier: 1, effect: { damagePct: 0.07, hpPct: 0.08, speedPct: 0.025 } },
+    economy: { id: "economy", name: "后勤工程", maxLevel: 10, baseCost: 110, route: null, tier: 0, effect: { incomePct: 0.055, buildCostPct: -0.015, population: 1 } },
+    heroCore: { id: "heroCore", name: "英雄作战学", maxLevel: 10, baseCost: 120, route: "hero", tier: 1, effect: { heroDamagePct: 0.04 } },
   });
 
   const BREAKTHROUGH_RESEARCH = freezeTable({
